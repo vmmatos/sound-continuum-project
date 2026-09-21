@@ -31,6 +31,8 @@ Instructions for Claude Code sessions working in this repository.
   persistent project context.
 - Keep `TODO.md` current: what's done, what's in progress, what's planned.
 - Write clear, specific commit messages (why, not just what).
+- Keep Claude Code skills/harness in mind — prefer existing skills, hooks,
+  and conventions over reinventing workflow tooling.
 - **Always work on a branch and open a PR for review. Do not push directly
   to `main`, and do not merge the PR yourself — leave it for the user to
   review.**
