@@ -28,6 +28,17 @@
 - [x] `frontend/src/stores/` established as the store location convention
 - [x] No stores created — no real shared application state exists yet
 
+## Done (Card 18 — Configure Docker Compose)
+
+- [x] Root `Dockerfile` (backend, build context `.`)
+- [x] `frontend/Dockerfile` (Vite dev server)
+- [x] Root `docker-compose.yml` — `backend` + `frontend` services
+- [x] Named volume `sqlite_data` mounted at `/data` in backend container
+      (no separate SQLite service/container)
+- [x] `.gitignore` — `*.db`
+- [x] Docker Compose section in root `README.md`
+- [x] Project memory updated (`current-state.md`, `decisions.md`)
+
 ## In progress
 
 - Nothing currently in progress.

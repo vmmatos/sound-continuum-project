@@ -19,6 +19,7 @@ and [`docs/memory/roadmap.md`](docs/memory/roadmap.md) for direction.
 cmd/server/       HTTP server entrypoint
 internal/health/  health-check handler
 frontend/         Vue 3 + Vite + TypeScript application
+docker-compose.yml Docker Compose dev environment (frontend + backend)
 docs/manifesto.md  editorial philosophy (canonical)
 docs/memory/       persistent project memory for future sessions
 ```
@@ -53,4 +54,41 @@ cd frontend
 npm install
 npm run dev     # start the dev server (independent of the backend)
 npm run build   # type-check and build for production
+```
+
+## Docker Compose (development)
+
+Requires Docker and Docker Compose.
+
+Start both frontend and backend:
+
+```
+docker compose up --build
+```
+
+Frontend: http://localhost:5173
+Backend: http://localhost:8080
+
+Rebuild after dependency or Dockerfile changes:
+
+```
+docker compose up --build
+```
+
+Stop the environment (keeps persisted data):
+
+```
+docker compose down
+```
+
+SQLite persistence: the backend runs SQLite as an embedded database (not a
+separate service/container). Its data directory, `/data` in the backend
+container, is backed by the named volume `sqlite_data`, so the database
+file survives `docker compose down`. No SQLite application code exists yet
+— the volume just reserves the persistent location for when it does.
+
+Remove the persisted database for a clean slate:
+
+```
+docker compose down -v
 ```
