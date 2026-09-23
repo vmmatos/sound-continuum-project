@@ -12,6 +12,15 @@
 - [x] `Makefile` (`run`, `test`, `build`)
 - [x] Root `README.md`
 
+## Done (Card 16 — Vue 3 + Vite Frontend Foundation)
+
+- [x] `frontend/` — Vue 3 + Vite + TypeScript app
+- [x] Pinia configured (no stores yet — none needed)
+- [x] Vue Router configured (single `/` route)
+- [x] `services/health.ts` — non-blocking `GET /health` check
+- [x] `VITE_API_BASE_URL` env-based backend URL configuration
+- [x] Frontend section in root `README.md`
+
 ## In progress
 
 - Nothing currently in progress.
