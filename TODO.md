@@ -81,6 +81,18 @@
 - [x] No code, Docker, or environment changes
 - [x] Project memory updated (`current-state.md`)
 
+## Done (Card 23 — Research Current Music APIs & Data Sources)
+
+- [x] `docs/spotify-api.md` — current Spotify Web API and Last.fm API
+      research (auth, search, artists/tracks, Audio Features/Analysis
+      status, Recommendations/Related Artists status, playlists, rate
+      limits, deprecations, Spotify vs Last.fm comparison, data strategy,
+      musical bridge and emerging-artist implications, M3 recommendation,
+      open questions, sources)
+- [x] Project memory updated (`current-state.md`, `decisions.md`)
+- [x] No API integration, clients, SDKs, or dependencies added
+- [x] No credentials committed
+
 ## In progress
 
 - Nothing currently in progress.

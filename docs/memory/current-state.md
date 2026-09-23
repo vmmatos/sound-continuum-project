@@ -68,6 +68,21 @@
   project doesn't have; `backend-run` + `frontend-run` in two terminals
   stays the workflow. `make help` is the default target.
 
+- External music API research is complete (Card 23, see
+  [`docs/spotify-api.md`](../spotify-api.md)). Key finding: Spotify's Web API
+  changed substantially since this project's roadmap was written — Audio
+  Features, Audio Analysis, Recommendations, and Related Artists are all
+  deprecated for apps without pre-existing extended-quota access (a cutoff
+  Sound Continuum, as a new app, is on the wrong side of), and Extended
+  Quota Mode itself now requires an organizational application with 250k+
+  monthly active users. M3 should be scoped around what's actually
+  available now (Search, Artist/Track metadata, Playlist create/manage) and
+  built for permanent Development Mode limits, not Extended Quota Mode.
+  Last.fm was evaluated as a complementary source (similar artists/tracks,
+  tags — all available with just an API key, no auth) but is not included
+  in M3; it's relevant to M4's discovery engine instead. No integration
+  code, API clients, or credentials were added — research only.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

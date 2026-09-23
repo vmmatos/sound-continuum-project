@@ -197,3 +197,59 @@ same pattern: add a root Makefile target that delegates to the real
 command, don't grow the Makefile into an orchestration framework. When a
 linter or frontend test runner is actually adopted, add the corresponding
 `backend-lint`/`frontend-lint`/`frontend-test` targets then, not before.
+
+---
+
+**Decision:** M3 must not be designed around Spotify Audio Features, Audio
+Analysis, Recommendations, or Related Artists.
+
+**Context:** Card 23 researched the current Spotify Web API. These four
+endpoints were restricted in November 2024 to only those apps that already
+had extended-quota access before the cutoff. Sound Continuum is a new app
+and has no such prior access, and Spotify has offered no replacement.
+
+**Reason:** Any M5 (musical ranking/bridges) design that assumed
+tempo/energy/valence-style audio signals, or any M4 (discovery) design that
+assumed Spotify-provided artist similarity, would be building on endpoints
+this project cannot call. This is a hard technical constraint, not a
+preference.
+
+**Consequences:** Musical bridges (M5) and discovery (M4) must be designed
+as editorial-first, optionally supported by Last.fm similarity/tag data —
+not as a score computed from Spotify audio data. See
+[`docs/spotify-api.md`](../spotify-api.md) for full detail.
+
+---
+
+**Decision:** Design Spotify integration (M3) for permanent Development
+Mode limits, not Extended Quota Mode.
+
+**Context:** Card 23 research found Extended Quota Mode now requires an
+organizational Partner Application: an established business entity, an
+active launched service, and 250,000+ monthly active users.
+
+**Reason:** Sound Continuum is a small editorial MVP with no realistic path
+to that threshold in the foreseeable future.
+
+**Consequences:** M3 must work within Development Mode's constraints (5
+allowlisted users, app owner needs Spotify Premium, lower rate limits) as
+the permanent baseline, not a temporary bootstrapping phase.
+
+---
+
+**Decision:** Last.fm is a candidate complementary data source for M4
+(discovery), not part of M3.
+
+**Context:** Card 23 evaluated Last.fm's artist/track similarity and tag
+endpoints as a way to compensate for Spotify's Related Artists/
+Recommendations restrictions.
+
+**Reason:** M3's scope is catalog resolution and playlist publishing, which
+is Spotify-only. Last.fm's value is entirely on the discovery/similarity
+side, which belongs to M4. No provider abstraction or Last.fm client exists
+yet — introducing one now would be premature.
+
+**Consequences:** M4 design should evaluate Last.fm's `artist.getSimilar`,
+`track.getSimilar`, and `tag.*` methods (all usable with an API key, no
+user auth) as a supporting discovery signal. M3 implementation should not
+add any Last.fm code or dependency.
