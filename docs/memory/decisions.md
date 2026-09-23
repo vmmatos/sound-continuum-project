@@ -71,6 +71,11 @@ of Card 15).
 **Reason:** `go run` / `go build` is sufficient for local dev; nothing is
 being deployed yet that requires a container.
 
+**Superseded (Card 18):** Dockerfiles + Docker Compose were introduced for
+local dev consistency — see the Card 18 decision below. `go run` / `go
+build` remain fine outside Docker; this entry no longer reflects current
+state.
+
 ---
 
 **Decision:** Do not make the final editorial decision automatically.
