@@ -70,6 +70,17 @@
 - [x] No speculative folders created (`components/`, `types/`, `assets/`
       remain absent until actually needed)
 
+## Done (Card 21 — Create Initial README)
+
+- [x] Root `README.md` expanded into full entry point: what/why,
+      philosophy (musical bridges), manifesto link, MVP scope, status, tech
+      stack, project structure, local + Docker development, documentation
+      links, contributing note
+- [x] No new scope document created — scope linked from `CLAUDE.md` and
+      `docs/memory/decisions.md`
+- [x] No code, Docker, or environment changes
+- [x] Project memory updated (`current-state.md`)
+
 ## In progress
 
 - Nothing currently in progress.

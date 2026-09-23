@@ -49,6 +49,12 @@
   `assets/` reserved by convention). The structure is intentionally
   minimal — new directories are introduced only when actual code requires
   that responsibility, not speculatively.
+- Root `README.md` established as the project's full entry point (Card 21):
+  what/why, philosophy (musical bridges), a link to the manifesto, current
+  MVP scope (linking `CLAUDE.md` and `decisions.md` — no dedicated scope
+  doc exists), status, tech stack, project structure, local and Docker
+  development workflows, and a documentation links section covering all of
+  `docs/memory/`.
 
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
