@@ -71,6 +71,11 @@ of Card 15).
 **Reason:** `go run` / `go build` is sufficient for local dev; nothing is
 being deployed yet that requires a container.
 
+**Superseded (Card 18):** Dockerfiles + Docker Compose were introduced for
+local dev consistency — see the Card 18 decision below. `go run` / `go
+build` remain fine outside Docker; this entry no longer reflects current
+state.
+
 ---
 
 **Decision:** Do not make the final editorial decision automatically.
@@ -113,3 +118,29 @@ frontend/backend separation explicit.
 `go.mod`, `Makefile`) with `frontend/` and `docs/`. If this becomes
 confusing later, moving the backend into `backend/` is a small, reversible
 follow-up — not a blocker now.
+
+---
+
+**Decision:** Add a Docker Compose development environment; persist SQLite
+through a named volume mounted into the backend container, not a separate
+database service.
+
+**Context:** Card 18 needs frontend and backend to start together locally
+with a consistent, reproducible environment, and to establish where the
+future SQLite database will live.
+
+**Reason:** SQLite is an embedded database — it runs inside the process
+that uses it. A separate `sqlite` container/service would misrepresent the
+architecture and add orchestration complexity (networking, startup
+ordering) that an embedded database doesn't need. A named volume mounted at
+`/data` in the backend container gives persistence without a database
+process of its own. The backend `Dockerfile` lives at repo root (build
+context `.`), matching the existing decision to keep the Go module at repo
+root rather than under `backend/`.
+
+**Consequences:** `docker compose up --build` starts both services;
+`docker compose down` preserves the `sqlite_data` volume, `docker compose
+down -v` removes it. No SQLite application/repository code was added — the
+volume only reserves `/data` as the future database location. No reverse
+proxy, healthcheck orchestration, or production deployment concerns were
+introduced.
