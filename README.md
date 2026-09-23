@@ -1,10 +1,28 @@
 # Sound Continuum
 
 A weekly music curation project connecting timeless classics, contemporary
-music, and emerging artists through intentional musical bridges — a
-continuous musical journey rather than disconnected weekly playlists.
+music, and emerging artists through intentional musical bridges — treating
+music as one continuous story rather than a set of isolated weekly drops.
 
-Editorial philosophy: see [`docs/manifesto.md`](docs/manifesto.md).
+## Philosophy
+
+The connections between tracks matter as much as the tracks themselves. Each
+weekly edition is a chapter that carries forward what came before and sets
+up what comes next, sequenced by mood, tension, and release rather than a
+fixed formula. Discovery is welcome, but a track earns its place because it
+belongs in the story — not because it's obscure.
+
+This is the short version — the full editorial philosophy is canonical:
+[Read the Sound Continuum Manifesto](docs/manifesto.md).
+
+## Scope
+
+Sound Continuum is intentionally small and experimental right now. The
+current goal is to validate the curation workflow, musical bridges, weekly
+editions, discovery, and audience response — not to become a large music
+platform. See the MVP constraints in [`CLAUDE.md`](CLAUDE.md) and the
+reasoning behind them in
+[`docs/memory/decisions.md`](docs/memory/decisions.md).
 
 ## Status
 
@@ -12,6 +30,15 @@ MVP under development. M1 (concept) is complete; M2 (technical foundation)
 is in progress. No production system exists yet. See
 [`docs/memory/current-state.md`](docs/memory/current-state.md) for details
 and [`docs/memory/roadmap.md`](docs/memory/roadmap.md) for direction.
+
+## Tech stack
+
+- **Backend**: Go, standard library `net/http` — no framework, no external
+  dependencies.
+- **Frontend**: Vue 3, Vite, TypeScript, Pinia.
+- **Docker / Docker Compose**: local containerized dev environment.
+- **SQLite**: a data volume is reserved for it (see Docker Compose below),
+  but no application code persists to it yet.
 
 ## Project structure
 
@@ -30,9 +57,9 @@ backend/              Go application (net/http, no framework)
 frontend/              Vue 3 + Vite + TypeScript + Pinia application
   src/views/            page-level views
   src/services/         HTTP calls to the backend
-  src/router/           Vue Router configuration
+  src/router/            Vue Router configuration
   src/stores/            Pinia shared application state
-  src/components/       reusable UI components
+  src/components/        reusable UI components
   src/types/             shared TypeScript types
   src/assets/            static assets imported by the app (these three: created when first needed)
   public/                static files served as-is by Vite
@@ -121,3 +148,18 @@ Remove the persisted database for a clean slate:
 ```
 docker compose down -v
 ```
+
+## Documentation
+
+- [Manifesto](docs/manifesto.md) — canonical editorial principles
+- [Project memory overview](docs/memory/README.md)
+- [Current state](docs/memory/current-state.md)
+- [Decisions](docs/memory/decisions.md)
+- [Roadmap](docs/memory/roadmap.md)
+
+## Contributing
+
+Sound Continuum is intentionally developed as a small experimental MVP:
+simple solutions, clear responsibilities, minimal dependencies, incremental
+architecture. Avoid speculative infrastructure and premature abstraction.
+AI-assisted development workflow rules live in [`CLAUDE.md`](CLAUDE.md).

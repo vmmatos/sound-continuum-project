@@ -47,4 +47,4 @@ infra. See `docs/memory/decisions.md` for the full reasoning.
 ## Stack
 
 - Backend: Go, standard library (`net/http`), no framework.
-- Frontend: Vue 3 + Vite + Pinia (not yet built).
+- Frontend: Vue 3 + Vite + Pinia.
