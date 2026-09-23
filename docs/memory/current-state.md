@@ -55,6 +55,18 @@
   doc exists), status, tech stack, project structure, local and Docker
   development workflows, and a documentation links section covering all of
   `docs/memory/`.
+- Root `Makefile` added as the common developer task entry point (Card 22),
+  alongside the existing `backend/Makefile` (untouched, still `run`/
+  `test`/`build`). Root targets delegate rather than duplicate:
+  `backend-run`/`backend-build`/`backend-test` call into `backend/Makefile`
+  via `$(MAKE)`; `frontend-run`/`frontend-build` call the existing `npm`
+  scripts; `build`/`test` compose the backend and frontend targets;
+  `docker-up`/`docker-down`/`docker-build` wrap the Card 18 Compose setup.
+  No lint targets exist — no linter is configured for either stack. No
+  frontend test target — no test runner is configured. No `dev` target
+  that runs both apps at once — that would need a process supervisor the
+  project doesn't have; `backend-run` + `frontend-run` in two terminals
+  stays the workflow. `make help` is the default target.
 
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for

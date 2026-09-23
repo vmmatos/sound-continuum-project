@@ -176,3 +176,24 @@ Frontend is unchanged — its existing `views/`, `services/`, `router/`,
 (`internal/` subpackages, frontend `components/`/`types/`/`assets/`) are
 introduced only when actual code requires that responsibility, not ahead of
 need.
+
+---
+
+**Decision:** Add a root `Makefile` as a thin delegating task runner over
+existing backend/frontend tooling, not a new layer of logic.
+
+**Context:** Card 22 needs a common developer entry point covering both
+`backend/` (Go, its own `Makefile`) and `frontend/` (npm scripts), without
+replacing either.
+
+**Reason:** The root `Makefile` only wraps commands that already exist and
+work (`backend/Makefile`'s targets via `$(MAKE)`, `npm run dev`/`build`) —
+it never duplicates build/test logic or invents tooling (no linter, no
+frontend test runner, no process supervisor for a combined `dev` target)
+that the project hasn't actually adopted yet.
+
+**Consequences:** Future project-level developer tasks should follow the
+same pattern: add a root Makefile target that delegates to the real
+command, don't grow the Makefile into an orchestration framework. When a
+linter or frontend test runner is actually adopted, add the corresponding
+`backend-lint`/`frontend-lint`/`frontend-test` targets then, not before.

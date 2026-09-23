@@ -74,6 +74,20 @@ docs/memory/           persistent project memory for future sessions
 
 Two supported workflows — pick either, neither replaces the other.
 
+A root [`Makefile`](Makefile) wraps the commands below as a convenience
+layer — `make help` lists what's available:
+
+```
+make backend-run       # cd backend && go run ./cmd/server
+make frontend-run      # cd frontend && npm run dev
+make build             # backend-build + frontend-build
+make test              # backend-test (no frontend test runner configured yet)
+make docker-up         # docker compose up --build
+```
+
+It's optional — the direct commands below still work exactly the same and
+remain the reference for what's actually being executed.
+
 ### Local development
 
 The simplest way to iterate on code, no Docker required.
