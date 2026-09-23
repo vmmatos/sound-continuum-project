@@ -23,7 +23,7 @@
   at repo root; the frontend talks to the backend only over HTTP, via
   `VITE_API_BASE_URL`.
 - Docker Compose dev environment exists (Card 18): root `docker-compose.yml`
-  defines `backend` (root `Dockerfile`, port 8080) and `frontend`
+  defines `backend` (`backend/Dockerfile`, port 8080) and `frontend`
   (`frontend/Dockerfile`, Vite dev server, port 5173), started together via
   `docker compose up --build`. SQLite persistence is provided through a
   named volume (`sqlite_data`) mounted at `/data` in the backend
@@ -31,7 +31,7 @@
   since it's an embedded database. No SQLite application code exists yet.
 - Direct host development is supported and documented (Card 19), fully
   equivalent to and independent of Docker Compose: `make run` for the
-  backend, `npm run dev` for the frontend. `.env.example` (root, `PORT`)
+  backend, `npm run dev` for the frontend. `backend/.env.example` (`PORT`)
   and `frontend/.env.example` (`VITE_API_BASE_URL`) document the
   environment; Go reads `PORT` from the OS environment directly (no
   `.env` autoloading), Vite autoloads `frontend/.env`. The backend now
