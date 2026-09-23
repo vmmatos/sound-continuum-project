@@ -32,9 +32,9 @@ frontend/              Vue 3 + Vite + TypeScript + Pinia application
   src/services/         HTTP calls to the backend
   src/router/           Vue Router configuration
   src/stores/            Pinia shared application state
-  src/components/       reusable UI components (created when first needed)
-  src/types/             shared TypeScript types (created when first needed)
-  src/assets/            static assets imported by the app (created when first needed)
+  src/components/       reusable UI components
+  src/types/             shared TypeScript types
+  src/assets/            static assets imported by the app (these three: created when first needed)
   public/                static files served as-is by Vite
   Dockerfile             frontend container image
 
