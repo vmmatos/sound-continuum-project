@@ -60,7 +60,8 @@ npm run build   # type-check and build for production
 
 Requires Docker and Docker Compose.
 
-Start both frontend and backend:
+Start both frontend and backend (also use this to rebuild after dependency
+or Dockerfile changes):
 
 ```
 docker compose up --build
@@ -68,12 +69,6 @@ docker compose up --build
 
 Frontend: http://localhost:5173
 Backend: http://localhost:8080
-
-Rebuild after dependency or Dockerfile changes:
-
-```
-docker compose up --build
-```
 
 Stop the environment (keeps persisted data):
 
