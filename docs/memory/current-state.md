@@ -28,6 +28,18 @@
   named volume (`sqlite_data`) mounted at `/data` in the backend
   container — SQLite is intentionally not a separate service/container,
   since it's an embedded database. No SQLite application code exists yet.
+- Direct host development is supported and documented (Card 19), fully
+  equivalent to and independent of Docker Compose: `make run` for the
+  backend, `npm run dev` for the frontend. `.env.example` (root, `PORT`)
+  and `frontend/.env.example` (`VITE_API_BASE_URL`) document the
+  environment; Go reads `PORT` from the OS environment directly (no
+  `.env` autoloading), Vite autoloads `frontend/.env`. The backend now
+  sends `Access-Control-Allow-Origin: http://localhost:5173` on every
+  response (`cmd/server/main.go`), a minimal stdlib fix needed because
+  the frontend dev server and backend are different origins — without it
+  the browser silently blocks the frontend's health check. README's
+  `## Development` section documents local dev and Docker Compose as two
+  independent, parallel workflows.
 
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
