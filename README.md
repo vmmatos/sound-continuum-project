@@ -12,14 +12,8 @@ up what comes next, sequenced by mood, tension, and release rather than a
 fixed formula. Discovery is welcome, but a track earns its place because it
 belongs in the story — not because it's obscure.
 
-This is the short version. The full editorial philosophy is canonical and
-lives in the manifesto.
-
-## Manifesto
-
-Sound Continuum's editorial principles are documented in the manifesto.
-
-[Read the Sound Continuum Manifesto](docs/manifesto.md)
+This is the short version — the full editorial philosophy is canonical:
+[Read the Sound Continuum Manifesto](docs/manifesto.md).
 
 ## Scope
 
