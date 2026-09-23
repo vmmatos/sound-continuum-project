@@ -18,11 +18,12 @@ and [`docs/memory/roadmap.md`](docs/memory/roadmap.md) for direction.
 ```
 cmd/server/       HTTP server entrypoint
 internal/health/  health-check handler
+frontend/         Vue 3 + Vite + TypeScript application
 docs/manifesto.md  editorial philosophy (canonical)
 docs/memory/       persistent project memory for future sessions
 ```
 
-## Local development
+## Backend
 
 Requires Go 1.24+.
 
@@ -40,3 +41,16 @@ curl localhost:8080/health
 ```
 
 Environment variables: see [`.env.example`](.env.example).
+
+## Frontend
+
+Requires Node 20+. Lives in [`frontend/`](frontend/) — Vue 3, Vite,
+TypeScript, Pinia. Talks to the backend over HTTP only, via
+`VITE_API_BASE_URL` (see [`frontend/.env.example`](frontend/.env.example)).
+
+```
+cd frontend
+npm install
+npm run dev     # start the dev server (independent of the backend)
+npm run build   # type-check and build for production
+```

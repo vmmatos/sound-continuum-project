@@ -93,3 +93,23 @@ additional complexity necessary.
 
 **Reason:** Guiding principle for all future architectural choices in this
 project.
+
+---
+
+**Decision:** Frontend lives at `frontend/` at repo root; the Go backend is
+not moved into a `backend/` directory.
+
+**Context:** Card 16 introduced the Vue 3 + Vite frontend. The Go backend
+(`cmd/`, `internal/`, `go.mod`) already lived at repo root from Card 15,
+un-namespaced.
+
+**Reason:** Wrapping the existing backend in a `backend/` directory purely
+for symmetry with `frontend/` would be an unrelated restructuring of
+working code, with no functional benefit, done as a side effect of an
+unrelated card. `frontend/` alone is enough to make the physical
+frontend/backend separation explicit.
+
+**Consequences:** Repo root mixes backend files (`cmd/`, `internal/`,
+`go.mod`, `Makefile`) with `frontend/` and `docs/`. If this becomes
+confusing later, moving the backend into `backend/` is a small, reversible
+follow-up — not a blocker now.
