@@ -24,9 +24,24 @@ docs/manifesto.md  editorial philosophy (canonical)
 docs/memory/       persistent project memory for future sessions
 ```
 
-## Backend
+## Development
 
-Requires Go 1.24+.
+Two supported workflows — pick either, neither replaces the other.
+
+### Local development
+
+The simplest way to iterate on code, no Docker required.
+
+Prerequisites: Go 1.24+, Node 20+, npm.
+
+Environment:
+- Backend reads `PORT` directly from the OS environment (Go doesn't
+  autoload `.env` files) — [`.env.example`](.env.example) documents the
+  default; only export `PORT` if you need to override it.
+- Frontend: copy [`frontend/.env.example`](frontend/.env.example) to
+  `frontend/.env` — Vite loads it automatically.
+
+Backend (terminal 1):
 
 ```
 make run    # start the server on :8080 (or $PORT)
@@ -34,31 +49,30 @@ make test   # run tests
 make build  # build a binary to bin/server
 ```
 
-Health check:
+http://localhost:8080 — health check:
 
 ```
 curl localhost:8080/health
 # {"status":"ok"}
 ```
 
-Environment variables: see [`.env.example`](.env.example).
-
-## Frontend
-
-Requires Node 20+. Lives in [`frontend/`](frontend/) — Vue 3, Vite,
-TypeScript, Pinia. Talks to the backend over HTTP only, via
-`VITE_API_BASE_URL` (see [`frontend/.env.example`](frontend/.env.example)).
+Frontend (terminal 2), lives in [`frontend/`](frontend/) — Vue 3, Vite,
+TypeScript, Pinia:
 
 ```
 cd frontend
 npm install
-npm run dev     # start the dev server (independent of the backend)
+npm run dev     # start the dev server
 npm run build   # type-check and build for production
 ```
 
-## Docker Compose (development)
+http://localhost:5173 — talks to the backend over HTTP only, via
+`VITE_API_BASE_URL`.
 
-Requires Docker and Docker Compose.
+### Docker Compose
+
+Requires Docker and Docker Compose. Useful when you want the complete
+containerized environment instead of running backend/frontend directly.
 
 Start both frontend and backend (also use this to rebuild after dependency
 or Dockerfile changes):

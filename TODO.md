@@ -39,6 +39,23 @@
 - [x] Docker Compose section in root `README.md`
 - [x] Project memory updated (`current-state.md`, `decisions.md`)
 
+## Done (Card 19 — Create Local Development Environment)
+
+- [x] Direct host dev documented and validated: `make run` (backend),
+      `npm run dev` (frontend), no Docker required
+- [x] `.env.example` (root) and `frontend/.env.example` confirmed as the
+      required env vars — no new vars invented
+- [x] `.gitignore` confirmed already correct (`.env`, `*.db` ignored,
+      `.env.example` tracked) — no changes needed
+- [x] Minimal dev-only CORS added to the backend (stdlib
+      `net/http` only) — frontend/backend are different origins, so the
+      browser was silently blocking the documented health check
+- [x] `README.md` restructured into `## Development` with
+      `### Local development` / `### Docker Compose` as explicit,
+      parallel options
+- [x] Project memory updated (`current-state.md`)
+- [x] Docker Compose from Card 18 confirmed still working
+
 ## In progress
 
 - Nothing currently in progress.
