@@ -21,6 +21,13 @@
 - [x] `VITE_API_BASE_URL` env-based backend URL configuration
 - [x] Frontend section in root `README.md`
 
+## Done (Card 17 — Configure Pinia)
+
+- [x] Pinia bootstrap verified (`app.use(createPinia())` in `main.ts`,
+      installed via `frontend/package.json`)
+- [x] `frontend/src/stores/` established as the store location convention
+- [x] No stores created — no real shared application state exists yet
+
 ## In progress
 
 - Nothing currently in progress.
