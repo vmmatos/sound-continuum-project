@@ -119,6 +119,10 @@ frontend/backend separation explicit.
 confusing later, moving the backend into `backend/` is a small, reversible
 follow-up — not a blocker now.
 
+**Superseded (Card 20):** The backend was moved into `backend/` — see the
+Card 20 decision below. This was the anticipated follow-up named in this
+entry's own Consequences, not an unrelated refactor.
+
 ---
 
 **Decision:** Add a Docker Compose development environment; persist SQLite
@@ -144,3 +148,31 @@ down -v` removes it. No SQLite application/repository code was added — the
 volume only reserves `/data` as the future database location. No reverse
 proxy, healthcheck orchestration, or production deployment concerns were
 introduced.
+
+---
+
+**Decision:** Keep frontend and backend physically separated and use a
+minimal, responsibility-based directory structure; move the Go backend
+into `backend/`.
+
+**Context:** Card 20 defines the top-level project structure. Card 19 left
+the backend at repo root (`cmd/`, `internal/`, `go.mod`, `Makefile`,
+`Dockerfile`) while the frontend already lived under `frontend/`, an
+asymmetry the Card 15/18 decision explicitly flagged as a legitimate future
+follow-up.
+
+**Reason:** Sound Continuum is an experimental MVP and should avoid
+speculative architecture. Clear physical separation (`backend/` vs
+`frontend/`, no shared/common/packages directory between them) makes
+responsibilities understandable without introducing premature abstractions
+like a shared API-contract package or code generation.
+
+**Consequences:** Backend tooling (`cmd/`, `internal/`, `go.mod`,
+`Makefile`, `Dockerfile`, `.dockerignore`, `.env.example`) now lives under
+`backend/`; `docker-compose.yml`'s backend build context is `./backend`;
+local backend dev commands run from `backend/` instead of repo root.
+Frontend is unchanged — its existing `views/`, `services/`, `router/`,
+`stores/` structure already matched this convention. New directories
+(`internal/` subpackages, frontend `components/`/`types/`/`assets/`) are
+introduced only when actual code requires that responsibility, not ahead of
+need.
