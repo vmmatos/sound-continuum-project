@@ -9,8 +9,9 @@
 - Spotify integration will be introduced later (M3).
 - Editorial workflow is still being developed.
 - Go backend exists: `cmd/server` (HTTP server), `internal/health`
-  (`GET /health`). No database, no auth, no framework. Lives at repo root
-  (`cmd/`, `internal/`, `go.mod`), not under a `backend/` directory.
+  (`GET /health`). No database, no auth, no framework. Lives at `backend/`
+  (`cmd/`, `internal/`, `go.mod`, `Makefile`, `Dockerfile`), physically
+  separated from `frontend/` (Card 20).
 - Vue 3 + Vite + TypeScript frontend exists at `frontend/`: a minimal
   application shell (`views/HomeView.vue`) proving the build/dev pipeline
   works, a `services/` boundary (`services/health.ts`) calling the
@@ -40,6 +41,14 @@
   the browser silently blocks the frontend's health check. README's
   `## Development` section documents local dev and Docker Compose as two
   independent, parallel workflows.
+- Top-level project structure is defined and documented (Card 20):
+  `backend/` and `frontend/` are physically separate applications with no
+  shared/common code directory between them, each internally organized by
+  responsibility (backend: `cmd/`, `internal/`; frontend: `views/`,
+  `services/`, `router/`, `stores/`, plus `components/`, `types/`,
+  `assets/` reserved by convention). The structure is intentionally
+  minimal — new directories are introduced only when actual code requires
+  that responsibility, not speculatively.
 
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for

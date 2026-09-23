@@ -1,6 +1,6 @@
 # Backend (Go) — development image.
-# Build context is the repo root: the Go module lives at repo root
-# (cmd/, internal/, go.mod), not under a backend/ directory.
+# Build context is backend/ — the Go module lives here (cmd/, internal/,
+# go.mod), separate from frontend/.
 
 FROM golang:1.24-alpine AS build
 WORKDIR /src

@@ -56,6 +56,20 @@
 - [x] Project memory updated (`current-state.md`)
 - [x] Docker Compose from Card 18 confirmed still working
 
+## Done (Card 20 — Define Backend/Frontend Project Structure)
+
+- [x] Go backend moved from repo root into `backend/` (`cmd/`,
+      `internal/`, `go.mod`, `Makefile`, `Dockerfile`, `.dockerignore`,
+      `.env.example`) — supersedes the Card 15/18 decision to keep it at
+      repo root
+- [x] `docker-compose.yml` backend build context updated to `./backend`
+- [x] `README.md` project structure section rewritten to document
+      `backend/`/`frontend/` responsibilities and subdirectory conventions
+- [x] Project memory updated (`current-state.md`, `decisions.md`)
+- [x] No frontend changes — existing structure already matched the target
+- [x] No speculative folders created (`components/`, `types/`, `assets/`
+      remain absent until actually needed)
+
 ## In progress
 
 - Nothing currently in progress.

@@ -15,13 +15,32 @@ and [`docs/memory/roadmap.md`](docs/memory/roadmap.md) for direction.
 
 ## Project structure
 
+`backend/` and `frontend/` are physically separate applications — neither
+imports the other's code. New subdirectories are added only when the code
+actually needs them, not speculatively.
+
 ```
-cmd/server/       HTTP server entrypoint
-internal/health/  health-check handler
-frontend/         Vue 3 + Vite + TypeScript application
-docker-compose.yml Docker Compose dev environment (frontend + backend)
-docs/manifesto.md  editorial philosophy (canonical)
-docs/memory/       persistent project memory for future sessions
+backend/              Go application (net/http, no framework)
+  cmd/server/          HTTP server entrypoint
+  internal/            backend implementation, not imported externally
+    health/             health-check handler
+  Dockerfile            backend container image
+  Makefile              run/test/build commands
+
+frontend/              Vue 3 + Vite + TypeScript + Pinia application
+  src/views/            page-level views
+  src/services/         HTTP calls to the backend
+  src/router/           Vue Router configuration
+  src/stores/            Pinia shared application state
+  src/components/       reusable UI components (created when first needed)
+  src/types/             shared TypeScript types (created when first needed)
+  src/assets/            static assets imported by the app (created when first needed)
+  public/                static files served as-is by Vite
+  Dockerfile             frontend container image
+
+docker-compose.yml     Docker Compose dev environment (frontend + backend)
+docs/manifesto.md      editorial philosophy (canonical)
+docs/memory/           persistent project memory for future sessions
 ```
 
 ## Development
@@ -36,14 +55,15 @@ Prerequisites: Go 1.24+, Node 20+, npm.
 
 Environment:
 - Backend reads `PORT` directly from the OS environment (Go doesn't
-  autoload `.env` files) — [`.env.example`](.env.example) documents the
-  default; only export `PORT` if you need to override it.
+  autoload `.env` files) — [`backend/.env.example`](backend/.env.example)
+  documents the default; only export `PORT` if you need to override it.
 - Frontend: copy [`frontend/.env.example`](frontend/.env.example) to
   `frontend/.env` — Vite loads it automatically.
 
 Backend (terminal 1):
 
 ```
+cd backend
 make run    # start the server on :8080 (or $PORT)
 make test   # run tests
 make build  # build a binary to bin/server
