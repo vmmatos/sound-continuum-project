@@ -99,8 +99,10 @@ isn't designed further in this document.
 
 `SPOTIFY_REDIRECT_URI` (`dev/.env`), pointing at the backend callback
 route ([§11](#11-oauth-redirect-boundary)):
-`http://localhost:8080/api/spotify/callback` in local development. Must
-match the URI registered in the Spotify app dashboard exactly.
+`http://127.0.0.1:8080/api/spotify/callback` in local development. An
+explicit loopback IP, not `localhost` — Spotify's dashboard rejects bare
+`localhost` for a non-HTTPS redirect URI. Must match the URI registered in
+the Spotify app dashboard exactly.
 
 ## 8. Token ownership
 
@@ -293,3 +295,95 @@ card decided:
   memory.
 - Last.fm remains outside M3.
 - The MVP assumes a single Spotify curator connection.
+
+## 21. Implementation (Card #25)
+
+OAuth Authorization Code flow and token lifecycle are implemented in
+`backend/internal/spotify/`. No provider abstraction — a concrete package,
+as designed in [§11](#11-backend-structure).
+
+### Endpoints
+
+```
+GET /api/spotify/auth      starts the flow, redirects to Spotify
+GET /api/spotify/callback  Spotify's redirect target; exchanges the code,
+                            stores the connection, redirects back to the
+                            frontend with ?spotify=connected|denied|error
+GET /api/spotify/status    {"status": "connected"|"disconnected"|
+                            "authorization_required", "display_name"?: string}
+```
+
+### Environment variables
+
+`SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SPOTIFY_REDIRECT_URI` (see
+`dev/.secrets.env` / `dev/.env`). `SQLITE_PATH` (not Spotify-specific):
+defaults to `sound-continuum.db` relative to the backend's working
+directory for host dev; `dev/docker-compose.yml` overrides it to
+`/data/sound-continuum.db` for the backend container only, since the
+correct value differs between host and container and `dev/.env` is shared
+by both.
+
+### Scope
+
+No OAuth scope is requested. `GET /v1/me` returns `id`/`display_name`
+without any scope, which is enough to establish the curator's identity —
+this card's only requirement. `email`/`country` were removed from `/me`
+entirely in Spotify's February 2026 migration regardless of scope, so
+`user-read-email` would add nothing. Playlist scopes belong to later cards.
+
+### Token storage
+
+Single-row `spotify_connection` table (SQLite, `modernc.org/sqlite` — pure
+Go, no CGO; the project's first backend dependency, chosen over
+`mattn/go-sqlite3` to avoid needing a C toolchain in the Alpine Docker
+image):
+
+```sql
+CREATE TABLE IF NOT EXISTS spotify_connection (
+    id              INTEGER PRIMARY KEY CHECK (id = 1),
+    access_token    TEXT NOT NULL,
+    refresh_token   TEXT NOT NULL,
+    token_type      TEXT NOT NULL,
+    expires_at      INTEGER NOT NULL,
+    spotify_user_id TEXT NOT NULL,   -- /v1/me's account_id, falling back to id
+    display_name    TEXT NOT NULL DEFAULT '',
+    needs_reauth    INTEGER NOT NULL DEFAULT 0,
+    updated_at      INTEGER NOT NULL
+);
+```
+
+`needs_reauth` is a flag, not a row deletion, on `invalid_grant` — deleting
+the row would collapse "never connected" and "connection needs
+reauthorization" into the same state, but §5 commits the frontend to three
+distinct states. `Upsert` (fresh connect or successful refresh) clears the
+flag; only `invalid_grant` sets it.
+
+### Token lifecycle
+
+Refresh is lazy/on-demand, not a background worker: `GET /api/spotify/status`
+(and any future Spotify API call) calls `Service.EnsureValidToken`, which
+refreshes the access token if it's expired (30s leeway) before reporting
+status. This matches the "no queue, no background workers" rate-limit
+strategy already recorded in [§14](#14-rate-limit-strategy) — a low-frequency,
+human-driven weekly workflow doesn't need proactive refresh scheduling.
+
+On `invalid_grant` during refresh: the stored connection is flagged
+`needs_reauth` (not deleted or retried), `/api/spotify/status` reports
+`authorization_required`, and the curator re-authorizes via
+`GET /api/spotify/auth` — a fresh `Upsert` clears the flag.
+
+### Error handling
+
+Missing/invalid state, missing code, and `error=access_denied` are all
+handled without exchanging a code or leaking detail to the client —
+the callback redirects to `frontendOrigin/?spotify=denied|error` and logs
+the reason server-side only (never the code, secret, or token). Missing
+Spotify configuration returns `503` from `/api/spotify/auth` rather than
+crashing the server at boot (`dev/.secrets.env` ships empty by default).
+
+### Manual integration test
+
+See [README.md § Connect Spotify](../README.md#connect-spotify) for the
+step-by-step test against the real Spotify API (create a dev app, register
+the `127.0.0.1` redirect URI, connect, verify `/api/spotify/status`, confirm
+persistence across a backend restart, confirm denied/invalid-state handling).

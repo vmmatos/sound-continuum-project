@@ -33,12 +33,13 @@ and [`docs/memory/roadmap.md`](docs/memory/roadmap.md) for direction.
 
 ## Tech stack
 
-- **Backend**: Go, standard library `net/http` — no framework, no external
-  dependencies.
+- **Backend**: Go, standard library `net/http` — no framework. One
+  dependency: `modernc.org/sqlite` (pure Go, no CGO) for token persistence.
 - **Frontend**: Vue 3, Vite, TypeScript, Pinia.
 - **Docker / Docker Compose**: local containerized dev environment.
-- **SQLite**: a data volume is reserved for it (see Docker Compose below),
-  but no application code persists to it yet.
+- **SQLite**: embedded database, persisted via the Docker volume described
+  below. Stores the single Spotify connection (OAuth tokens) — see
+  [Spotify integration](docs/spotify-integration.md).
 
 ## Project structure
 
@@ -51,6 +52,7 @@ backend/              Go application (net/http, no framework)
   cmd/server/          HTTP server entrypoint
   internal/            backend implementation, not imported externally
     health/             health-check handler
+    spotify/            Spotify OAuth + token lifecycle (see below)
   Dockerfile            backend container image
   Makefile              run/test/build commands
 
@@ -105,7 +107,7 @@ sensitivity. Neither file is committed — both are gitignored.
 ```
 PORT=8080
 VITE_API_BASE_URL=http://localhost:8080
-SPOTIFY_REDIRECT_URI=http://localhost:8080/api/spotify/callback
+SPOTIFY_REDIRECT_URI=http://127.0.0.1:8080/api/spotify/callback
 ```
 
 `dev/.secrets.env` — local secrets, never committed, never sent to the
@@ -116,16 +118,16 @@ SPOTIFY_CLIENT_ID=
 SPOTIFY_CLIENT_SECRET=
 ```
 
-Create both files locally before running the app (Docker or host). No
-Spotify integration exists yet (see
-[`docs/spotify-integration.md`](docs/spotify-integration.md) for the
-planned architecture) — the Spotify variables can stay empty until then.
+Create both files locally before running the app (Docker or host). The
+Spotify variables can stay empty if you don't need Spotify locally — the
+`/api/spotify/*` endpoints respond `503` until they're filled in. To connect
+Spotify, see [Connect Spotify](#connect-spotify) below.
 
 ### Local development
 
 The simplest way to iterate on code, no Docker required.
 
-Prerequisites: Go 1.24+, Node 20+, npm.
+Prerequisites: Go 1.25+, Node 20+, npm.
 
 Environment:
 - `make backend-run` and `make frontend-run` source `dev/.env` (and
@@ -193,14 +195,39 @@ docker compose -f dev/docker-compose.yml down
 SQLite persistence: the backend runs SQLite as an embedded database (not a
 separate service/container). Its data directory, `/data` in the backend
 container, is backed by the named volume `sqlite_data`, so the database
-file survives `docker compose down`. No SQLite application code exists yet
-— the volume just reserves the persistent location for when it does.
+file — including the Spotify connection — survives `docker compose down`.
 
-Remove the persisted database for a clean slate:
+Remove the persisted database for a clean slate (this also clears the
+Spotify connection, requiring re-authorization):
 
 ```
 docker compose -f dev/docker-compose.yml down -v
 ```
+
+## Connect Spotify
+
+Sound Continuum's backend owns the Spotify OAuth flow end-to-end — the
+frontend only ever sees `connected` / `disconnected` /
+`authorization_required`, never a token or secret. See
+[`docs/spotify-integration.md`](docs/spotify-integration.md) for the full
+architecture and token lifecycle.
+
+1. Create a Spotify Developer App at
+   [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard).
+2. Add exactly `http://127.0.0.1:8080/api/spotify/callback` as a redirect
+   URI (Spotify requires an explicit loopback IP, not `localhost`, for a
+   non-HTTPS redirect URI).
+3. Copy the Client ID and Client Secret into `dev/.secrets.env`
+   (`SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`). Confirm `dev/.env`'s
+   `SPOTIFY_REDIRECT_URI` matches the URI registered in step 2.
+4. Start the app (`make backend-run` + `make frontend-run`, or
+   `make docker-up`).
+5. Open http://localhost:5173 and click **Connect Spotify**. Approve on
+   Spotify's consent screen — you'll land back on Sound Continuum showing
+   your connected Spotify display name.
+6. Verify: `curl localhost:8080/api/spotify/status` → `{"status":"connected",...}`.
+   Restarting the backend should not require reconnecting — the connection
+   persists in SQLite.
 
 ## Documentation
 

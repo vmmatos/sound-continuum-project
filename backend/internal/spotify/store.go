@@ -1,0 +1,108 @@
+package spotify
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"time"
+)
+
+// schema creates the single-row table backing the one Spotify connection
+// this MVP supports. needs_reauth is a flag rather than a row deletion on
+// invalid_grant, because the frontend status contract distinguishes "never
+// connected" from "connection needs reauthorization" — deleting the row
+// would collapse those into the same state.
+const schema = `
+CREATE TABLE IF NOT EXISTS spotify_connection (
+	id              INTEGER PRIMARY KEY CHECK (id = 1),
+	access_token    TEXT NOT NULL,
+	refresh_token   TEXT NOT NULL,
+	token_type      TEXT NOT NULL,
+	expires_at      INTEGER NOT NULL,
+	spotify_user_id TEXT NOT NULL,
+	display_name    TEXT NOT NULL DEFAULT '',
+	needs_reauth    INTEGER NOT NULL DEFAULT 0,
+	updated_at      INTEGER NOT NULL
+);
+`
+
+// Connection is the persisted Spotify token/identity state for the curator.
+type Connection struct {
+	AccessToken   string
+	RefreshToken  string
+	TokenType     string
+	ExpiresAt     time.Time
+	SpotifyUserID string
+	DisplayName   string
+	NeedsReauth   bool
+}
+
+// Store persists the single Spotify connection row in SQLite.
+type Store struct {
+	db *sql.DB
+}
+
+// NewStore creates the spotify_connection table if it doesn't exist yet.
+func NewStore(db *sql.DB) (*Store, error) {
+	if _, err := db.Exec(schema); err != nil {
+		return nil, err
+	}
+	return &Store{db: db}, nil
+}
+
+// Get returns the stored connection, or nil if the curator has never
+// connected.
+func (s *Store) Get(ctx context.Context) (*Connection, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT access_token, refresh_token, token_type, expires_at,
+		       spotify_user_id, display_name, needs_reauth
+		FROM spotify_connection WHERE id = 1
+	`)
+
+	var c Connection
+	var expiresAt int64
+	var needsReauth int
+	err := row.Scan(&c.AccessToken, &c.RefreshToken, &c.TokenType, &expiresAt,
+		&c.SpotifyUserID, &c.DisplayName, &needsReauth)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	c.ExpiresAt = time.Unix(expiresAt, 0)
+	c.NeedsReauth = needsReauth != 0
+	return &c, nil
+}
+
+// Upsert saves a fresh or refreshed connection, clearing any prior
+// needs_reauth flag — a successful token exchange/refresh means the
+// connection is healthy again.
+func (s *Store) Upsert(ctx context.Context, c Connection) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO spotify_connection
+			(id, access_token, refresh_token, token_type, expires_at,
+			 spotify_user_id, display_name, needs_reauth, updated_at)
+		VALUES (1, ?, ?, ?, ?, ?, ?, 0, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			access_token = excluded.access_token,
+			refresh_token = excluded.refresh_token,
+			token_type = excluded.token_type,
+			expires_at = excluded.expires_at,
+			spotify_user_id = excluded.spotify_user_id,
+			display_name = excluded.display_name,
+			needs_reauth = 0,
+			updated_at = excluded.updated_at
+	`, c.AccessToken, c.RefreshToken, c.TokenType, c.ExpiresAt.Unix(),
+		c.SpotifyUserID, c.DisplayName, time.Now().Unix())
+	return err
+}
+
+// MarkNeedsReauth flags the stored connection as requiring the curator to
+// authorize again, without discarding the row (see the schema comment).
+func (s *Store) MarkNeedsReauth(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE spotify_connection SET needs_reauth = 1, updated_at = ? WHERE id = 1
+	`, time.Now().Unix())
+	return err
+}

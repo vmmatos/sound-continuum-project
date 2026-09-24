@@ -112,6 +112,33 @@
 - [x] No Last.fm code added
 - [x] No credentials committed
 
+## Done (Card 25 — Implement Spotify OAuth Authentication & Token Lifecycle)
+
+- [x] `backend/internal/spotify/` — Authorization Code OAuth flow (no
+      PKCE): state generation/validation, token exchange, lazy on-demand
+      refresh, `invalid_grant` → `authorization_required`
+- [x] `GET /api/spotify/auth`, `GET /api/spotify/callback`,
+      `GET /api/spotify/status` wired into `cmd/server/main.go`
+- [x] SQLite `spotify_connection` table (single row, `modernc.org/sqlite` —
+      first backend dependency, pure Go, no CGO)
+- [x] No scopes requested — `GET /v1/me` identity is enough for this card
+- [x] Backend tests: state, client (exchange/refresh/`invalid_grant`/`Me`),
+      store, handlers — all via stdlib `httptest` + in-memory SQLite, no
+      mocking library, no real Spotify calls
+- [x] `frontend/src/services/spotify.ts` + `HomeView.vue` — Connect Spotify
+      button, connection status display, no new Pinia store (page-local
+      state)
+- [x] `dev/.env`'s `SPOTIFY_REDIRECT_URI` corrected to `127.0.0.1` (Spotify
+      rejects bare `localhost` for non-HTTPS redirect URIs)
+- [x] `dev/docker-compose.yml` — `SQLITE_PATH=/data/sound-continuum.db`
+      override for the backend service
+- [x] `backend/Dockerfile` — `COPY go.mod go.sum`, base image bumped to
+      `golang:1.25-alpine` (required by `modernc.org/sqlite`)
+- [x] Project memory updated (`current-state.md`, `decisions.md`)
+- [x] `docs/spotify-integration.md` and `README.md` updated with the
+      implemented endpoints, env vars, and manual OAuth test steps
+- [x] No catalog/search/playlist/Last.fm code added
+
 ## In progress
 
 - Nothing currently in progress.
