@@ -253,3 +253,102 @@ yet — introducing one now would be premature.
 `track.getSimilar`, and `tag.*` methods (all usable with an API key, no
 user auth) as a supporting discovery signal. M3 implementation should not
 add any Last.fm code or dependency.
+
+---
+
+**Decision:** Centralize local development configuration under `dev/`
+(`dev/docker-compose.yml`, `dev/.env`, `dev/.secrets.env`), replacing the
+root `docker-compose.yml` and `backend/.env.example`.
+
+**Context:** Card 24 needed to define local config boundaries before
+Spotify credentials exist, so the restructuring happens while nothing
+secret is at stake.
+
+**Reason:** One canonical location for local dev config makes it obvious
+where new secrets (Spotify, later Last.fm) belong, and avoids repeating
+the root-`docker-compose.yml`-plus-scattered-`.env.example`-files pattern
+as more services and credentials are added.
+
+**Consequences:** `docker-compose.yml` moved to `dev/docker-compose.yml`
+with build contexts updated to `../backend`/`../frontend`;
+`backend/.env.example` removed (superseded — the backend never autoloaded
+it anyway); `frontend/.env.example`/`frontend/.env` unchanged (Vite's own
+convention, orthogonal to this move); root `Makefile`'s docker targets and
+host-dev targets updated to use `dev/`; `.gitignore` covers both env
+files.
+
+---
+
+**Decision:** Split local environment configuration into `dev/.env`
+(non-secret) and `dev/.secrets.env` (secrets), loaded into Docker
+containers via per-service `env_file:` lists rather than the Compose
+`--env-file` CLI flag.
+
+**Reason:** `env_file:` accepts a list per service natively, so the
+backend service can load both files while the frontend service loads
+only `dev/.env` — the frontend container structurally cannot see
+`SPOTIFY_CLIENT_SECRET`. The CLI `--env-file` flag only takes one file
+and is meant for variable substitution inside the Compose YAML, not
+container env injection — the wrong tool here.
+
+**Consequences:** Any future secret follows the same split; any value
+genuinely needed by the frontend container goes in `dev/.env`, never
+`dev/.secrets.env`.
+
+---
+
+**Decision:** Spotify integration (M3) is entirely backend-owned: the Go
+backend holds Spotify OAuth, client credentials, tokens, and all Spotify
+API communication. The frontend only calls Sound Continuum's own
+`/api/spotify/*` endpoints and never receives Spotify tokens, credentials,
+or authorization codes.
+
+**Context:** Card 24 defined the Spotify integration architecture ahead
+of implementation (Cards 25+). See
+[`docs/spotify-integration.md`](../spotify-integration.md).
+
+**Reason:** Keeps the Spotify client secret and tokens off the browser
+entirely — the only place they can leak from is the backend, which is
+also the only place that needs them.
+
+**Consequences:** OAuth terminates at the Go backend
+(`GET /api/spotify/callback`); the frontend's Spotify-related state is
+limited to `connected`/`disconnected`/`authorization_required`.
+
+---
+
+**Decision:** Use the Authorization Code OAuth flow (without PKCE) for
+Spotify curator authentication.
+
+**Context:** Card 24 evaluated Spotify's OAuth flows
+([`docs/spotify-api.md`](../spotify-api.md#21-authentication)) against
+Sound Continuum's architecture: one human curator, a Go backend that can
+hold a secret, a browser frontend that never talks to Spotify directly.
+
+**Reason:** PKCE exists to protect public clients that can't hold a
+client secret. The Go backend is a confidential client — it holds the
+secret and terminates the entire OAuth flow, including the token exchange
+— so PKCE would add complexity with no corresponding security benefit
+here.
+
+**Consequences:** The backend implements Authorization Code exchange
+directly; no PKCE code verifier/challenge handling is needed.
+
+---
+
+**Decision:** Store the Spotify refresh token in SQLite, not
+`dev/.secrets.env` and not process memory.
+
+**Context:** Card 24 evaluated where to persist runtime Spotify token
+state, given SQLite infrastructure is already provisioned (a named
+volume reserved since Card 18) but no application code uses it yet.
+
+**Reason:** A refresh token is runtime application state that changes
+over time, not static local configuration — env files are the wrong tool
+for it. Process memory would force re-authorization on every backend
+restart, which is a poor fit for a low-frequency, human-driven weekly
+curation workflow. SQLite requires no new infrastructure and persists
+across restarts, fitting the single-curator, single-connection MVP scope.
+
+**Consequences:** No token persistence code is added by Card 24 — this
+decision is what a later implementation card builds against.

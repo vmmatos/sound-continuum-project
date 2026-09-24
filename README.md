@@ -65,8 +65,15 @@ frontend/              Vue 3 + Vite + TypeScript + Pinia application
   public/                static files served as-is by Vite
   Dockerfile             frontend container image
 
-docker-compose.yml     Docker Compose dev environment (frontend + backend)
+dev/                    local development configuration (see Environment
+                        configuration below)
+  docker-compose.yml     Docker Compose dev environment (frontend + backend)
+  .env                    non-secret local config (gitignored, not committed)
+  .secrets.env            local secrets, e.g. Spotify credentials (gitignored,
+                          not committed)
+
 docs/manifesto.md      editorial philosophy (canonical)
+docs/spotify-integration.md  Spotify integration architecture (M3)
 docs/memory/           persistent project memory for future sessions
 ```
 
@@ -82,11 +89,37 @@ make backend-run       # cd backend && go run ./cmd/server
 make frontend-run      # cd frontend && npm run dev
 make build             # backend-build + frontend-build
 make test              # backend-test (no frontend test runner configured yet)
-make docker-up         # docker compose up --build
+make docker-up         # docker compose -f dev/docker-compose.yml up --build
 ```
 
 It's optional — the direct commands below still work exactly the same and
 remain the reference for what's actually being executed.
+
+### Environment configuration
+
+All local development configuration is centralized under `dev/`, split by
+sensitivity. Neither file is committed — both are gitignored.
+
+`dev/.env` — non-secret local config (ports, URLs, redirect URI):
+
+```
+PORT=8080
+VITE_API_BASE_URL=http://localhost:8080
+SPOTIFY_REDIRECT_URI=http://localhost:8080/api/spotify/callback
+```
+
+`dev/.secrets.env` — local secrets, never committed, never sent to the
+frontend container:
+
+```
+SPOTIFY_CLIENT_ID=
+SPOTIFY_CLIENT_SECRET=
+```
+
+Create both files locally before running the app (Docker or host). No
+Spotify integration exists yet (see
+[`docs/spotify-integration.md`](docs/spotify-integration.md) for the
+planned architecture) — the Spotify variables can stay empty until then.
 
 ### Local development
 
@@ -95,11 +128,13 @@ The simplest way to iterate on code, no Docker required.
 Prerequisites: Go 1.24+, Node 20+, npm.
 
 Environment:
-- Backend reads `PORT` directly from the OS environment (Go doesn't
-  autoload `.env` files) — [`backend/.env.example`](backend/.env.example)
-  documents the default; only export `PORT` if you need to override it.
+- `make backend-run` and `make frontend-run` source `dev/.env` (and
+  `dev/.secrets.env` for the backend) automatically if present.
 - Frontend: copy [`frontend/.env.example`](frontend/.env.example) to
-  `frontend/.env` — Vite loads it automatically.
+  `frontend/.env` — Vite loads it automatically. (`VITE_API_BASE_URL` is
+  configured in both `frontend/.env`, for host dev, and `dev/.env`, for
+  the Docker frontend container — a small known duplication, not solved
+  by this restructuring.)
 
 Backend (terminal 1):
 
@@ -139,16 +174,20 @@ Start both frontend and backend (also use this to rebuild after dependency
 or Dockerfile changes):
 
 ```
-docker compose up --build
+docker compose -f dev/docker-compose.yml up --build
 ```
 
 Frontend: http://localhost:5173
 Backend: http://localhost:8080
 
+`dev/docker-compose.yml` loads `dev/.env` into both services and
+`dev/.secrets.env` into the backend service only — the frontend container
+never receives Spotify secrets.
+
 Stop the environment (keeps persisted data):
 
 ```
-docker compose down
+docker compose -f dev/docker-compose.yml down
 ```
 
 SQLite persistence: the backend runs SQLite as an embedded database (not a
@@ -160,12 +199,15 @@ file survives `docker compose down`. No SQLite application code exists yet
 Remove the persisted database for a clean slate:
 
 ```
-docker compose down -v
+docker compose -f dev/docker-compose.yml down -v
 ```
 
 ## Documentation
 
 - [Manifesto](docs/manifesto.md) — canonical editorial principles
+- [Spotify integration architecture](docs/spotify-integration.md) — M3
+  design (backend-owned OAuth, token storage, API boundary)
+- [Spotify/Last.fm API research](docs/spotify-api.md)
 - [Project memory overview](docs/memory/README.md)
 - [Current state](docs/memory/current-state.md)
 - [Decisions](docs/memory/decisions.md)

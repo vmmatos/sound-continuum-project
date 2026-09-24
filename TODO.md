@@ -93,6 +93,25 @@
 - [x] No API integration, clients, SDKs, or dependencies added
 - [x] No credentials committed
 
+## Done (Card 24 — Define Spotify Integration Architecture & Local Dev Config)
+
+- [x] `docs/spotify-integration.md` — architecture doc (OAuth flow, token
+      ownership/storage, backend/frontend boundary, API boundary, error
+      handling, rate-limit strategy, security boundaries, single-user MVP
+      assumptions, Last.fm boundary, Mermaid diagram)
+- [x] Local dev config centralized under `dev/` (`dev/docker-compose.yml`,
+      `dev/.env`, `dev/.secrets.env`); root `docker-compose.yml` moved,
+      build contexts updated to `../backend`/`../frontend`
+- [x] `backend/.env.example` removed (superseded by `dev/`)
+- [x] `.gitignore` covers `dev/.secrets.env`
+- [x] Root `Makefile` docker targets point at `dev/docker-compose.yml`;
+      `backend-run`/`frontend-run` source `dev/.env`(+`.secrets.env`)
+- [x] `README.md` documents the new `dev/` layout and env file split
+- [x] Project memory updated (`current-state.md`, `decisions.md`)
+- [x] No Spotify OAuth, client, SDK, or dependency code added
+- [x] No Last.fm code added
+- [x] No credentials committed
+
 ## In progress
 
 - Nothing currently in progress.

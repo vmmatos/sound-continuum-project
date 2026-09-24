@@ -83,6 +83,21 @@
   in M3; it's relevant to M4's discovery engine instead. No integration
   code, API clients, or credentials were added — research only.
 
+- Spotify integration architecture is defined (Card 24, see
+  [`docs/spotify-integration.md`](../spotify-integration.md)) — no Spotify
+  code exists yet. Local development configuration is now centralized
+  under `dev/` (`dev/docker-compose.yml`, `dev/.env` for non-secret
+  config, `dev/.secrets.env` for secrets; both gitignored), replacing the
+  root `docker-compose.yml` and `backend/.env.example` (removed —
+  superseded). The architecture: Go backend owns Spotify OAuth
+  (Authorization Code, not PKCE — the backend is a confidential client),
+  tokens, and all Spotify API communication; the frontend only calls
+  Sound Continuum's own `/api/spotify/*` endpoints and never sees Spotify
+  credentials or tokens. Refresh tokens will be stored in SQLite (already
+  provisioned), not env files or process memory. Last.fm remains outside
+  M3. Backend structure planned as `backend/internal/spotify/`, no
+  provider abstraction. `frontend/.env.example` is unchanged.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.
