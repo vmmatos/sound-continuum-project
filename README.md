@@ -228,6 +228,9 @@ architecture and token lifecycle.
 6. Verify: `curl localhost:8080/api/spotify/status` → `{"status":"connected",...}`.
    Restarting the backend should not require reconnecting — the connection
    persists in SQLite.
+7. If you connected before Card 26, reconnect once (repeat step 5) — the
+   OAuth scope changed (`user-read-private playlist-read-private` added)
+   so `/me/playlists` and `/playlists/{id}/items` work.
 
 ## Documentation
 

@@ -116,6 +116,30 @@
   button and connection status display — no new Pinia store, the state is
   page-local. No catalog, search, playlist, or Last.fm code exists yet.
 
+- A Spotify Web API client is implemented (Card 26, see
+  [`docs/spotify-integration.md`](../spotify-integration.md) §22), still in
+  `backend/internal/spotify/` — no new package. `GET /api/spotify/me`,
+  `GET /api/spotify/playlists`, `GET /api/spotify/playlists/{id}/items`,
+  and `GET /api/spotify/search` are implemented, read-only. `AuthURL` now
+  requests `user-read-private playlist-read-private` (added this card —
+  Card 25 requested none), so the curator had to reconnect once. Token
+  access reuses Card 25's lazy on-read refresh (`Service.connection`,
+  extracted from the old `EnsureValidToken`) and adds reactive
+  401-refresh-retry-once (`Service.withToken`) — one shared path, no
+  duplicated refresh logic, no new invalidation mechanism beyond the
+  existing `needs_reauth` flag. Errors map to a small typed taxonomy
+  (`errors.go`: `ErrUnauthorized`/`ErrForbidden`/`ErrNotFound`/
+  `ErrRateLimited`/`ErrAPIFailure`/`ErrTransport`/`ErrDecode`, carried on
+  `*APIError` with status code + `Retry-After`). Response types
+  (`types.go`: `Paging[T]`, `Playlist`, `PlaylistItem`, `Track`, `Artist`,
+  `SearchResult`) are integration-layer only — no Sound Continuum domain
+  model yet. Verified live against the real API: a playlist's item-count
+  summary and each item's track payload are nested under JSON keys
+  `"items"`/`"item"`, not the `docs/spotify-api.md` research's assumed
+  `"tracks"`/`"track"` — corrected in `types.go`. Search's response shape
+  was not exercised live. No playlist write, no Last.fm, no discovery/
+  ranking/curation logic.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

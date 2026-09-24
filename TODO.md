@@ -139,6 +139,36 @@
       implemented endpoints, env vars, and manual OAuth test steps
 - [x] No catalog/search/playlist/Last.fm code added
 
+## Done (Card 26 — Implement Spotify API Client)
+
+- [x] `backend/internal/spotify/` extended (no new package): `errors.go`
+      (Spotify Web API error taxonomy — `APIError` + status-code
+      sentinels, `Retry-After` on 429), `types.go` (`Paging[T]`,
+      `Playlist`, `PlaylistItem`, `Track`, `Artist`, `SearchResult`)
+- [x] `GET /api/spotify/me`, `GET /api/spotify/playlists`,
+      `GET /api/spotify/playlists/{id}/items`, `GET /api/spotify/search`
+      wired into `cmd/server/main.go`
+- [x] `Service.connection`/`refresh`/`withToken` — proactive (30s leeway)
+      + reactive (401-retry-once) token refresh, shared by all new
+      operations; `EnsureValidToken` now a thin wrapper, same contract
+- [x] OAuth scope added: `user-read-private playlist-read-private`
+      (Card 25 requested none) — curator reconnects once
+- [x] Backend tests: new `client_test.go`/`handlers_test.go` cases for
+      each operation, query encoding, 401-refresh-retry, failed-refresh
+      invalidation, 403/404/429/500 typed errors, malformed JSON, search
+      limit rejection — same conventions as Card 25, no real Spotify calls
+- [x] Real Spotify integration test: `/me`, `/playlists`,
+      `/playlists/{id}/items` verified against the real API with the
+      existing dev app; found and fixed two field-name mismatches
+      (`items`/`item` vs. assumed `tracks`/`track`) not caught by
+      research or unit tests; no tokens/secrets in logs
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+- [x] `docs/spotify-integration.md` updated (§22 + amendments to
+      §6/§12/§13/§19/§21)
+- [x] No playlist creation/management, no Last.fm, no discovery/ranking/
+      curation logic added
+
 ## In progress
 
 - Nothing currently in progress.

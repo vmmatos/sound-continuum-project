@@ -372,3 +372,71 @@ low-throughput MVP store.
 (`modernc.org/sqlite` and its transitive pure-Go deps); `backend/go.sum` is
 committed for the first time. `backend/Dockerfile` copies `go.sum` and was
 bumped to `golang:1.25-alpine` (the driver requires Go 1.25+).
+
+---
+
+**Decision:** Add `user-read-private playlist-read-private` to the OAuth
+scope Card 25's `AuthURL` requests, rather than introducing a separate
+Client Credentials flow for playlist reads.
+
+**Context:** Card 26 needs `GET /me/playlists` and
+`GET /playlists/{id}/items`, both of which require
+`playlist-read-private` on the curator's own token
+([`docs/spotify-api.md`](../spotify-api.md#27-playlists)). Card 25
+requested no scope at all, since `GET /v1/me` needs none.
+
+**Reason:** Client Credentials (app-only, no user context) can't read a
+specific user's private playlists at all — it was never a candidate for
+this data. The only real choice was adding scope to the existing
+Authorization Code token vs. some other mechanism, and there is no other
+mechanism: one curator, one connection, one token. Adding scope is the
+smallest change that unblocks the actual requirement.
+
+**Consequences:** The curator has to reconnect once (existing reconnect
+flow via `GET /api/spotify/auth`, no new mechanism) before playlist reads
+work under the new scope. `Client.AuthURL` gained a third `scope`
+parameter.
+
+---
+
+**Decision:** Represent Spotify Web API failures as a small typed error
+taxonomy (`APIError` + sentinels), not a generic wrapped-string error.
+
+**Context:** Card 26 needs to distinguish auth failure, forbidden,
+not-found, rate-limited (with `Retry-After`), and generic failure/
+transport/decode errors, and needs HTTP handlers to map each to a
+sensible status code without leaking Spotify's raw response.
+
+**Reason:** A plain `fmt.Errorf` (Card 25's existing pattern for one
+endpoint) can't carry a status code or `Retry-After` duration for callers
+to inspect programmatically. A full custom error-code enum or a
+per-endpoint error type would be more machinery than seven fixed failure
+categories need. One struct (`APIError`) wrapping one sentinel per
+category, checked via `errors.Is`/`errors.As`, is the minimum that
+satisfies both "distinguish failure kinds" and "carry status code +
+Retry-After."
+
+**Consequences:** `Client.Me` was refactored onto a shared `Client.request`
+helper so this error handling isn't duplicated per endpoint; its exported
+signature is unchanged. `ErrInvalidGrant` (Card 25, token-endpoint
+specific) is left as-is, not folded into `APIError` — it's a different
+concern (refresh-token validity, not a Web API response).
+
+---
+
+**Decision:** Use one generic `Paging[T]` type for Spotify's pagination
+envelope, instead of a `PlaylistsPage`/`PlaylistItemsPage` pair.
+
+**Context:** `GET /me/playlists` and `GET /playlists/{id}/items` (and, if
+used, each object type inside `GET /search`) all return the same
+`items`/`total`/`limit`/`offset`/`next`/`previous` envelope shape around a
+different item type.
+
+**Reason:** Go's generics (available since the project's Go 1.25 baseline)
+make one parameterized type strictly simpler than hand-writing a
+near-identical struct per endpoint — same fields, same JSON tags, zero
+behavioral difference, only the item type varies.
+
+**Consequences:** `Client.Playlists` returns `Paging[Playlist]`,
+`Client.PlaylistItems` returns `Paging[PlaylistItem]`, `SearchResult`'s
+fields are `*Paging[Track]`/`*Paging[Artist]`/`*Paging[Playlist]`.

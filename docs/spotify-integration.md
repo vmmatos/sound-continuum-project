@@ -193,8 +193,10 @@ Browser
 ```
 
 The frontend consumes only these Sound Continuum endpoints — never raw
-Spotify endpoint shapes. Data endpoints (search, playlist management) are
-scoped to later cards, not defined here.
+Spotify endpoint shapes. Data endpoints (`/me`, `/playlists`,
+`/playlists/{id}/items`, `/search`) were added in Card #26 — see
+[§22](#22-implementation-card-26). Playlist *write* endpoints (create,
+add/remove items) remain scoped to a later card.
 
 ## 13. Error handling boundary
 
@@ -202,8 +204,8 @@ The backend translates Spotify-side failures — `401` (invalid/expired
 access token), `403`, `404`, `429`, refresh failure/`invalid_grant`, and
 malformed responses — into meaningful application-level errors before
 they reach the frontend, rather than passing through raw Spotify error
-shapes. Implementation is deferred to the card that builds the Spotify
-client.
+shapes. Implemented in Card #26 — see
+[§22](#22-implementation-card-26).
 
 ## 14. Rate-limit strategy
 
@@ -275,8 +277,11 @@ configures the environment, not the runtime architecture itself.
   playlist creation is implemented, not to this architecture.
 - Whether Client Credentials (anonymous catalog lookups) and Authorization
   Code (curator auth) should share `internal/spotify/` or be split
-  further — deferred to the implementation card, since no code exists yet
-  to make that call concrete.
+  further — still deferred. Card #26 only extended the existing
+  Authorization Code flow (added scope, added API operations); no Client
+  Credentials code was introduced, since every operation implemented so
+  far needs the curator's own identity/playlists, not anonymous catalog
+  access.
 
 ## 20. Decisions
 
@@ -325,11 +330,18 @@ by both.
 
 ### Scope
 
-No OAuth scope is requested. `GET /v1/me` returns `id`/`display_name`
-without any scope, which is enough to establish the curator's identity —
-this card's only requirement. `email`/`country` were removed from `/me`
-entirely in Spotify's February 2026 migration regardless of scope, so
-`user-read-email` would add nothing. Playlist scopes belong to later cards.
+Originally no OAuth scope was requested — `GET /v1/me` returns
+`id`/`display_name` without one, which was enough to establish the
+curator's identity. **Amended in Card #26**: `AuthURL` now requests
+`user-read-private playlist-read-private`, the minimum needed for
+`GET /me/playlists` and `GET /playlists/{id}/items` to return the
+curator's own playlists. `email`/`country` remain removed from `/me`
+regardless of scope (Spotify's February 2026 migration), so
+`user-read-email` still adds nothing. Playlist *write* scopes
+(`playlist-modify-public`/`-private`) remain out of scope, deferred to
+whichever later card adds playlist creation/management. The scope change
+required the curator to reconnect once via `GET /api/spotify/auth` — the
+existing reconnect flow, no new mechanism.
 
 ### Token storage
 
@@ -387,3 +399,109 @@ See [README.md § Connect Spotify](../README.md#connect-spotify) for the
 step-by-step test against the real Spotify API (create a dev app, register
 the `127.0.0.1` redirect URI, connect, verify `/api/spotify/status`, confirm
 persistence across a backend restart, confirm denied/invalid-state handling).
+
+## 22. Implementation (Card #26)
+
+A Spotify Web API client is added on top of Card #25's OAuth/token
+lifecycle, in the same `backend/internal/spotify/` package — no new
+package, no provider abstraction, as designed in
+[§11](#11-backend-structure).
+
+### Endpoints
+
+```
+GET /api/spotify/me                        curator's Spotify profile
+GET /api/spotify/playlists?limit=&offset=  curator's own playlists
+GET /api/spotify/playlists/{id}/items?limit=&offset=
+                                            items in one of the curator's playlists
+GET /api/spotify/search?q=&type=&limit=&offset=
+                                            catalog search
+```
+
+All read-only. Playlist creation/management is not implemented.
+
+### Token access and refresh
+
+`Service.connection(ctx)` (renamed/extracted from the old
+`EnsureValidToken` body) returns a live `Connection`, proactively
+refreshing the access token if it's within 30s of expiry — the same lazy,
+on-read refresh `EnsureValidToken` always did; `EnsureValidToken` is now a
+thin wrapper over it, so `/api/spotify/status`'s contract is unchanged.
+
+New for Card #26: `Service.withToken(ctx, fn)` additionally handles a
+*reactive* `401` — Spotify rejecting a token that looked unexpired (clock
+skew, revocation). It calls `fn` once with the current token; if `fn`
+fails with `ErrUnauthorized`, it forces exactly one refresh via
+`Service.refresh` and retries `fn` exactly once. No further retry. A
+refresh failure (`ErrInvalidGrant`) flags the connection `needs_reauth`
+(via the existing `Store.MarkNeedsReauth`) and is returned as-is — no new
+invalidation mechanism was introduced.
+
+Every new operation (`Service.Me`, `Playlists`, `PlaylistItems`, `Search`)
+is a thin wrapper around `withToken`.
+
+### Error handling
+
+`errors.go` adds a Spotify Web API error taxonomy (distinct from
+`ErrInvalidGrant`, which is specific to the token endpoint):
+`ErrUnauthorized` (401), `ErrForbidden` (403), `ErrNotFound` (404),
+`ErrRateLimited` (429, with `Retry-After` parsed into `APIError.RetryAfter`),
+`ErrAPIFailure` (other 4xx/5xx), `ErrTransport` (network failure),
+`ErrDecode` (malformed JSON). All are carried on `*APIError`
+(`StatusCode`, `RetryAfter`, `Message` — Spotify's own message, never a
+token) and checked via `errors.Is`/`errors.As`. HTTP handlers map these to
+status codes (`writeSpotifyError`) without echoing internal detail;
+`429` responses copy `Retry-After` onto the outgoing response header. No
+retry loop, no queue, no background rate-limit handling — matches
+[§14](#14-rate-limit-strategy).
+
+`Client.Me` was refactored onto a new shared `Client.request` helper
+(method/path/query/body/decode) to remove the ad-hoc per-endpoint HTTP
+boilerplate Card #25 left in place for a single endpoint; its exported
+signature is unchanged.
+
+### Response types
+
+`types.go` adds `Paging[T]` (Spotify's pagination envelope, generic over
+`Playlist`/`PlaylistItem`/`Track`/`Artist`), plus those four types. These
+are integration-layer representations only — no Sound Continuum domain
+model (e.g. `CandidateTrack`, `ContinuumTrack`) exists yet.
+
+**Confirmed live against the real API, correcting two assumptions from
+[`docs/spotify-api.md`](spotify-api.md):**
+
+- A playlist's item-count summary is returned under the JSON key
+  `"items"`, not `"tracks"` — the `/tracks`→`/items` rename applies to
+  this field too, not only the endpoint path.
+- Each playlist item's track payload is nested under the JSON key
+  `"item"`, not `"track"`.
+
+Search's response shape (`SearchResult`) was **not** verified live (no
+playlist/track search was exercised in the manual test) — treat its field
+names as best-effort until a future card actually depends on them.
+
+### Search limit
+
+Spotify's Development Mode caps search `limit` at 10. `Client.Search`
+rejects (`ErrSearchLimitTooHigh`) rather than silently clamps a higher
+value; `SearchHandler` maps that to `400`.
+
+### Testing
+
+`client_test.go` and `handlers_test.go` extended, same conventions as
+Card #25 (one `TestXxx` per scenario, no table tests, `httptest.Server`).
+Covers: successful authenticated requests for each new operation; query
+parameter encoding; 401→refresh→retry-once→success; failed refresh
+(`invalid_grant`) → `needs_reauth` set, no retry; 403/404/429/500 mapped
+to typed errors; malformed JSON → decode error; search limit rejection.
+
+### Real Spotify integration test
+
+Performed against the real Spotify API using the existing dev app
+(`dev/.secrets.env`), after the curator reconnected once for the new
+scope. Result: `GET /api/spotify/me` returned the real profile;
+`GET /api/spotify/playlists` returned the curator's real playlists
+(paginated, 86 total); `GET /api/spotify/playlists/{id}/items` returned
+real track data for an owned playlist (correct after the `items`/`item`
+field-name fix above). Server logs contained no tokens, secrets, or
+Authorization headers at any point.
