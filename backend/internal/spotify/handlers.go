@@ -7,12 +7,20 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 )
 
 // expiryLeeway treats a token as due for refresh slightly before it
 // actually expires, so a request doesn't race Spotify's clock.
 const expiryLeeway = 30 * time.Second
+
+// oauthScope is requested so the Spotify API client (Card #26) can read
+// the curator's own playlists. GET /v1/me itself needs no scope.
+const oauthScope = "user-read-private playlist-read-private"
+
+// ErrNotConnected indicates the curator has never connected Spotify.
+var ErrNotConnected = errors.New("spotify: not connected")
 
 // Service wires together Spotify OAuth configuration, the Spotify HTTP
 // client, token storage, and OAuth state — and exposes the three
@@ -59,7 +67,7 @@ func (s *Service) AuthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Print("Spotify authorization started")
-	http.Redirect(w, r, s.client.AuthURL(s.cfg.RedirectURI, state), http.StatusFound)
+	http.Redirect(w, r, s.client.AuthURL(s.cfg.RedirectURI, state, oauthScope), http.StatusFound)
 }
 
 // CallbackHandler handles Spotify's redirect back after the curator
@@ -149,32 +157,62 @@ func (s *Service) StatusHandler(w http.ResponseWriter, r *http.Request) {
 // Refresh happens lazily, on read — there is no background worker, matching
 // this project's "no queue, no background workers" rate-limit strategy.
 func (s *Service) EnsureValidToken(ctx context.Context) (status string, displayName string, err error) {
-	conn, err := s.store.Get(ctx)
-	if err != nil {
+	conn, err := s.connection(ctx)
+	switch {
+	case errors.Is(err, ErrNotConnected):
+		return "disconnected", "", nil
+	case errors.Is(err, ErrInvalidGrant):
+		return "authorization_required", "", nil
+	case err != nil:
 		return "disconnected", "", err
 	}
+	return "connected", conn.DisplayName, nil
+}
+
+// connection returns a valid, live Connection, proactively refreshing the
+// access token if it's within expiryLeeway of expiry. Returns
+// ErrNotConnected if the curator never connected, or ErrInvalidGrant if
+// the connection needs reauthorization (already flagged, or just flagged
+// by a failed refresh here).
+func (s *Service) connection(ctx context.Context) (Connection, error) {
+	conn, err := s.store.Get(ctx)
+	if err != nil {
+		return Connection{}, err
+	}
 	if conn == nil {
-		return "disconnected", "", nil
+		return Connection{}, ErrNotConnected
 	}
 	if conn.NeedsReauth {
-		return "authorization_required", "", nil
+		return Connection{}, ErrInvalidGrant
 	}
-
 	if time.Now().Add(expiryLeeway).Before(conn.ExpiresAt) {
-		return "connected", conn.DisplayName, nil
+		return *conn, nil
 	}
 
 	log.Print("Spotify token refresh required")
+	updated, err := s.refresh(ctx, *conn)
+	if err != nil {
+		return Connection{}, err
+	}
+	log.Print("Spotify token refresh successful")
+	return updated, nil
+}
+
+// refresh unconditionally calls Spotify's token endpoint with conn's
+// refresh token and persists the result. On ErrInvalidGrant it marks the
+// connection as needing reauthorization and returns ErrInvalidGrant —
+// callers must not retry.
+func (s *Service) refresh(ctx context.Context, conn Connection) (Connection, error) {
 	token, err := s.client.Refresh(ctx, conn.RefreshToken)
 	if errors.Is(err, ErrInvalidGrant) {
 		log.Print("Spotify reauthorization required")
 		if markErr := s.store.MarkNeedsReauth(ctx); markErr != nil {
-			return "disconnected", "", markErr
+			return Connection{}, markErr
 		}
-		return "authorization_required", "", nil
+		return Connection{}, ErrInvalidGrant
 	}
 	if err != nil {
-		return "disconnected", "", err
+		return Connection{}, err
 	}
 
 	// Spotify may omit refresh_token on refresh, meaning the original one
@@ -193,9 +231,155 @@ func (s *Service) EnsureValidToken(ctx context.Context) (status string, displayN
 		DisplayName:   conn.DisplayName,
 	}
 	if err := s.store.Upsert(ctx, updated); err != nil {
-		return "disconnected", "", err
+		return Connection{}, err
+	}
+	return updated, nil
+}
+
+// withToken calls fn with a live access token, obtained via connection()
+// (which proactively refreshes near-expiry tokens). If fn fails with
+// ErrUnauthorized — Spotify rejected a token that looked unexpired, e.g.
+// clock skew or revocation — withToken forces exactly one refresh and
+// retries fn exactly once. It never retries a second time.
+func (s *Service) withToken(ctx context.Context, fn func(accessToken string) error) error {
+	conn, err := s.connection(ctx)
+	if err != nil {
+		return err
 	}
 
-	log.Print("Spotify token refresh successful")
-	return "connected", updated.DisplayName, nil
+	err = fn(conn.AccessToken)
+	if !errors.Is(err, ErrUnauthorized) {
+		return err
+	}
+
+	log.Print("Spotify request unauthorized, forcing token refresh")
+	conn, err = s.refresh(ctx, conn)
+	if err != nil {
+		return err
+	}
+	return fn(conn.AccessToken)
+}
+
+// Me returns the curator's Spotify profile.
+func (s *Service) Me(ctx context.Context) (Profile, error) {
+	var profile Profile
+	err := s.withToken(ctx, func(accessToken string) error {
+		var err error
+		profile, err = s.client.Me(ctx, accessToken)
+		return err
+	})
+	return profile, err
+}
+
+// Playlists returns a page of the curator's own Spotify playlists.
+func (s *Service) Playlists(ctx context.Context, limit, offset int) (Paging[Playlist], error) {
+	var page Paging[Playlist]
+	err := s.withToken(ctx, func(accessToken string) error {
+		var err error
+		page, err = s.client.Playlists(ctx, accessToken, limit, offset)
+		return err
+	})
+	return page, err
+}
+
+// PlaylistItems returns a page of items from one of the curator's playlists.
+func (s *Service) PlaylistItems(ctx context.Context, playlistID string, limit, offset int) (Paging[PlaylistItem], error) {
+	var page Paging[PlaylistItem]
+	err := s.withToken(ctx, func(accessToken string) error {
+		var err error
+		page, err = s.client.PlaylistItems(ctx, accessToken, playlistID, limit, offset)
+		return err
+	})
+	return page, err
+}
+
+// Search queries the Spotify catalog on the curator's behalf.
+func (s *Service) Search(ctx context.Context, query, types string, limit, offset int) (SearchResult, error) {
+	var result SearchResult
+	err := s.withToken(ctx, func(accessToken string) error {
+		var err error
+		result, err = s.client.Search(ctx, accessToken, query, types, limit, offset)
+		return err
+	})
+	return result, err
+}
+
+// MeHandler exposes GET /api/spotify/me.
+func (s *Service) MeHandler(w http.ResponseWriter, r *http.Request) {
+	profile, err := s.Me(r.Context())
+	if err != nil {
+		log.Printf("Spotify /me request failed: %v", err)
+		writeSpotifyError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(profile)
+}
+
+// PlaylistsHandler exposes GET /api/spotify/playlists?limit=&offset=.
+func (s *Service) PlaylistsHandler(w http.ResponseWriter, r *http.Request) {
+	page, err := s.Playlists(r.Context(), queryInt(r, "limit"), queryInt(r, "offset"))
+	if err != nil {
+		log.Printf("Spotify /playlists request failed: %v", err)
+		writeSpotifyError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(page)
+}
+
+// PlaylistItemsHandler exposes
+// GET /api/spotify/playlists/{id}/items?limit=&offset=.
+func (s *Service) PlaylistItemsHandler(w http.ResponseWriter, r *http.Request) {
+	page, err := s.PlaylistItems(r.Context(), r.PathValue("id"), queryInt(r, "limit"), queryInt(r, "offset"))
+	if err != nil {
+		log.Printf("Spotify /playlists/{id}/items request failed: %v", err)
+		writeSpotifyError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(page)
+}
+
+// SearchHandler exposes GET /api/spotify/search?q=&type=&limit=&offset=.
+func (s *Service) SearchHandler(w http.ResponseWriter, r *http.Request) {
+	result, err := s.Search(r.Context(), r.URL.Query().Get("q"), r.URL.Query().Get("type"),
+		queryInt(r, "limit"), queryInt(r, "offset"))
+	if errors.Is(err, ErrSearchLimitTooHigh) {
+		http.Error(w, "limit must not exceed 10", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		log.Printf("Spotify /search request failed: %v", err)
+		writeSpotifyError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// queryInt parses a query parameter as an int, returning 0 if it's absent
+// or invalid — the Client then applies its own default.
+func queryInt(r *http.Request, name string) int {
+	n, _ := strconv.Atoi(r.URL.Query().Get(name))
+	return n
+}
+
+// writeSpotifyError maps a Service/Client error to an HTTP status. It never
+// echoes tokens, secrets, or Authorization headers to the caller.
+func writeSpotifyError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrNotConnected):
+		http.Error(w, "Spotify is not connected", http.StatusServiceUnavailable)
+	case errors.Is(err, ErrInvalidGrant):
+		http.Error(w, "Spotify authorization required", http.StatusUnauthorized)
+	case errors.Is(err, ErrRateLimited):
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.RetryAfter > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(int(apiErr.RetryAfter.Seconds())))
+		}
+		http.Error(w, "Spotify rate limit exceeded", http.StatusTooManyRequests)
+	default:
+		http.Error(w, "Spotify request failed", http.StatusBadGateway)
+	}
 }

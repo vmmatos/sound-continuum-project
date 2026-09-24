@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -64,15 +66,17 @@ func NewClient(clientID, clientSecret string) *Client {
 	}
 }
 
-// AuthURL builds the Spotify authorization redirect URL. No scope is
-// requested: GET /v1/me returns id/display_name without one, and this card
-// only needs to establish the curator's identity, not act on their behalf.
-func (c *Client) AuthURL(redirectURI, state string) string {
+// AuthURL builds the Spotify authorization redirect URL. scope is a
+// space-separated list of Spotify OAuth scopes (empty for none).
+func (c *Client) AuthURL(redirectURI, state, scope string) string {
 	q := url.Values{
 		"client_id":     {c.ClientID},
 		"response_type": {"code"},
 		"redirect_uri":  {redirectURI},
 		"state":         {state},
+	}
+	if scope != "" {
+		q.Set("scope", scope)
 	}
 	return c.AuthBaseURL + "/authorize?" + q.Encode()
 }
@@ -141,25 +145,110 @@ func (c *Client) tokenRequest(ctx context.Context, form url.Values) (Token, erro
 
 // Me fetches the curator's Spotify profile using a valid access token.
 func (c *Client) Me(ctx context.Context, accessToken string) (Profile, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.APIBaseURL+"/v1/me", nil)
+	var p Profile
+	err := c.request(ctx, http.MethodGet, "/v1/me", nil, nil, accessToken, &p)
+	return p, err
+}
+
+// Playlists fetches a page of the curator's own Spotify playlists.
+// limit <= 0 and offset < 0 fall back to Spotify's own defaults (20, 0).
+func (c *Client) Playlists(ctx context.Context, accessToken string, limit, offset int) (Paging[Playlist], error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	query := url.Values{
+		"limit":  {strconv.Itoa(limit)},
+		"offset": {strconv.Itoa(offset)},
+	}
+
+	var page Paging[Playlist]
+	err := c.request(ctx, http.MethodGet, "/v1/me/playlists", query, nil, accessToken, &page)
+	return page, err
+}
+
+// PlaylistItems fetches a page of items from a playlist via the current
+// /items endpoint (the historical /tracks endpoint was removed).
+// limit <= 0 and offset < 0 fall back to Spotify's own defaults (20, 0).
+func (c *Client) PlaylistItems(ctx context.Context, accessToken, playlistID string, limit, offset int) (Paging[PlaylistItem], error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	query := url.Values{
+		"limit":  {strconv.Itoa(limit)},
+		"offset": {strconv.Itoa(offset)},
+	}
+
+	var page Paging[PlaylistItem]
+	path := "/v1/playlists/" + url.PathEscape(playlistID) + "/items"
+	err := c.request(ctx, http.MethodGet, path, query, nil, accessToken, &page)
+	return page, err
+}
+
+// Search queries the Spotify catalog. limit must not exceed 10 — Spotify's
+// Development Mode maximum — and is rejected rather than silently clamped.
+// limit <= 0 falls back to Spotify's own default (5); offset < 0 falls
+// back to 0.
+func (c *Client) Search(ctx context.Context, accessToken, query, types string, limit, offset int) (SearchResult, error) {
+	if limit > 10 {
+		return SearchResult{}, ErrSearchLimitTooHigh
+	}
+	if limit <= 0 {
+		limit = 5
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	q := url.Values{
+		"q":      {query},
+		"type":   {types},
+		"limit":  {strconv.Itoa(limit)},
+		"offset": {strconv.Itoa(offset)},
+	}
+
+	var result SearchResult
+	err := c.request(ctx, http.MethodGet, "/v1/search", q, nil, accessToken, &result)
+	return result, err
+}
+
+// request performs an authenticated Spotify Web API call and decodes a
+// JSON response into out (nil to discard the body). method/body support
+// POST/PUT/DELETE for a future write operation — every Card #26 operation
+// is GET.
+func (c *Client) request(ctx context.Context, method, path string, query url.Values, body io.Reader, accessToken string, out any) error {
+	u := c.APIBaseURL + path
+	if len(query) > 0 {
+		u += "?" + query.Encode()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, u, body)
 	if err != nil {
-		return Profile{}, err
+		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return Profile{}, fmt.Errorf("spotify: /v1/me request failed: %w", err)
+		return &APIError{err: ErrTransport, Message: err.Error()}
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return Profile{}, fmt.Errorf("spotify: /v1/me returned %d", resp.StatusCode)
+	if resp.StatusCode >= 300 {
+		return newAPIError(resp)
 	}
-
-	var p Profile
-	if err := json.NewDecoder(resp.Body).Decode(&p); err != nil {
-		return Profile{}, fmt.Errorf("spotify: malformed profile response: %w", err)
+	if out == nil {
+		return nil
 	}
-	return p, nil
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return &APIError{StatusCode: resp.StatusCode, err: ErrDecode, Message: err.Error()}
+	}
+	return nil
 }
