@@ -352,3 +352,23 @@ across restarts, fitting the single-curator, single-connection MVP scope.
 
 **Consequences:** No token persistence code is added by Card 24 — this
 decision is what a later implementation card builds against.
+
+---
+
+**Decision:** Use `modernc.org/sqlite` (pure Go, no CGO) as the backend's
+SQLite driver.
+
+**Context:** Card 25 implements the SQLite-backed token storage Card 24
+decided on. The Go standard library has no SQLite driver, so this is the
+project's first backend dependency.
+
+**Reason:** `mattn/go-sqlite3` is the more established alternative but
+requires CGO and a C toolchain; the backend's Alpine Docker image
+(`golang:1.25-alpine`) has no gcc, and adding one would be new build
+infrastructure with no benefit over a pure-Go driver for a single-table,
+low-throughput MVP store.
+
+**Consequences:** `backend/go.mod` now has real dependencies
+(`modernc.org/sqlite` and its transitive pure-Go deps); `backend/go.sum` is
+committed for the first time. `backend/Dockerfile` copies `go.sum` and was
+bumped to `golang:1.25-alpine` (the driver requires Go 1.25+).

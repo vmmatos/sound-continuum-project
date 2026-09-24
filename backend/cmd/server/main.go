@@ -2,11 +2,15 @@
 package main
 
 import (
+	"database/sql"
 	"log"
 	"net/http"
 	"os"
 
+	_ "modernc.org/sqlite"
+
 	"github.com/vmmatos/sound-continuum-project/internal/health"
+	"github.com/vmmatos/sound-continuum-project/internal/spotify"
 )
 
 func main() {
@@ -15,8 +19,30 @@ func main() {
 		port = "8080"
 	}
 
+	sqlitePath := os.Getenv("SQLITE_PATH")
+	if sqlitePath == "" {
+		sqlitePath = "sound-continuum.db"
+	}
+	db, err := sql.Open("sqlite", sqlitePath)
+	if err != nil {
+		log.Fatalf("failed to open SQLite database at %s: %v", sqlitePath, err)
+	}
+	defer db.Close()
+
+	spotifyService, err := spotify.NewService(db, spotify.Config{
+		ClientID:     os.Getenv("SPOTIFY_CLIENT_ID"),
+		ClientSecret: os.Getenv("SPOTIFY_CLIENT_SECRET"),
+		RedirectURI:  os.Getenv("SPOTIFY_REDIRECT_URI"),
+	}, devFrontendOrigin)
+	if err != nil {
+		log.Fatalf("failed to initialize Spotify service: %v", err)
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.Handler)
+	mux.HandleFunc("GET /api/spotify/auth", spotifyService.AuthHandler)
+	mux.HandleFunc("GET /api/spotify/callback", spotifyService.CallbackHandler)
+	mux.HandleFunc("GET /api/spotify/status", spotifyService.StatusHandler)
 
 	addr := ":" + port
 	log.Printf("sound-continuum server listening on %s", addr)
