@@ -199,6 +199,32 @@
   uri, external URL, three images); `genres` was `null` for that artist,
   decoding cleanly; a nonexistent artist ID returned `502`.
 
+- The official Sound Continuum Spotify playlist can be created and
+  persisted (Card 30, see
+  [`docs/spotify-integration.md`](../spotify-integration.md) §26), still
+  in `backend/internal/spotify/` — no new package. `POST
+  /api/spotify/playlist` is new (`Client.CreatePlaylist`,
+  `Service.InitializeOfficialPlaylist`, `InitializePlaylistHandler`),
+  the project's first write endpoint and first non-GET route. A new
+  singleton `official_playlist` SQLite table (`CHECK (id = 1)`, same
+  pattern as `spotify_connection`) persists the Spotify playlist ID,
+  name, URL, and creation time. Idempotency is guaranteed by construction:
+  if a local row already exists, it's returned with no Spotify call at
+  all — Spotify is only ever called to create the playlist once, on the
+  very first successful initialization. OAuth scope gained
+  `playlist-modify-public` (`user-read-private playlist-read-private
+  playlist-modify-public`) — the curator must reconnect once. The
+  backend's dev CORS middleware (`backend/cmd/server/main.go`) now
+  answers `OPTIONS` preflight requests, needed because this is the first
+  JSON `POST` endpoint (every prior route was a CORS-simple `GET`).
+  `frontend/src/services/spotify.ts` + `HomeView.vue` add an "Initialize
+  official playlist" button and a link once created — still no Pinia
+  store, page-local state as established by Card 25. The playlist is
+  created empty (public, non-collaborative, fixed description) — no
+  track-adding, no editorial workflow, no Sound Continuum playlist
+  discovery-by-name. Real Spotify verification against the live account
+  is pending (requires the curator to reconnect with the new scope).
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

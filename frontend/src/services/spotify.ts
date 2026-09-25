@@ -20,3 +20,19 @@ export async function getSpotifyStatus(): Promise<SpotifyStatus | null> {
 export function startSpotifyAuth(): void {
   window.location.href = `${API_BASE_URL}/api/spotify/auth`
 }
+
+export interface OfficialPlaylist {
+  spotify_playlist_id: string
+  name: string
+  url: string
+}
+
+export async function initializeOfficialPlaylist(): Promise<OfficialPlaylist | null> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/spotify/playlist`, { method: 'POST' })
+    if (!response.ok) return null
+    return (await response.json()) as OfficialPlaylist
+  } catch {
+    return null
+  }
+}

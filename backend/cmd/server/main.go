@@ -44,6 +44,7 @@ func main() {
 	mux.HandleFunc("GET /api/spotify/callback", spotifyService.CallbackHandler)
 	mux.HandleFunc("GET /api/spotify/status", spotifyService.StatusHandler)
 	mux.HandleFunc("GET /api/spotify/me", spotifyService.MeHandler)
+	mux.HandleFunc("POST /api/spotify/playlist", spotifyService.InitializePlaylistHandler)
 	mux.HandleFunc("GET /api/spotify/playlists", spotifyService.PlaylistsHandler)
 	mux.HandleFunc("GET /api/spotify/playlists/{id}", spotifyService.PlaylistHandler)
 	mux.HandleFunc("GET /api/spotify/playlists/{id}/items", spotifyService.PlaylistItemsHandler)
@@ -65,9 +66,18 @@ const devFrontendOrigin = "http://localhost:5173"
 
 // withDevCORS allows the local frontend dev server to call this API across
 // origins. There is exactly one frontend origin in dev, so it's static.
+// Every route was GET until Card #30 added a JSON POST — browsers preflight
+// a non-simple request with OPTIONS, so that method is now answered here
+// directly rather than reaching mux (which has no OPTIONS route).
 func withDevCORS(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", devFrontendOrigin)
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		h.ServeHTTP(w, r)
 	})
 }

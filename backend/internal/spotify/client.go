@@ -1,6 +1,7 @@
 package spotify
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -253,10 +254,23 @@ func (c *Client) Artist(ctx context.Context, accessToken, artistID string) (Arti
 	return a, err
 }
 
+// CreatePlaylist creates a new playlist owned by the current user via
+// POST /me/playlists (the current API — never the deprecated
+// /users/{user_id}/playlists).
+func (c *Client) CreatePlaylist(ctx context.Context, accessToken string, req PlaylistCreateRequest) (Playlist, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return Playlist{}, err
+	}
+	var p Playlist
+	err = c.request(ctx, http.MethodPost, "/v1/me/playlists", nil, bytes.NewReader(body), accessToken, &p)
+	return p, err
+}
+
 // request performs an authenticated Spotify Web API call and decodes a
 // JSON response into out (nil to discard the body). method/body support
-// POST/PUT/DELETE for a future write operation — every Card #26 operation
-// is GET.
+// POST/PUT/DELETE — used by CreatePlaylist (Card #30); every other
+// operation is GET.
 func (c *Client) request(ctx context.Context, method, path string, query url.Values, body io.Reader, accessToken string, out any) error {
 	u := c.APIBaseURL + path
 	if len(query) > 0 {

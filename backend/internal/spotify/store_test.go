@@ -157,3 +157,58 @@ func TestStoreUpsertClearsNeedsReauth(t *testing.T) {
 		t.Fatal("a successful Upsert should clear needs_reauth")
 	}
 }
+
+func TestStoreGetOfficialPlaylistWithNone(t *testing.T) {
+	store := newTestStore(t)
+
+	p, err := store.GetOfficialPlaylist(context.Background())
+	if err != nil {
+		t.Fatalf("GetOfficialPlaylist returned error: %v", err)
+	}
+	if p != nil {
+		t.Fatalf("expected no official playlist, got %+v", p)
+	}
+}
+
+func TestStoreSaveAndGetOfficialPlaylist(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	err := store.SaveOfficialPlaylist(ctx, OfficialPlaylist{
+		SpotifyPlaylistID: "pl-official",
+		Name:              "Sound Continuum — Weekly Journey",
+		URL:               "https://open.spotify.com/playlist/pl-official",
+	})
+	if err != nil {
+		t.Fatalf("SaveOfficialPlaylist returned error: %v", err)
+	}
+
+	p, err := store.GetOfficialPlaylist(ctx)
+	if err != nil {
+		t.Fatalf("GetOfficialPlaylist returned error: %v", err)
+	}
+	if p == nil {
+		t.Fatal("expected a stored official playlist")
+	}
+	if p.SpotifyPlaylistID != "pl-official" || p.Name != "Sound Continuum — Weekly Journey" ||
+		p.URL != "https://open.spotify.com/playlist/pl-official" {
+		t.Errorf("unexpected official playlist: %+v", p)
+	}
+	if p.CreatedAt.IsZero() {
+		t.Error("expected CreatedAt to be set")
+	}
+}
+
+func TestStoreSaveOfficialPlaylistTwiceFails(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	p := OfficialPlaylist{SpotifyPlaylistID: "pl-official", Name: "Sound Continuum — Weekly Journey", URL: "https://open.spotify.com/playlist/pl-official"}
+	if err := store.SaveOfficialPlaylist(ctx, p); err != nil {
+		t.Fatalf("first SaveOfficialPlaylist returned error: %v", err)
+	}
+
+	if err := store.SaveOfficialPlaylist(ctx, p); err == nil {
+		t.Fatal("expected a second SaveOfficialPlaylist to fail on the id=1 primary key")
+	}
+}

@@ -49,6 +49,14 @@ type Playlist struct {
 	Images []Image `json:"images"`
 }
 
+// PlaylistCreateRequest is the request body for POST /me/playlists.
+type PlaylistCreateRequest struct {
+	Name          string `json:"name"`
+	Description   string `json:"description,omitempty"`
+	Public        bool   `json:"public"`
+	Collaborative bool   `json:"collaborative,omitempty"`
+}
+
 // Episode is the subset of a Spotify episode object this MVP needs when a
 // playlist item is a podcast episode rather than a track.
 type Episode struct {

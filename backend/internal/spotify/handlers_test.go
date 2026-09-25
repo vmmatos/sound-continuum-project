@@ -777,6 +777,274 @@ func TestArtistHandlerEmptyID(t *testing.T) {
 	}
 }
 
+func TestInitializeOfficialPlaylistCreatesOnFirstCall(t *testing.T) {
+	var createCalls int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/me/playlists", func(w http.ResponseWriter, r *http.Request) {
+		createCalls++
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "pl-official", "name": "Sound Continuum — Weekly Journey",
+			"external_urls": map[string]any{"spotify": "https://open.spotify.com/playlist/pl-official"},
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc := newTestService(t, server.URL)
+	ctx := newTestContext()
+	if err := svc.store.Upsert(ctx, Connection{
+		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
+	}); err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+
+	official, err := svc.InitializeOfficialPlaylist(ctx)
+	if err != nil {
+		t.Fatalf("InitializeOfficialPlaylist returned error: %v", err)
+	}
+	if official.SpotifyPlaylistID != "pl-official" || official.Name != "Sound Continuum — Weekly Journey" ||
+		official.URL != "https://open.spotify.com/playlist/pl-official" {
+		t.Errorf("unexpected official playlist: %+v", official)
+	}
+	if createCalls != 1 {
+		t.Errorf("expected exactly one create call, got %d", createCalls)
+	}
+
+	stored, err := svc.store.GetOfficialPlaylist(ctx)
+	if err != nil {
+		t.Fatalf("GetOfficialPlaylist returned error: %v", err)
+	}
+	if stored == nil || stored.SpotifyPlaylistID != "pl-official" {
+		t.Fatalf("expected the created playlist to be persisted, got %+v", stored)
+	}
+}
+
+func TestInitializeOfficialPlaylistRequestBody(t *testing.T) {
+	var gotBody map[string]any
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/me/playlists", func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&gotBody)
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "pl-official", "name": "Sound Continuum — Weekly Journey",
+			"external_urls": map[string]any{"spotify": "https://open.spotify.com/playlist/pl-official"},
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc := newTestService(t, server.URL)
+	ctx := newTestContext()
+	if err := svc.store.Upsert(ctx, Connection{
+		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
+	}); err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+
+	if _, err := svc.InitializeOfficialPlaylist(ctx); err != nil {
+		t.Fatalf("InitializeOfficialPlaylist returned error: %v", err)
+	}
+
+	if gotBody["name"] != officialPlaylistName {
+		t.Errorf("unexpected name: %v", gotBody["name"])
+	}
+	if gotBody["description"] != officialPlaylistDescription {
+		t.Errorf("unexpected description: %v", gotBody["description"])
+	}
+	if gotBody["public"] != true {
+		t.Errorf("expected public: true, got %v", gotBody["public"])
+	}
+	if v, ok := gotBody["collaborative"]; ok && v != false {
+		t.Errorf("expected collaborative false or absent, got %v", v)
+	}
+}
+
+func TestInitializeOfficialPlaylistIdempotentReturnsCachedWithoutCallingSpotify(t *testing.T) {
+	var createCalls int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/me/playlists", func(w http.ResponseWriter, r *http.Request) {
+		createCalls++
+		json.NewEncoder(w).Encode(map[string]any{"id": "should-not-be-created"})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc := newTestService(t, server.URL)
+	ctx := newTestContext()
+	if err := svc.store.Upsert(ctx, Connection{
+		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
+	}); err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+	if err := svc.store.SaveOfficialPlaylist(ctx, OfficialPlaylist{
+		SpotifyPlaylistID: "pl-existing", Name: "Sound Continuum — Weekly Journey",
+		URL: "https://open.spotify.com/playlist/pl-existing",
+	}); err != nil {
+		t.Fatalf("SaveOfficialPlaylist returned error: %v", err)
+	}
+
+	official, err := svc.InitializeOfficialPlaylist(ctx)
+	if err != nil {
+		t.Fatalf("InitializeOfficialPlaylist returned error: %v", err)
+	}
+	if official.SpotifyPlaylistID != "pl-existing" {
+		t.Errorf("expected the cached playlist to be returned, got %+v", official)
+	}
+	if createCalls != 0 {
+		t.Fatalf("expected no Spotify create call when a local playlist already exists, got %d", createCalls)
+	}
+}
+
+func TestInitializeOfficialPlaylistCalledTwiceCreatesOnlyOnce(t *testing.T) {
+	var createCalls int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/me/playlists", func(w http.ResponseWriter, r *http.Request) {
+		createCalls++
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "pl-official", "name": "Sound Continuum — Weekly Journey",
+			"external_urls": map[string]any{"spotify": "https://open.spotify.com/playlist/pl-official"},
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc := newTestService(t, server.URL)
+	ctx := newTestContext()
+	if err := svc.store.Upsert(ctx, Connection{
+		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
+	}); err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+
+	first, err := svc.InitializeOfficialPlaylist(ctx)
+	if err != nil {
+		t.Fatalf("first InitializeOfficialPlaylist returned error: %v", err)
+	}
+	second, err := svc.InitializeOfficialPlaylist(ctx)
+	if err != nil {
+		t.Fatalf("second InitializeOfficialPlaylist returned error: %v", err)
+	}
+	if first.SpotifyPlaylistID != second.SpotifyPlaylistID {
+		t.Errorf("expected both calls to return the same playlist, got %+v and %+v", first, second)
+	}
+	if createCalls != 1 {
+		t.Fatalf("expected exactly one Spotify create call across two InitializeOfficialPlaylist calls, got %d", createCalls)
+	}
+}
+
+func TestInitializeOfficialPlaylistNotConnected(t *testing.T) {
+	svc := newTestService(t, "")
+
+	_, err := svc.InitializeOfficialPlaylist(newTestContext())
+	if !errors.Is(err, ErrNotConnected) {
+		t.Fatalf("expected ErrNotConnected, got %v", err)
+	}
+}
+
+func TestInitializeOfficialPlaylistAuthorizationRequired(t *testing.T) {
+	svc := newTestService(t, "")
+	ctx := newTestContext()
+	if err := svc.store.Upsert(ctx, Connection{
+		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
+	}); err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+	if err := svc.store.MarkNeedsReauth(ctx); err != nil {
+		t.Fatalf("MarkNeedsReauth returned error: %v", err)
+	}
+
+	_, err := svc.InitializeOfficialPlaylist(ctx)
+	if !errors.Is(err, ErrInvalidGrant) {
+		t.Fatalf("expected ErrInvalidGrant, got %v", err)
+	}
+}
+
+func TestInitializeOfficialPlaylistSpotifyErrorNotPersisted(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/me/playlists", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "not allowed"}})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc := newTestService(t, server.URL)
+	ctx := newTestContext()
+	if err := svc.store.Upsert(ctx, Connection{
+		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
+	}); err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+
+	_, err := svc.InitializeOfficialPlaylist(ctx)
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+
+	stored, err := svc.store.GetOfficialPlaylist(ctx)
+	if err != nil {
+		t.Fatalf("GetOfficialPlaylist returned error: %v", err)
+	}
+	if stored != nil {
+		t.Fatalf("expected nothing persisted after a failed Spotify creation, got %+v", stored)
+	}
+}
+
+func TestInitializePlaylistHandlerHTTP(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/me/playlists", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "pl-official", "name": "Sound Continuum — Weekly Journey",
+			"external_urls": map[string]any{"spotify": "https://open.spotify.com/playlist/pl-official"},
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc := newTestService(t, server.URL)
+	ctx := newTestContext()
+	if err := svc.store.Upsert(ctx, Connection{
+		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
+	}); err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+
+	mux2 := http.NewServeMux()
+	mux2.HandleFunc("POST /api/spotify/playlist", svc.InitializePlaylistHandler)
+
+	rec := httptest.NewRecorder()
+	mux2.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/spotify/playlist", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var first officialPlaylistResponse
+	if err := json.NewDecoder(rec.Body).Decode(&first); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if first.SpotifyPlaylistID != "pl-official" {
+		t.Errorf("unexpected response: %+v", first)
+	}
+
+	rec2 := httptest.NewRecorder()
+	mux2.ServeHTTP(rec2, httptest.NewRequest(http.MethodPost, "/api/spotify/playlist", nil))
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("expected 200 on second call, got %d", rec2.Code)
+	}
+	var second officialPlaylistResponse
+	if err := json.NewDecoder(rec2.Body).Decode(&second); err != nil {
+		t.Fatalf("failed to decode second response: %v", err)
+	}
+	if second.SpotifyPlaylistID != first.SpotifyPlaylistID {
+		t.Errorf("expected the same playlist across calls, got %+v and %+v", first, second)
+	}
+}
+
 func assertRedirectTo(t *testing.T, rec *httptest.ResponseRecorder, want string) {
 	t.Helper()
 	if rec.Code != http.StatusFound {

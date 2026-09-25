@@ -256,9 +256,43 @@
       genre classification, no Last.fm, no editorial scoring, no frontend
       artist UI
 
+## Done (Card 30 — Create and Publish Sound Continuum Playlist)
+
+- [x] `POST /api/spotify/playlist` added (`Client.CreatePlaylist`,
+      `Service.InitializeOfficialPlaylist`, `InitializePlaylistHandler`) —
+      first write endpoint, first non-GET route
+- [x] New `official_playlist` SQLite table (singleton, same `CHECK (id =
+      1)` pattern as `spotify_connection`), persists Spotify playlist ID,
+      name, URL, created_at
+- [x] Idempotent by construction: a local row is returned with no Spotify
+      call at all if one already exists — Spotify is called to create the
+      playlist at most once, ever
+- [x] Playlist created public, non-collaborative, named exactly
+      `Sound Continuum — Weekly Journey`, with the agreed description,
+      empty (no tracks)
+- [x] OAuth scope gained `playlist-modify-public`; curator must reconnect
+      once
+- [x] Dev CORS middleware now answers `OPTIONS` preflight (needed for the
+      first JSON POST endpoint)
+- [x] Backend tests: `CreatePlaylist` success/403 in `client_test.go`;
+      store round-trip + duplicate-save-fails in `store_test.go`; create-
+      once, idempotent-no-Spotify-call, called-twice-creates-once, not-
+      connected, authorization-required, failed-creation-persists-nothing,
+      and full HTTP round trip in `handlers_test.go`
+- [x] `frontend/src/services/spotify.ts` + `HomeView.vue` — "Initialize
+      official playlist" button, link display once created, no new Pinia
+      store
+- [x] Project memory updated (`current-state.md`, `decisions.md`)
+- [x] `docs/spotify-integration.md` updated (§26)
+- [ ] Real Spotify integration test — pending curator reconnect with the
+      new scope
+- [x] No track-adding, no editorial workflow, no playlist discovery by
+      name/search, no distributed transaction for the Spotify-succeeds/
+      local-save-fails case (documented limitation)
+
 ## In progress
 
-- Nothing currently in progress.
+- Card 30's real Spotify verification (pending curator reconnect).
 
 ## Planned
 

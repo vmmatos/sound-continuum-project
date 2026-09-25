@@ -16,8 +16,17 @@ import (
 const expiryLeeway = 30 * time.Second
 
 // oauthScope is requested so the Spotify API client (Card #26) can read
-// the curator's own playlists. GET /v1/me itself needs no scope.
-const oauthScope = "user-read-private playlist-read-private"
+// the curator's own playlists, and (Card #30) create/manage the official
+// Sound Continuum playlist. GET /v1/me itself needs no scope.
+const oauthScope = "user-read-private playlist-read-private playlist-modify-public"
+
+// officialPlaylistName and officialPlaylistDescription are the fixed
+// identity of the one official Sound Continuum Spotify playlist (Card
+// #30) — see docs/manifesto.md and decisions.md.
+const (
+	officialPlaylistName        = "Sound Continuum — Weekly Journey"
+	officialPlaylistDescription = "A weekly musical journey connecting timeless classics, current sounds and emerging artists through intentional musical bridges."
+)
 
 // ErrNotConnected indicates the curator has never connected Spotify.
 var ErrNotConnected = errors.New("spotify: not connected")
@@ -335,6 +344,81 @@ func (s *Service) Artist(ctx context.Context, artistID string) (Artist, error) {
 		return err
 	})
 	return artist, err
+}
+
+// InitializeOfficialPlaylist ensures the one official Sound Continuum
+// Spotify playlist exists, creating it on Spotify at most once ever. If a
+// playlist is already persisted locally, it's returned immediately with
+// no Spotify call at all — no existence re-check, no name search. This is
+// deliberate (see decisions.md): it's what guarantees a second call can
+// never create a duplicate, and it means there is nothing to reconcile if
+// Spotify were ever unable to confirm the playlist still exists.
+func (s *Service) InitializeOfficialPlaylist(ctx context.Context) (OfficialPlaylist, error) {
+	existing, err := s.store.GetOfficialPlaylist(ctx)
+	if err != nil {
+		return OfficialPlaylist{}, err
+	}
+	if existing != nil {
+		return *existing, nil
+	}
+
+	var created Playlist
+	err = s.withToken(ctx, func(accessToken string) error {
+		var err error
+		created, err = s.client.CreatePlaylist(ctx, accessToken, PlaylistCreateRequest{
+			Name:        officialPlaylistName,
+			Description: officialPlaylistDescription,
+			Public:      true,
+		})
+		return err
+	})
+	if err != nil {
+		return OfficialPlaylist{}, err
+	}
+
+	official := OfficialPlaylist{
+		SpotifyPlaylistID: created.ID,
+		Name:              created.Name,
+		URL:               created.ExternalURLs.Spotify,
+	}
+	if err := s.store.SaveOfficialPlaylist(ctx, official); err != nil {
+		// The playlist now exists on Spotify (id logged here — otherwise
+		// unrecoverable) but local persistence failed. Do NOT retry
+		// creation: retrying would risk a second Spotify playlist, since
+		// the local row is what dedupes. Manual reconciliation (insert the
+		// row by hand, or delete the stray Spotify playlist) is required;
+		// see decisions.md — no distributed transaction.
+		log.Printf("Spotify playlist %s (%s) created but not persisted locally: %v",
+			created.ID, created.ExternalURLs.Spotify, err)
+		return OfficialPlaylist{}, err
+	}
+	return official, nil
+}
+
+// officialPlaylistResponse is the safe, application-level shape returned by
+// InitializePlaylistHandler.
+type officialPlaylistResponse struct {
+	SpotifyPlaylistID string `json:"spotify_playlist_id"`
+	Name              string `json:"name"`
+	URL               string `json:"url"`
+}
+
+// InitializePlaylistHandler exposes POST /api/spotify/playlist. Idempotent
+// — repeated calls return the same persisted playlist, never creating a
+// second one on Spotify.
+func (s *Service) InitializePlaylistHandler(w http.ResponseWriter, r *http.Request) {
+	official, err := s.InitializeOfficialPlaylist(r.Context())
+	if err != nil {
+		log.Printf("Spotify official playlist initialization failed: %v", err)
+		writeSpotifyError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(officialPlaylistResponse{
+		SpotifyPlaylistID: official.SpotifyPlaylistID,
+		Name:              official.Name,
+		URL:               official.URL,
+	})
 }
 
 // MeHandler exposes GET /api/spotify/me.
