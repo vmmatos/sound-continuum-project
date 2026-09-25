@@ -48,6 +48,7 @@ func TestNewCandidateTrackInvalidCategory(t *testing.T) {
 			SpotifyTrackID: "spotify-track-1",
 			Source:         SourceSpotify,
 			Category:       category,
+			Type:           TypeCurrent,
 		})
 		if !errors.Is(err, ErrInvalidCategory) {
 			t.Errorf("category %q: err = %v, want ErrInvalidCategory", category, err)
@@ -160,19 +161,6 @@ func TestNewCandidateTrackInvalidType(t *testing.T) {
 		if !errors.Is(err, ErrInvalidType) {
 			t.Errorf("type %q: err = %v, want ErrInvalidType", typ, err)
 		}
-	}
-}
-
-func TestNewCandidateTrackCategoryValidationUnaffectedByType(t *testing.T) {
-	// A valid Type must not mask or short-circuit Category validation.
-	_, err := NewCandidateTrack(NewCandidateTrackParams{
-		ID:       "cand-1",
-		Source:   SourceManual,
-		Category: "Old",
-		Type:     TypeCurrent,
-	})
-	if !errors.Is(err, ErrInvalidCategory) {
-		t.Errorf("err = %v, want ErrInvalidCategory", err)
 	}
 }
 
