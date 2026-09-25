@@ -244,6 +244,18 @@
   persistence, no API endpoint, no CRUD, and no frontend UI exist yet —
   this card is the domain model only.
 
+- `CandidateTrack` also carries an independent `Type` (Card 32, see
+  [`decisions.md`](decisions.md)): `Classic`, `Current`, `Discovery`,
+  same `type X string` + `const` + `Valid()` convention as `Category`,
+  required and validated at construction like `Category` (not defaulted
+  like `Status`). `Type` describes *how* a candidate entered the
+  editorial process; `Category` describes *where* it sits editorially —
+  the two are deliberately unrelated, with no compatibility or inference
+  rule between them: e.g. a `Discovery`-type candidate can carry
+  `Category: Past`, and a `Classic`-type candidate can carry
+  `Category: New Release`. Discovery is not synonymous with Emerging or
+  New Release. Still no persistence, API endpoint, CRUD, or frontend UI.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

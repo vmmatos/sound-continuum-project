@@ -50,6 +50,29 @@ func (c Category) Valid() bool {
 	}
 }
 
+// Type describes the editorial mode through which a candidate entered
+// Sound Continuum's editorial process — distinct from Category, which
+// describes where the candidate sits editorially. The two are
+// independent: e.g. a Discovery-type candidate is not necessarily
+// Emerging, and a Classic-type candidate is not necessarily Past.
+type Type string
+
+const (
+	TypeClassic   Type = "Classic"
+	TypeCurrent   Type = "Current"
+	TypeDiscovery Type = "Discovery"
+)
+
+// Valid reports whether t is one of the three supported candidate types.
+func (t Type) Valid() bool {
+	switch t {
+	case TypeClassic, TypeCurrent, TypeDiscovery:
+		return true
+	default:
+		return false
+	}
+}
+
 // Status is a candidate's current editorial lifecycle state. It is
 // deliberately small — no approval workflow, roles, or voting states.
 type Status string
@@ -86,6 +109,7 @@ type CandidateTrack struct {
 	SpotifyTrackID string // external reference; empty unless Source == SourceSpotify
 	Source         Source
 	Category       Category
+	Type           Type
 	Status         Status
 
 	TrackTitle  string
@@ -107,6 +131,7 @@ type NewCandidateTrackParams struct {
 	SpotifyTrackID string
 	Source         Source
 	Category       Category
+	Type           Type
 
 	TrackTitle  string
 	TrackArtist string
@@ -125,6 +150,7 @@ func NewCandidateTrack(p NewCandidateTrackParams) (CandidateTrack, error) {
 		SpotifyTrackID: p.SpotifyTrackID,
 		Source:         p.Source,
 		Category:       p.Category,
+		Type:           p.Type,
 		Status:         StatusDiscovered,
 
 		TrackTitle:  p.TrackTitle,
@@ -156,6 +182,9 @@ func (c CandidateTrack) Validate() error {
 	}
 	if !c.Category.Valid() {
 		return ErrInvalidCategory
+	}
+	if !c.Type.Valid() {
+		return ErrInvalidType
 	}
 	if !c.Status.Valid() {
 		return ErrInvalidStatus

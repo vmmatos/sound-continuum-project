@@ -17,6 +17,10 @@ var (
 	// supported editorial categories.
 	ErrInvalidCategory = errors.New("candidate: unsupported editorial category")
 
+	// ErrInvalidType is returned when Type is not one of the supported
+	// candidate types.
+	ErrInvalidType = errors.New("candidate: unsupported candidate type")
+
 	// ErrInvalidStatus is returned when Status is not one of the supported
 	// lifecycle states.
 	ErrInvalidStatus = errors.New("candidate: unsupported status")
