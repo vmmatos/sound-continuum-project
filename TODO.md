@@ -291,14 +291,37 @@
       name/search, no distributed transaction for the Spotify-succeeds/
       local-save-fails case (documented limitation)
 
+## Done (Card 31 — Define Candidate Track Domain Model)
+
+- [x] `backend/internal/candidate/` — new package, the project's first
+      domain model outside `spotify`/`health`
+- [x] `CandidateTrack` domain type: internal `ID` distinct from the
+      external `SpotifyTrackID` (empty unless source is Spotify); no track
+      metadata beyond title/artist duplicated from Spotify
+- [x] `Source` enum: `Spotify`, `Last.fm`, `Manual` (no Last.fm/manual
+      integration implemented — domain concept only)
+- [x] `Category` enum: `Past`, `Present`, `Emerging`, `New Release`
+- [x] `Status` lifecycle: `discovered`, `under review`, `selected`,
+      `rejected` — no workflow/transition logic, no approval/voting states
+- [x] Lightweight editorial fields: `DiscoveryReason`, `EditorialNote`,
+      `PotentialConnection` — no bridge graph, no scoring
+- [x] `Validate()` + sentinel errors (`errors.go`), same pattern as
+      `internal/spotify/errors.go`
+- [x] Unit tests covering valid construction, each enum's invalid values,
+      Spotify-required-ID vs. Manual-no-ID, and editorial fields without
+      Spotify data
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+- [x] No persistence/schema, no API endpoint, no CRUD, no frontend UI, no
+      Spotify API calls, no Last.fm integration
+
 ## In progress
 
 - Nothing currently in progress.
 
 ## Planned
 
-- M3: Spotify integration
-- M4: Discovery engine
+- M4: Discovery engine (candidate persistence, discovery sources, CRUD/API)
 - M5: Musical ranking & bridges
 - M6: Curator experience
 - M7: Weekly editorial workflow

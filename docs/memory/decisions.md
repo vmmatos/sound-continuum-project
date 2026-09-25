@@ -645,3 +645,42 @@ public, and requesting unused scope would be unnecessary.
 **Consequences:** The curator must reconnect once (existing
 `authorization_required` → `Reconnect Spotify` flow, no new mechanism)
 before playlist creation works under the new scope.
+
+---
+
+**Decision:** Introduce `backend/internal/candidate` as a new, flat,
+feature-named package (sibling to `spotify`/`health`) for the
+`CandidateTrack` domain model, rather than an `internal/domain/...`
+layer or a subpackage of `spotify`.
+
+**Context:** Card 31 begins M4 by defining the first Sound Continuum
+domain concept that must be structurally independent of Spotify's
+response types — a candidate is editorial metadata about a discovered
+track, not a copy of `spotify.Track`. This is also the first domain model
+in the repo; there was no existing convention to extend.
+
+**Reason:** The existing backend has exactly two packages, both flat and
+feature-named (`internal/health`, `internal/spotify`) — no
+`internal/domain` layer exists anywhere. Introducing one now, for a single
+type, would be new architecture the card doesn't need; a new
+feature-named package matches the pattern already established.
+`CandidateTrack` cannot live inside `internal/spotify` without
+contradicting the card's explicit requirement that the domain model not
+depend on Spotify-specific structs.
+
+**Consequences:** `backend/internal/candidate/candidate.go` defines
+`Source`, `Category`, `Status` (each `type X string` + a `const` block +
+a `Valid() bool` method — the first enum-with-validation convention in
+this codebase, since none existed to reuse), `ID` (the candidate's
+internal identity, distinct from the external `SpotifyTrackID` field),
+and `CandidateTrack` itself. `errors.go` follows `spotify/errors.go`'s
+existing sentinel-error pattern (`var ErrX = errors.New("candidate:
+...")`). Enum string values match the card's own editorial wording
+exactly (`"New Release"`, `"under review"`, etc.) rather than a
+normalized wire format, since there is no JSON/API boundary for this type
+yet — a future card introducing one can decide serialization then. No ID
+generation was added (no UUID or similar dependency); a `candidate.ID` is
+supplied by the caller, deferred the same way Card 27 deferred Sound
+Continuum playlist discovery — until a concrete persistence/discovery
+card creates a real need. No persistence, schema, API endpoint, or CRUD
+was added — nothing in the card's Definition of Done requires it.

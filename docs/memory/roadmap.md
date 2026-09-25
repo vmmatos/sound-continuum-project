@@ -10,7 +10,9 @@ of future implementation requirements.
   items with track/episode/unavailable discrimination, single-track
   retrieval, single-artist retrieval, search — are implemented; playlist
   creation/management and Sound Continuum playlist discovery still open)
-- **M4 — Discovery Engine** — Planned
+- **M4 — Discovery Engine** — In progress (the `CandidateTrack` domain
+  model is defined; discovery, persistence, and API surfaces are still
+  open)
 - **M5 — Musical Ranking & Bridges** — Planned
 - **M6 — Curator Experience** — Planned
 - **M7 — Weekly Editorial Workflow** — Planned
