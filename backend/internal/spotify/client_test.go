@@ -482,6 +482,225 @@ func TestClientRequestMalformedJSON(t *testing.T) {
 	}
 }
 
+func TestClientTrackSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("unexpected method: %s", r.Method)
+		}
+		if r.URL.Path != "/v1/tracks/t-1" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer access-123" {
+			t.Errorf("unexpected Authorization header: %s", r.Header.Get("Authorization"))
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "t-1", "name": "Track One", "uri": "spotify:track:t-1", "duration_ms": 210000,
+		})
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	track, err := c.Track(context.Background(), "access-123", "t-1")
+	if err != nil {
+		t.Fatalf("Track returned error: %v", err)
+	}
+	if track.ID != "t-1" || track.Name != "Track One" || track.URI != "spotify:track:t-1" || track.DurationMS != 210000 {
+		t.Errorf("unexpected track: %+v", track)
+	}
+}
+
+func TestClientTrackFullMetadataDecode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "t-1", "name": "Track One", "uri": "spotify:track:t-1",
+			"href": "https://api.spotify.com/v1/tracks/t-1", "type": "track",
+			"duration_ms": 210000, "explicit": true, "disc_number": 1, "track_number": 5,
+			"is_local": false, "preview_url": "https://p.scdn.co/mp3-preview/abc",
+			"external_urls": map[string]any{"spotify": "https://open.spotify.com/track/t-1"},
+			"external_ids":  map[string]any{"isrc": "USRC12345678"},
+			"artists":       []map[string]any{{"id": "a-1", "name": "Artist One"}},
+			"album":         map[string]any{"id": "al-1", "name": "Album One"},
+		})
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	track, err := c.Track(context.Background(), "access-123", "t-1")
+	if err != nil {
+		t.Fatalf("Track returned error: %v", err)
+	}
+	if track.Href != "https://api.spotify.com/v1/tracks/t-1" || track.Type != "track" {
+		t.Errorf("unexpected href/type: %+v", track)
+	}
+	if !track.Explicit || track.DiscNumber != 1 || track.TrackNumber != 5 || track.IsLocal {
+		t.Errorf("unexpected track metadata: %+v", track)
+	}
+	if track.PreviewURL != "https://p.scdn.co/mp3-preview/abc" {
+		t.Errorf("unexpected preview_url: %q", track.PreviewURL)
+	}
+	if track.ExternalURLs.Spotify != "https://open.spotify.com/track/t-1" {
+		t.Errorf("unexpected external_urls: %+v", track.ExternalURLs)
+	}
+	if track.ExternalIDs.ISRC != "USRC12345678" {
+		t.Errorf("unexpected external_ids: %+v", track.ExternalIDs)
+	}
+	if track.Album.ID != "al-1" || track.Album.Name != "Album One" {
+		t.Errorf("unexpected album: %+v", track.Album)
+	}
+}
+
+func TestClientTrackMultipleArtistsPreserved(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "t-1", "name": "Track One",
+			"artists": []map[string]any{
+				{"id": "a-1", "name": "Artist One", "uri": "spotify:artist:a-1"},
+				{"id": "a-2", "name": "Artist Two", "uri": "spotify:artist:a-2"},
+				{"id": "a-3", "name": "Artist Three", "uri": "spotify:artist:a-3"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	track, err := c.Track(context.Background(), "access-123", "t-1")
+	if err != nil {
+		t.Fatalf("Track returned error: %v", err)
+	}
+	if len(track.Artists) != 3 {
+		t.Fatalf("expected 3 artists, got %d: %+v", len(track.Artists), track.Artists)
+	}
+	if track.Artists[0].Name != "Artist One" || track.Artists[1].Name != "Artist Two" || track.Artists[2].Name != "Artist Three" {
+		t.Errorf("unexpected artists: %+v", track.Artists)
+	}
+}
+
+func TestClientTrackAlbumMetadataDecode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "t-1", "name": "Track One",
+			"album": map[string]any{
+				"id": "al-1", "name": "Album One", "album_type": "album", "total_tracks": 12,
+				"release_date": "2026-01-15", "release_date_precision": "day",
+				"uri": "spotify:album:al-1", "href": "https://api.spotify.com/v1/albums/al-1",
+				"external_urls": map[string]any{"spotify": "https://open.spotify.com/album/al-1"},
+				"images":        []map[string]any{{"url": "https://example.com/cover.jpg", "height": 640, "width": 640}},
+				"artists":       []map[string]any{{"id": "a-1", "name": "Artist One"}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	track, err := c.Track(context.Background(), "access-123", "t-1")
+	if err != nil {
+		t.Fatalf("Track returned error: %v", err)
+	}
+	album := track.Album
+	if album.ID != "al-1" || album.Name != "Album One" || album.AlbumType != "album" || album.TotalTracks != 12 {
+		t.Errorf("unexpected album: %+v", album)
+	}
+	if album.ReleaseDate != "2026-01-15" || album.ReleaseDatePrecision != "day" {
+		t.Errorf("unexpected release date: %+v", album)
+	}
+	if album.URI != "spotify:album:al-1" || album.Href != "https://api.spotify.com/v1/albums/al-1" {
+		t.Errorf("unexpected uri/href: %+v", album)
+	}
+	if album.ExternalURLs.Spotify != "https://open.spotify.com/album/al-1" {
+		t.Errorf("unexpected external_urls: %+v", album.ExternalURLs)
+	}
+	if len(album.Images) != 1 || album.Images[0].Height != 640 {
+		t.Errorf("unexpected images: %+v", album.Images)
+	}
+	if len(album.Artists) != 1 || album.Artists[0].Name != "Artist One" {
+		t.Errorf("unexpected artists: %+v", album.Artists)
+	}
+}
+
+func TestClientTrackMissingOptionalFieldsDecode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "t-1", "name": "Track One",
+		})
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	track, err := c.Track(context.Background(), "access-123", "t-1")
+	if err != nil {
+		t.Fatalf("Track returned error decoding a minimal response: %v", err)
+	}
+	if track.ID != "t-1" || track.PreviewURL != "" || len(track.Artists) != 0 {
+		t.Errorf("unexpected track from minimal response: %+v", track)
+	}
+	if track.Album.ID != "" || len(track.Album.Images) != 0 {
+		t.Errorf("expected zero-value album, got %+v", track.Album)
+	}
+}
+
+func TestClientTrackNotFound(t *testing.T) {
+	c, server := newErrorClient(t, http.StatusNotFound, "")
+	defer server.Close()
+
+	track, err := c.Track(context.Background(), "access-123", "missing-track")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+	if track.ID != "" || track.Name != "" {
+		t.Errorf("expected zero-value track on error, got %+v", track)
+	}
+}
+
+func TestClientTrackUnauthorized(t *testing.T) {
+	c, server := newErrorClient(t, http.StatusUnauthorized, "")
+	defer server.Close()
+
+	_, err := c.Track(context.Background(), "access-123", "t-1")
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+func TestClientTrackMalformedJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("{not valid json"))
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	_, err := c.Track(context.Background(), "access-123", "t-1")
+	if !errors.Is(err, ErrDecode) {
+		t.Fatalf("expected ErrDecode, got %v", err)
+	}
+}
+
+func TestClientTrackRejectsEmptyID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("Track must not make a request when trackID is empty")
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	_, err := c.Track(context.Background(), "access-123", "")
+	if !errors.Is(err, ErrEmptyTrackID) {
+		t.Fatalf("expected ErrEmptyTrackID, got %v", err)
+	}
+}
+
 func newErrorClient(t *testing.T, status int, body string) (*Client, *httptest.Server) {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

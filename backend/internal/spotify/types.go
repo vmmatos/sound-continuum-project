@@ -142,22 +142,61 @@ func (p PlaylistItem) MarshalJSON() ([]byte, error) {
 	return json.Marshal(out)
 }
 
-// Track is the subset of a Spotify track object this MVP needs. Fields
-// removed from the current API (popularity, available_markets) are
-// intentionally omitted rather than left unused.
-type Track struct {
-	ID         string   `json:"id"`
-	Name       string   `json:"name"`
-	URI        string   `json:"uri"`
-	DurationMS int      `json:"duration_ms"`
-	Artists    []Artist `json:"artists"`
+// Album is the subset of a Spotify album object nested in a track response.
+// Fields this project excludes (popularity-style/audio-feature data) are
+// intentionally omitted — see decisions.md.
+type Album struct {
+	ID                   string `json:"id"`
+	Name                 string `json:"name"`
+	AlbumType            string `json:"album_type"`
+	TotalTracks          int    `json:"total_tracks"`
+	ReleaseDate          string `json:"release_date"`
+	ReleaseDatePrecision string `json:"release_date_precision"`
+	URI                  string `json:"uri"`
+	Href                 string `json:"href"`
+	ExternalURLs         struct {
+		Spotify string `json:"spotify"`
+	} `json:"external_urls"`
+	Images  []Image  `json:"images"`
+	Artists []Artist `json:"artists"`
 }
 
-// Artist is the subset of a Spotify artist object referenced from a track.
+// Track is the subset of a Spotify track object this MVP needs. Fields
+// removed from the current API (popularity, available_markets) are
+// intentionally omitted rather than left unused, and this project does not
+// model audio features (danceability/energy/etc.) — see decisions.md.
+type Track struct {
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	URI          string   `json:"uri"`
+	Href         string   `json:"href"`
+	Type         string   `json:"type"`
+	DurationMS   int      `json:"duration_ms"`
+	Explicit     bool     `json:"explicit"`
+	DiscNumber   int      `json:"disc_number"`
+	TrackNumber  int      `json:"track_number"`
+	IsLocal      bool     `json:"is_local"`
+	PreviewURL   string   `json:"preview_url"`
+	Artists      []Artist `json:"artists"`
+	Album        Album    `json:"album"`
+	ExternalURLs struct {
+		Spotify string `json:"spotify"`
+	} `json:"external_urls"`
+	ExternalIDs struct {
+		ISRC string `json:"isrc"`
+	} `json:"external_ids"`
+}
+
+// Artist is the subset of a Spotify artist object referenced from a track
+// or album.
 type Artist struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	URI  string `json:"uri"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	URI          string `json:"uri"`
+	Href         string `json:"href"`
+	ExternalURLs struct {
+		Spotify string `json:"spotify"`
+	} `json:"external_urls"`
 }
 
 // SearchResult carries only the object types Sound Continuum's curation

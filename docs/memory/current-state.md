@@ -160,6 +160,25 @@
   anywhere in the repo, and none was introduced; that lookup is deferred to
   a later application/service layer. No playlist write, no frontend UI.
 
+- Single-track retrieval is implemented (Card 28, see
+  [`docs/spotify-integration.md`](../spotify-integration.md) §24), still in
+  `backend/internal/spotify/` — no new package, no scope change.
+  `GET /api/spotify/tracks/{id}` is new (`Client.Track`, `Service.Track`,
+  `TrackHandler`). `Track` gained `href`, `type`, `external_urls`,
+  `explicit`, `disc_number`, `track_number`, `is_local`, `preview_url`,
+  `external_ids.isrc`, and a full `Album` (new type); `Artist` gained
+  `href`/`external_urls`. No `market` parameter — the client always uses a
+  user access token, which Spotify resolves market from automatically. An
+  empty track ID is rejected client-side (`ErrEmptyTrackID`) before a
+  request is built, mapped to `400` by the handler, mirroring `Search`'s
+  limit-validation pattern. `403`/`404` both fall through the existing
+  `writeSpotifyError` default (`502`) — unchanged from Card 26/27, no new
+  status-code special case. Verified live: a real track from an owned
+  playlist decoded correctly (name, artists, album, duration, URI,
+  external URL); a nonexistent track ID returned `502`. No bulk track
+  retrieval, no audio features, no artist/album enrichment calls, no
+  frontend track UI.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

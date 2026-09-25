@@ -195,6 +195,36 @@
 - [x] No playlist write, no Sound Continuum playlist discovery (deferred —
       no name/ID config exists), no frontend UI
 
+## Done (Card 28 — Retrieve Track Information)
+
+- [x] `GET /api/spotify/tracks/{id}` added (`Client.Track`,
+      `Service.Track`, `TrackHandler`) — no scope change
+- [x] `Track` gained `href`, `type`, `external_urls`, `explicit`,
+      `disc_number`, `track_number`, `is_local`, `preview_url`,
+      `external_ids.isrc`, and a full `Album` (new type); `Artist` gained
+      `href`/`external_urls`
+- [x] No `market` parameter (Spotify infers it from the user token this
+      client always uses); no bulk retrieval (`GetTracks`/`ids=` is
+      unavailable in Development Mode); no artist/album enrichment calls;
+      no audio-features model
+- [x] Empty track ID rejected client-side (`ErrEmptyTrackID`) before any
+      request, mirroring `Search`'s limit-validation pattern; mapped to
+      `400` by the handler
+- [x] Backend tests: 9 new `client_test.go` cases (success, full metadata,
+      multiple artists, album metadata, missing optional fields, 404, 401,
+      malformed JSON, empty ID) + 3 new `handlers_test.go` cases (path-ID
+      pass-through, 403→502, empty-ID→400) — same conventions, no real
+      Spotify calls
+- [x] Real Spotify integration test: `GetTrack` verified against a real
+      track from an owned playlist (name, artists, album, duration, URI,
+      external URL all decoded correctly); nonexistent ID returned 502; no
+      tokens/secrets in logs
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+- [x] `docs/spotify-integration.md` updated (§24)
+- [x] No bulk track retrieval, no audio features, no editorial/scoring
+      logic, no frontend track UI
+
 ## In progress
 
 - Nothing currently in progress.

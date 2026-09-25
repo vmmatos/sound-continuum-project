@@ -584,3 +584,83 @@ mapped through the existing default case) — confirming playlist metadata
 stays available when contents don't. A nonexistent playlist ID returned `502`
 (Spotify's `400 Invalid base62 id`). Server logs contained no tokens,
 secrets, or Authorization headers at any point.
+
+## 24. Implementation (Card #28)
+
+Single-track retrieval is added on top of Card #27's playlist/search
+surface, in the same `backend/internal/spotify/` package.
+
+### Endpoints
+
+```
+GET /api/spotify/tracks/{id}    metadata for one track
+```
+
+New this card. All prior endpoints unchanged. Still read-only. No OAuth
+scope change — Card 26's token already covers catalog reads, no additional
+scope needed. No bulk retrieval — Spotify removed `GET /tracks?ids=` for
+Development Mode, so this is one request per track; a future workflow
+needing multiple tracks must solve batching explicitly at the application
+layer, not inside this client.
+
+### Track metadata
+
+`Track` gained `href`, `type`, `external_urls.spotify`, `explicit`,
+`disc_number`, `track_number`, `is_local`, `preview_url`,
+`external_ids.isrc`, and a full `Album` (new type: `id`, `name`,
+`album_type`, `total_tracks`, `release_date`, `release_date_precision`,
+`uri`, `href`, `external_urls.spotify`, `images`, `artists`). `Artist`
+(shared by `Track.Artists` and `Album.Artists`) gained `href` and
+`external_urls.spotify`. No `popularity`, `available_markets`,
+`linked_from`, and no audio-feature fields (danceability/energy/etc.) —
+see [`decisions.md`](memory/decisions.md). `PlaylistItem.Track` and
+`SearchResult.Tracks` pick up every new field automatically, since both
+already reuse `Track`.
+
+### Track ID validation
+
+`Client.Track` rejects an empty ID before building a request path
+(`ErrEmptyTrackID`), avoiding a malformed `/v1/tracks/` request — mirrors
+`Client.Search`'s `ErrSearchLimitTooHigh` client-side-validation pattern.
+`TrackHandler` maps it to `400`, the same way `SearchHandler` maps
+`ErrSearchLimitTooHigh`.
+
+### Market handling
+
+No `market` parameter. `Service.withToken` always supplies a user
+(Authorization Code) access token — this client has no Client Credentials
+path. Spotify infers market from the authenticated user's account when
+`market` is omitted; it's only required for app-only tokens. See
+[`decisions.md`](memory/decisions.md).
+
+### Error handling
+
+Unchanged from Card #26/#27 — reused as-is, not duplicated. A track the
+curator can't access (`403`) or that doesn't exist (`404`) both fall
+through `writeSpotifyError`'s default case (`502`); the typed sentinel
+(`ErrForbidden`/`ErrNotFound`) is what callers inspect programmatically,
+same as every other Spotify error since Card #26.
+
+### Testing
+
+`client_test.go`/`handlers_test.go` extended, same conventions as prior
+cards (one `TestXxx` per scenario, no table tests). Covers: successful
+retrieval (method/path/auth/decode), full metadata decode (every new
+field), multiple artists preserved, full album metadata decode, missing/
+null optional fields decode without error, `404` → `ErrNotFound` (not a
+nil track), a focused `401` test, malformed JSON → `ErrDecode`, and the
+empty-ID guard (no request made). Handler-level: path-ID pass-through,
+`403` → `502`, and empty-ID → `400`.
+
+### Real Spotify integration test
+
+Performed against the real Spotify API using the existing dev connection
+(no reconnect, no scope change). `GET /api/spotify/tracks/{id}` against a
+real track ID pulled from one of the curator's own playlists
+(`GET /api/spotify/playlists/{id}/items`) returned the full track: name,
+artist (with `href`/`external_urls`), album (name, release date, images),
+duration, `uri`, and `external_urls.spotify` all decoded correctly. A
+nonexistent track ID returned `502` (Spotify's `404` mapped through the
+existing default case, consistent with Card 27's `403`-mapping
+precedent). Server logs contained no tokens, secrets, or Authorization
+headers at any point.

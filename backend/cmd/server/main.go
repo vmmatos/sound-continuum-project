@@ -48,6 +48,7 @@ func main() {
 	mux.HandleFunc("GET /api/spotify/playlists/{id}", spotifyService.PlaylistHandler)
 	mux.HandleFunc("GET /api/spotify/playlists/{id}/items", spotifyService.PlaylistItemsHandler)
 	mux.HandleFunc("GET /api/spotify/search", spotifyService.SearchHandler)
+	mux.HandleFunc("GET /api/spotify/tracks/{id}", spotifyService.TrackHandler)
 
 	addr := ":" + port
 	log.Printf("sound-continuum server listening on %s", addr)
