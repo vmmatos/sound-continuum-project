@@ -225,6 +225,37 @@
 - [x] No bulk track retrieval, no audio features, no editorial/scoring
       logic, no frontend track UI
 
+## Done (Card 29 — Retrieve Artist Information)
+
+- [x] `GET /api/spotify/artists/{id}` added (`Client.Artist`,
+      `Service.Artist`, `ArtistHandler`) — no scope change
+- [x] `Artist` gained `type`, `images`, `genres` (shared by `Track.Artists`,
+      `Album.Artists`, `SearchResult.Artists`)
+- [x] No `followers`/`popularity` (removed by Spotify for Development
+      Mode); no bulk artist retrieval (`GET /artists?ids=` unavailable in
+      Development Mode); no `/artists/{id}/top-tracks` (removed, no
+      compatibility wrapper); `genres` treated as optional/deprecated
+      metadata only, no genre normalization or classification logic; no
+      automatic artist enrichment from `GetTrack`/playlist items
+- [x] Empty artist ID rejected client-side (`ErrEmptyArtistID`) before any
+      request, mirroring `Track`'s pattern; mapped to `400` by the handler
+- [x] Backend tests: 8 new `client_test.go` cases (success, full metadata,
+      multiple images with a null-dimension image, missing optional
+      fields, 404, 401, malformed JSON, empty ID) + 3 new
+      `handlers_test.go` cases (path-ID pass-through, 403→502,
+      empty-ID→400) — same conventions, no real Spotify calls
+- [x] Real Spotify integration test: `GetArtist` verified against a real
+      artist from an owned playlist's track (António Calvário — name, id,
+      uri, external URL, three images all decoded correctly; `genres` was
+      `null` for this artist, decoding cleanly); nonexistent ID returned
+      502; no tokens/secrets in logs
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+- [x] `docs/spotify-integration.md` updated (§25)
+- [x] No bulk artist retrieval, no top-tracks, no followers/popularity, no
+      genre classification, no Last.fm, no editorial scoring, no frontend
+      artist UI
+
 ## In progress
 
 - Nothing currently in progress.

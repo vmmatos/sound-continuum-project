@@ -240,6 +240,19 @@ func (c *Client) Track(ctx context.Context, accessToken, trackID string) (Track,
 	return t, err
 }
 
+// Artist fetches metadata for a single artist by ID. There is no bulk
+// equivalent — Spotify removed GET /artists?ids= for Development Mode —
+// so a caller needing several artists must call this once per artist.
+func (c *Client) Artist(ctx context.Context, accessToken, artistID string) (Artist, error) {
+	if artistID == "" {
+		return Artist{}, ErrEmptyArtistID
+	}
+	var a Artist
+	path := "/v1/artists/" + url.PathEscape(artistID)
+	err := c.request(ctx, http.MethodGet, path, nil, nil, accessToken, &a)
+	return a, err
+}
+
 // request performs an authenticated Spotify Web API call and decodes a
 // JSON response into out (nil to discard the body). method/body support
 // POST/PUT/DELETE for a future write operation — every Card #26 operation

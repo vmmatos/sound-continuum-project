@@ -179,6 +179,26 @@
   retrieval, no audio features, no artist/album enrichment calls, no
   frontend track UI.
 
+- Single-artist retrieval is implemented (Card 29, see
+  [`docs/spotify-integration.md`](../spotify-integration.md) §25), still in
+  `backend/internal/spotify/` — no new package, no scope change.
+  `GET /api/spotify/artists/{id}` is new (`Client.Artist`, `Service.Artist`,
+  `ArtistHandler`). `Artist` (shared by `Track.Artists`, `Album.Artists`,
+  `SearchResult.Artists`) gained `type`, `images`, `genres`. No
+  `followers`/`popularity` — removed by Spotify for Development Mode. No
+  bulk artist retrieval (`GET /artists?ids=` unavailable in Development
+  Mode) and no `/artists/{id}/top-tracks` (also removed) — no compatibility
+  wrapper for either. `genres` is deprecated/optional metadata, decoded but
+  not used for Sound Continuum genre classification. An empty artist ID is
+  rejected client-side (`ErrEmptyArtistID`) before a request is built,
+  mapped to `400` by the handler, mirroring `Track`'s pattern. `403`/`404`
+  both fall through the existing `writeSpotifyError` default (`502`) — no
+  new status-code special case. No automatic enrichment — `GetTrack` and
+  playlist items still do not auto-call `Client.Artist`. Verified live: a
+  real artist from an owned playlist's track decoded correctly (name, id,
+  uri, external URL, three images); `genres` was `null` for that artist,
+  decoding cleanly; a nonexistent artist ID returned `502`.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

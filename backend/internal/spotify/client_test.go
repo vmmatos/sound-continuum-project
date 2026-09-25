@@ -701,6 +701,172 @@ func TestClientTrackRejectsEmptyID(t *testing.T) {
 	}
 }
 
+func TestClientArtistSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("unexpected method: %s", r.Method)
+		}
+		if r.URL.Path != "/v1/artists/a-1" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer access-123" {
+			t.Errorf("unexpected Authorization header: %s", r.Header.Get("Authorization"))
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "a-1", "name": "Artist One", "uri": "spotify:artist:a-1",
+		})
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	artist, err := c.Artist(context.Background(), "access-123", "a-1")
+	if err != nil {
+		t.Fatalf("Artist returned error: %v", err)
+	}
+	if artist.ID != "a-1" || artist.Name != "Artist One" || artist.URI != "spotify:artist:a-1" {
+		t.Errorf("unexpected artist: %+v", artist)
+	}
+}
+
+func TestClientArtistFullMetadataDecode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "a-1", "name": "Artist One", "uri": "spotify:artist:a-1",
+			"href": "https://api.spotify.com/v1/artists/a-1", "type": "artist",
+			"external_urls": map[string]any{"spotify": "https://open.spotify.com/artist/a-1"},
+			"images":        []map[string]any{{"url": "https://example.com/a1.jpg", "height": 640, "width": 640}},
+			"genres":        []string{"dream pop", "shoegaze"},
+		})
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	artist, err := c.Artist(context.Background(), "access-123", "a-1")
+	if err != nil {
+		t.Fatalf("Artist returned error: %v", err)
+	}
+	if artist.Href != "https://api.spotify.com/v1/artists/a-1" || artist.Type != "artist" {
+		t.Errorf("unexpected href/type: %+v", artist)
+	}
+	if artist.ExternalURLs.Spotify != "https://open.spotify.com/artist/a-1" {
+		t.Errorf("unexpected external_urls: %+v", artist.ExternalURLs)
+	}
+	if len(artist.Images) != 1 || artist.Images[0].Height != 640 || artist.Images[0].Width != 640 {
+		t.Errorf("unexpected images: %+v", artist.Images)
+	}
+	if len(artist.Genres) != 2 || artist.Genres[0] != "dream pop" || artist.Genres[1] != "shoegaze" {
+		t.Errorf("unexpected genres: %+v", artist.Genres)
+	}
+}
+
+func TestClientArtistMultipleImagesNullableDimensions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "a-1", "name": "Artist One",
+			"images": []map[string]any{
+				{"url": "https://example.com/large.jpg", "height": 640, "width": 640},
+				{"url": "https://example.com/small.jpg", "height": 64, "width": 64},
+				{"url": "https://example.com/unknown.jpg", "height": nil, "width": nil},
+			},
+		})
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	artist, err := c.Artist(context.Background(), "access-123", "a-1")
+	if err != nil {
+		t.Fatalf("Artist returned error decoding nullable image dimensions: %v", err)
+	}
+	if len(artist.Images) != 3 {
+		t.Fatalf("expected 3 images, got %d: %+v", len(artist.Images), artist.Images)
+	}
+	if artist.Images[0].Height != 640 || artist.Images[1].Height != 64 {
+		t.Errorf("unexpected known dimensions: %+v", artist.Images)
+	}
+	if artist.Images[2].Height != 0 || artist.Images[2].Width != 0 {
+		t.Errorf("expected null dimensions to decode as zero value, got %+v", artist.Images[2])
+	}
+}
+
+func TestClientArtistMissingOptionalFieldsDecode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "a-1", "name": "Artist One",
+		})
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	artist, err := c.Artist(context.Background(), "access-123", "a-1")
+	if err != nil {
+		t.Fatalf("Artist returned error decoding a minimal response: %v", err)
+	}
+	if artist.ID != "a-1" || len(artist.Genres) != 0 || len(artist.Images) != 0 {
+		t.Errorf("unexpected artist from minimal response: %+v", artist)
+	}
+}
+
+func TestClientArtistNotFound(t *testing.T) {
+	c, server := newErrorClient(t, http.StatusNotFound, "")
+	defer server.Close()
+
+	artist, err := c.Artist(context.Background(), "access-123", "missing-artist")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+	if artist.ID != "" || artist.Name != "" {
+		t.Errorf("expected zero-value artist on error, got %+v", artist)
+	}
+}
+
+func TestClientArtistUnauthorized(t *testing.T) {
+	c, server := newErrorClient(t, http.StatusUnauthorized, "")
+	defer server.Close()
+
+	_, err := c.Artist(context.Background(), "access-123", "a-1")
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+func TestClientArtistMalformedJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("{not valid json"))
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	_, err := c.Artist(context.Background(), "access-123", "a-1")
+	if !errors.Is(err, ErrDecode) {
+		t.Fatalf("expected ErrDecode, got %v", err)
+	}
+}
+
+func TestClientArtistRejectsEmptyID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("Artist must not make a request when artistID is empty")
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	_, err := c.Artist(context.Background(), "access-123", "")
+	if !errors.Is(err, ErrEmptyArtistID) {
+		t.Fatalf("expected ErrEmptyArtistID, got %v", err)
+	}
+}
+
 func newErrorClient(t *testing.T, status int, body string) (*Client, *httptest.Server) {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

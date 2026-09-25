@@ -664,3 +664,81 @@ nonexistent track ID returned `502` (Spotify's `404` mapped through the
 existing default case, consistent with Card 27's `403`-mapping
 precedent). Server logs contained no tokens, secrets, or Authorization
 headers at any point.
+
+## 25. Implementation (Card #29)
+
+Single-artist retrieval is added on top of Card #28's track surface, in
+the same `backend/internal/spotify/` package.
+
+### Endpoints
+
+```
+GET /api/spotify/artists/{id}    metadata for one artist
+```
+
+New this card. All prior endpoints unchanged. Still read-only. No OAuth
+scope change. No bulk retrieval — Spotify removed `GET /artists?ids=` for
+Development Mode, so this is one request per artist; a future workflow
+needing multiple artists must solve batching explicitly at the
+application layer, not inside this client. `GET /artists/{id}/top-tracks`
+is also removed for Development Mode and is not implemented — no
+compatibility wrapper is written for either removed endpoint.
+
+### Artist metadata
+
+`Artist` (shared by `Track.Artists`, `Album.Artists`, and
+`SearchResult.Artists` since Card #26/#28) gained `type`, `images`, and
+`genres`. No `followers`, no `popularity` — Spotify removed both from the
+Artist object for Development Mode; see
+[`decisions.md`](memory/decisions.md). `genres` is deprecated, optional
+Spotify metadata, decoded when present but not treated as authoritative
+for Sound Continuum genre classification — no normalization or mapping
+logic is built around it. It is frequently `null`/empty even for
+well-known artists (a Spotify API characteristic, not a decode bug — the
+manual integration test below hit exactly this case).
+
+### Artist ID validation
+
+`Client.Artist` rejects an empty ID before building a request path
+(`ErrEmptyArtistID`), mirroring `Client.Track`'s `ErrEmptyTrackID`
+pattern. `ArtistHandler` maps it to `400`, the same way `TrackHandler`
+maps `ErrEmptyTrackID`.
+
+### No automatic enrichment
+
+`GetTrack`/`Track.Artists` and playlist items are unchanged — neither
+automatically calls `Client.Artist` for the artists they reference.
+Artist enrichment stays an explicit, separate request made by the
+caller.
+
+### Error handling
+
+Unchanged from Card #26-#28 — reused as-is, not duplicated. An artist the
+curator can't access (`403`) or that doesn't exist (`404`) both fall
+through `writeSpotifyError`'s default case (`502`); the typed sentinel
+(`ErrForbidden`/`ErrNotFound`) is what callers inspect programmatically.
+
+### Testing
+
+`client_test.go`/`handlers_test.go` extended, same conventions as prior
+cards. Covers: successful retrieval (method/path/auth/decode), full
+metadata decode (id/name/type/uri/href/external_urls/images/genres),
+multiple images including a `null`-dimension image, missing optional
+fields (`genres`/`images` absent) decoding without error, `404` →
+`ErrNotFound` (not a nil artist), a focused `401` test, malformed JSON →
+`ErrDecode`, and the empty-ID guard (no request made). Handler-level:
+path-ID pass-through, `403` → `502`, and empty-ID → `400`.
+
+### Real Spotify integration test
+
+Performed against the real Spotify API using the existing dev connection
+(no reconnect, no scope change). `GET /api/spotify/artists/{id}` against
+a real artist ID pulled from one of the curator's own playlists
+(António Calvário, `77KWdzgHrogcLsRRta1QU4`) returned `name`, `id`,
+`uri`, `external_urls.spotify`, and three `images` (640/300/64px) all
+decoded correctly; `genres` was `null` for this artist, decoding cleanly
+as an empty slice rather than erroring — the deprecated-field behavior
+documented above. A nonexistent artist ID returned `502` (Spotify's `400
+Invalid base62 id` mapped through the existing default case, consistent
+with Card 28's nonexistent-track handling). Server logs contained no
+tokens, secrets, or Authorization headers at any point.

@@ -8,8 +8,8 @@ of future implementation requirements.
 - **M3 — Spotify Integration** — In progress (OAuth/token lifecycle and a
   read-only API client — profile, playlists (list + single), playlist
   items with track/episode/unavailable discrimination, single-track
-  retrieval, search — are implemented; playlist creation/management and
-  Sound Continuum playlist discovery still open)
+  retrieval, single-artist retrieval, search — are implemented; playlist
+  creation/management and Sound Continuum playlist discovery still open)
 - **M4 — Discovery Engine** — Planned
 - **M5 — Musical Ranking & Bridges** — Planned
 - **M6 — Curator Experience** — Planned
