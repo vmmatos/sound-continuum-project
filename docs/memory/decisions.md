@@ -595,3 +595,53 @@ into Sound Continuum's musical DNA is built on top of it. A future
 workflow needing several artists' data must batch explicitly at the
 application layer (with awareness of rate limits and partial failures),
 not inside this client.
+
+---
+
+**Decision:** One official Sound Continuum Spotify playlist, created once
+via `POST /me/playlists`, identified by a locally-stored Spotify playlist
+ID — not discovered by name/search.
+
+**Context:** Card 27 deliberately deferred "how do we identify the Sound
+Continuum playlist," explicitly forbidding hardcoded IDs and fuzzy
+name-matching, until a concrete decision existed. Card 30 needed to
+establish the official playlist as persistent infrastructure that every
+future weekly edition reuses, per the manifesto's "each week is a
+chapter" principle — not a new playlist per edition.
+
+**Reason:** A locally-persisted ID (in a new `official_playlist` SQLite
+table, `backend/internal/spotify/store.go`) is the only mechanism that
+can guarantee "one project → one playlist" without ambiguity — name
+search is inherently fuzzy and could match a renamed or unrelated
+playlist. Creating it via `POST /me/playlists` (not the deprecated
+`/users/{user_id}/playlists`) follows the current Spotify Web API.
+
+**Consequences:** `Service.InitializeOfficialPlaylist` checks the local
+table first and returns the cached record with **no Spotify call at all**
+if found — this is also what guarantees idempotency (no duplicate
+playlist possible) and what makes a local-record-but-Spotify-can't-
+confirm-it scenario a non-issue: an existing local record is never
+re-verified against Spotify. If Spotify creation succeeds but the local
+save fails, the app does not retry (retrying risks a duplicate) — the
+Spotify playlist ID is logged for manual reconciliation. There is no
+distributed transaction between the Spotify API call and the SQLite
+write, and none is planned; this is an accepted, documented limitation,
+not solved by this card.
+
+---
+
+**Decision:** Add `playlist-modify-public` to the OAuth scope Card 25/26
+established.
+
+**Context:** Card 30 needs `POST /me/playlists` to create the official
+playlist as public.
+
+**Reason:** Same reasoning as Card 26's scope addition — one curator, one
+connection, one token; adding scope to the existing Authorization Code
+flow is the smallest change that unblocks the requirement. No
+`playlist-modify-private` is requested — the official playlist is always
+public, and requesting unused scope would be unnecessary.
+
+**Consequences:** The curator must reconnect once (existing
+`authorization_required` → `Reconnect Spotify` flow, no new mechanism)
+before playlist creation works under the new scope.

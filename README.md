@@ -231,6 +231,10 @@ architecture and token lifecycle.
 7. If you connected before Card 26, reconnect once (repeat step 5) — the
    OAuth scope changed (`user-read-private playlist-read-private` added)
    so `/me/playlists` and `/playlists/{id}/items` work.
+8. If you connected before Card 30, reconnect once more — the OAuth scope
+   gained `playlist-modify-public`, needed for
+   `POST /api/spotify/playlist` (creates the official
+   "Sound Continuum — Weekly Journey" playlist, once, and persists it).
 
 ## Documentation
 

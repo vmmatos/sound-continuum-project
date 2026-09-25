@@ -1,11 +1,29 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { checkHealth } from '../services/health'
-import { getSpotifyStatus, startSpotifyAuth, type SpotifyStatus } from '../services/spotify'
+import {
+  getSpotifyStatus,
+  startSpotifyAuth,
+  initializeOfficialPlaylist,
+  type SpotifyStatus,
+  type OfficialPlaylist,
+} from '../services/spotify'
 
 const backendStatus = ref<'checking' | 'ok' | 'unreachable'>('checking')
 const spotifyStatus = ref<SpotifyStatus | null>(null)
 const spotifyRedirectOutcome = ref<string | null>(null)
+const officialPlaylist = ref<OfficialPlaylist | null>(null)
+const officialPlaylistFailed = ref(false)
+
+async function createOfficialPlaylist() {
+  officialPlaylistFailed.value = false
+  const result = await initializeOfficialPlaylist()
+  if (result) {
+    officialPlaylist.value = result
+  } else {
+    officialPlaylistFailed.value = true
+  }
+}
 
 onMounted(async () => {
   const health = await checkHealth()
@@ -32,6 +50,11 @@ onMounted(async () => {
 
       <template v-if="spotifyStatus?.status === 'connected'">
         <p>Spotify connected{{ spotifyStatus.display_name ? ` as ${spotifyStatus.display_name}` : '' }}.</p>
+        <button @click="createOfficialPlaylist">Initialize official playlist</button>
+        <p v-if="officialPlaylist">
+          Official playlist: <a :href="officialPlaylist.url" target="_blank">{{ officialPlaylist.name }}</a>
+        </p>
+        <p v-if="officialPlaylistFailed">Failed to initialize the official playlist.</p>
       </template>
       <template v-else-if="spotifyStatus?.status === 'authorization_required'">
         <p>Spotify authorization expired.</p>

@@ -867,6 +867,69 @@ func TestClientArtistRejectsEmptyID(t *testing.T) {
 	}
 }
 
+func TestClientCreatePlaylistSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("unexpected method: %s", r.Method)
+		}
+		if r.URL.Path != "/v1/me/playlists" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer access-123" {
+			t.Errorf("unexpected Authorization header: %s", r.Header.Get("Authorization"))
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		if body["name"] != "Sound Continuum — Weekly Journey" {
+			t.Errorf("unexpected name: %v", body["name"])
+		}
+		if body["description"] != "a description" {
+			t.Errorf("unexpected description: %v", body["description"])
+		}
+		if body["public"] != true {
+			t.Errorf("expected public: true, got %v", body["public"])
+		}
+		if v, ok := body["collaborative"]; ok && v != false {
+			t.Errorf("expected collaborative to be false or absent, got %v", v)
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "pl-official", "name": "Sound Continuum — Weekly Journey",
+			"external_urls": map[string]any{"spotify": "https://open.spotify.com/playlist/pl-official"},
+		})
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	playlist, err := c.CreatePlaylist(context.Background(), "access-123", PlaylistCreateRequest{
+		Name:        "Sound Continuum — Weekly Journey",
+		Description: "a description",
+		Public:      true,
+	})
+	if err != nil {
+		t.Fatalf("CreatePlaylist returned error: %v", err)
+	}
+	if playlist.ID != "pl-official" || playlist.Name != "Sound Continuum — Weekly Journey" {
+		t.Errorf("unexpected playlist: %+v", playlist)
+	}
+	if playlist.ExternalURLs.Spotify != "https://open.spotify.com/playlist/pl-official" {
+		t.Errorf("unexpected external URL: %+v", playlist.ExternalURLs)
+	}
+}
+
+func TestClientCreatePlaylistForbidden(t *testing.T) {
+	c, server := newErrorClient(t, http.StatusForbidden, "")
+	defer server.Close()
+
+	_, err := c.CreatePlaylist(context.Background(), "access-123", PlaylistCreateRequest{Name: "x", Public: true})
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
 func newErrorClient(t *testing.T, status int, body string) (*Client, *httptest.Server) {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

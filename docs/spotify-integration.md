@@ -742,3 +742,118 @@ documented above. A nonexistent artist ID returned `502` (Spotify's `400
 Invalid base62 id` mapped through the existing default case, consistent
 with Card 28's nonexistent-track handling). Server logs contained no
 tokens, secrets, or Authorization headers at any point.
+
+## 26. Implementation (Card #30)
+
+The official Sound Continuum Spotify playlist is created once, persisted
+locally, and reused by every future weekly edition — resolving the Card
+#27 deferral on how the playlist is identified. Still in
+`backend/internal/spotify/`, no new package.
+
+### Endpoints
+
+```
+POST /api/spotify/playlist    initialize (or return) the official playlist
+```
+
+New this card. First write endpoint and first non-GET route in the
+project. All prior endpoints unchanged.
+
+### Idempotency
+
+`Service.InitializeOfficialPlaylist` checks the local `official_playlist`
+SQLite table first. If a row exists, it's returned immediately — **no
+Spotify call is made at all**. Only when no local row exists does it call
+`POST /me/playlists` and persist the result. This single design choice is
+what guarantees a second (or Nth) call can never create a duplicate
+playlist, and it is also how the case of "a local record exists but
+Spotify can no longer confirm it" is handled: since an existing local
+record is never re-verified against Spotify, there is nothing to
+reconcile. `SaveOfficialPlaylist` is a plain `INSERT` (no upsert) against
+a `CHECK (id = 1)` singleton table, which also fails a second insert
+attempt as a DB-level backstop.
+
+If Spotify creation succeeds but the subsequent local save fails, the
+Spotify playlist ID is logged (the only place it would otherwise be
+recoverable) and the request returns an error. The playlist is **not**
+retried or recreated — retrying would risk a second Spotify playlist,
+since the local row is what dedupes. This is a documented, accepted
+limitation: there is no distributed transaction between the Spotify API
+call and the SQLite write, and none is planned (see
+[`decisions.md`](memory/decisions.md)).
+
+### Playlist configuration
+
+Created via `Client.CreatePlaylist` → `POST /v1/me/playlists` (current
+API — never the deprecated `/users/{user_id}/playlists`), with fixed,
+explicitly-sent values:
+
+- name: `Sound Continuum — Weekly Journey`
+- public: `true`
+- collaborative: `false` (the zero value — never set true)
+- description: `A weekly musical journey connecting timeless classics,
+  current sounds and emerging artists through intentional musical
+  bridges.`
+
+The playlist is created empty — no tracks are added by this card.
+
+### Scope change
+
+`oauthScope` gained `playlist-modify-public`:
+`user-read-private playlist-read-private playlist-modify-public`. **The
+Spotify connection must be re-authorized** after this change — the
+existing `authorization_required` → `Reconnect Spotify` flow handles it,
+same mechanism as Card #26's scope addition, no new code.
+
+### CORS
+
+Every route before this card was `GET` (a CORS "simple request"). A JSON
+`POST` is not simple, so the browser sends an `OPTIONS` preflight first.
+`withDevCORS` (`backend/cmd/server/main.go`) now answers `OPTIONS`
+directly with `Access-Control-Allow-Methods`/`Access-Control-Allow-Headers`
+before reaching the mux, which has no `OPTIONS` route registered.
+
+### Error handling
+
+Reuses `writeSpotifyError` unchanged: `ErrNotConnected` → 503 (also
+covers "verify Spotify is connected," for free, via the existing
+`withToken` path), `ErrInvalidGrant` → 401, `ErrRateLimited` → 429,
+everything else (including a local persistence failure after a
+successful Spotify creation) → 502 via the default case.
+
+### Testing
+
+`client_test.go`: `CreatePlaylist` success (method/path/request body/auth
+header, response decode) and a `403` → `ErrForbidden` case.
+`store_test.go`: no-row-yet, save-then-get round trip, and a second save
+failing on the `id=1` primary key. `handlers_test.go`: creates on first
+call and persists; sends the exact request body (name/description/
+public/collaborative); returns the cached playlist with **zero** Spotify
+calls when one already exists locally (the idempotency guarantee);
+exactly one Spotify create call across two `InitializeOfficialPlaylist`
+calls; not-connected → `ErrNotConnected`; authorization-required →
+`ErrInvalidGrant`; a failed Spotify creation persists nothing; and a full
+HTTP round trip through the real mux showing two calls return the same
+`spotify_playlist_id`.
+
+The case of "Spotify creation succeeds, then the local save specifically
+fails" is not independently simulated — with the project's real
+`*sql.DB`/no-mocks convention there is no clean way to fail only the
+second of two sequential store calls. It's covered indirectly (the
+primary-key-constraint test) plus code review of the no-retry/log branch.
+This is a known, deliberate test-coverage limitation, not an oversight.
+
+### Real Spotify verification
+
+Performed against the real Spotify API. The curator reconnected with the
+new `playlist-modify-public` scope, then `POST /api/spotify/playlist`
+created a playlist visible in Spotify: named exactly `Sound Continuum —
+Weekly Journey`, public, non-collaborative, correct description, zero
+tracks. No cover image — expected, since playlist cover upload is
+explicitly out of scope for this card; Spotify shows a placeholder until
+one is set or tracks are added. The endpoint returned
+`spotify_playlist_id`/`name`/`url`; calling it again returned the
+identical `spotify_playlist_id` and confirmed no second playlist was
+created (verified both via the response and by inspecting the
+`official_playlist` SQLite row directly). Server logs contained no
+tokens, secrets, or Authorization headers at any point.
