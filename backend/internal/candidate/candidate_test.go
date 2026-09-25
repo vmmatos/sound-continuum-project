@@ -11,6 +11,7 @@ func TestNewCandidateTrackValidSpotify(t *testing.T) {
 		SpotifyTrackID: "spotify-track-1",
 		Source:         SourceSpotify,
 		Category:       CategoryEmerging,
+		Type:           TypeDiscovery,
 		TrackTitle:     "Example Song",
 		TrackArtist:    "Example Artist",
 	})
@@ -62,6 +63,7 @@ func TestValidateInvalidStatus(t *testing.T) {
 		SpotifyTrackID: "spotify-track-1",
 		Source:         SourceSpotify,
 		Category:       CategoryPast,
+		Type:           TypeClassic,
 		Status:         "approved",
 	}
 	if err := c.Validate(); !errors.Is(err, ErrInvalidStatus) {
@@ -75,6 +77,7 @@ func TestNewCandidateTrackSpotifySourceCarriesSpotifyTrackID(t *testing.T) {
 		SpotifyTrackID: "spotify-track-1",
 		Source:         SourceSpotify,
 		Category:       CategoryNewRelease,
+		Type:           TypeCurrent,
 	})
 	if err != nil {
 		t.Fatalf("NewCandidateTrack returned error: %v", err)
@@ -89,6 +92,7 @@ func TestNewCandidateTrackManualSourceRequiresNoSpotifyTrackID(t *testing.T) {
 		ID:          "cand-1",
 		Source:      SourceManual,
 		Category:    CategoryPast,
+		Type:        TypeDiscovery,
 		TrackTitle:  "A Rediscovered Classic",
 		TrackArtist: "Some Artist",
 	})
@@ -105,6 +109,7 @@ func TestNewCandidateTrackSpotifySourceMissingSpotifyTrackID(t *testing.T) {
 		ID:       "cand-1",
 		Source:   SourceSpotify,
 		Category: CategoryPast,
+		Type:     TypeCurrent,
 	})
 	if !errors.Is(err, ErrMissingSpotifyTrackID) {
 		t.Errorf("err = %v, want ErrMissingSpotifyTrackID", err)
@@ -116,6 +121,7 @@ func TestNewCandidateTrackEditorialContextWithoutSpotifyData(t *testing.T) {
 		ID:                  "cand-1",
 		Source:              SourceLastFM,
 		Category:            CategoryEmerging,
+		Type:                TypeDiscovery,
 		TrackTitle:          "A Track From Last.fm",
 		TrackArtist:         "An Artist",
 		DiscoveryReason:     "Surfaced via similar-artist lookup",
@@ -140,5 +146,109 @@ func TestNewCandidateTrackEmptyID(t *testing.T) {
 	})
 	if !errors.Is(err, ErrEmptyCandidateID) {
 		t.Errorf("err = %v, want ErrEmptyCandidateID", err)
+	}
+}
+
+func TestNewCandidateTrackValidTypeClassic(t *testing.T) {
+	c, err := NewCandidateTrack(NewCandidateTrackParams{
+		ID:       "cand-1",
+		Source:   SourceManual,
+		Category: CategoryPast,
+		Type:     TypeClassic,
+	})
+	if err != nil {
+		t.Fatalf("NewCandidateTrack returned error: %v", err)
+	}
+	if c.Type != TypeClassic {
+		t.Errorf("Type = %q, want %q", c.Type, TypeClassic)
+	}
+}
+
+func TestNewCandidateTrackValidTypeCurrent(t *testing.T) {
+	c, err := NewCandidateTrack(NewCandidateTrackParams{
+		ID:       "cand-1",
+		Source:   SourceManual,
+		Category: CategoryNewRelease,
+		Type:     TypeCurrent,
+	})
+	if err != nil {
+		t.Fatalf("NewCandidateTrack returned error: %v", err)
+	}
+	if c.Type != TypeCurrent {
+		t.Errorf("Type = %q, want %q", c.Type, TypeCurrent)
+	}
+}
+
+func TestNewCandidateTrackValidTypeDiscovery(t *testing.T) {
+	c, err := NewCandidateTrack(NewCandidateTrackParams{
+		ID:       "cand-1",
+		Source:   SourceManual,
+		Category: CategoryEmerging,
+		Type:     TypeDiscovery,
+	})
+	if err != nil {
+		t.Fatalf("NewCandidateTrack returned error: %v", err)
+	}
+	if c.Type != TypeDiscovery {
+		t.Errorf("Type = %q, want %q", c.Type, TypeDiscovery)
+	}
+}
+
+func TestNewCandidateTrackInvalidType(t *testing.T) {
+	for _, typ := range []Type{"", "classic", "CLASSIC", "New", "Vintage", "Emerging"} {
+		_, err := NewCandidateTrack(NewCandidateTrackParams{
+			ID:       "cand-1",
+			Source:   SourceManual,
+			Category: CategoryPresent,
+			Type:     typ,
+		})
+		if !errors.Is(err, ErrInvalidType) {
+			t.Errorf("type %q: err = %v, want ErrInvalidType", typ, err)
+		}
+	}
+}
+
+func TestNewCandidateTrackCategoryValidationUnaffectedByType(t *testing.T) {
+	// A valid Type must not mask or short-circuit Category validation.
+	_, err := NewCandidateTrack(NewCandidateTrackParams{
+		ID:       "cand-1",
+		Source:   SourceManual,
+		Category: "Old",
+		Type:     TypeCurrent,
+	})
+	if !errors.Is(err, ErrInvalidCategory) {
+		t.Errorf("err = %v, want ErrInvalidCategory", err)
+	}
+}
+
+func TestNewCandidateTrackTypeAndCategoryAreIndependent(t *testing.T) {
+	// Type and Category are two unrelated dimensions: no combination is
+	// rejected or rewritten based on the other. Discovery does not imply
+	// Emerging, Current does not imply Present, Classic does not imply Past.
+	cases := []struct {
+		typ      Type
+		category Category
+	}{
+		{TypeDiscovery, CategoryPast},
+		{TypeDiscovery, CategoryEmerging},
+		{TypeCurrent, CategoryNewRelease},
+		{TypeClassic, CategoryPast},
+	}
+	for _, tc := range cases {
+		c, err := NewCandidateTrack(NewCandidateTrackParams{
+			ID:       "cand-1",
+			Source:   SourceManual,
+			Category: tc.category,
+			Type:     tc.typ,
+		})
+		if err != nil {
+			t.Fatalf("Type %q + Category %q: NewCandidateTrack returned error: %v", tc.typ, tc.category, err)
+		}
+		if c.Type != tc.typ {
+			t.Errorf("Type = %q, want %q", c.Type, tc.typ)
+		}
+		if c.Category != tc.category {
+			t.Errorf("Category = %q, want %q", c.Category, tc.category)
+		}
 	}
 }

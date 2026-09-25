@@ -684,3 +684,36 @@ supplied by the caller, deferred the same way Card 27 deferred Sound
 Continuum playlist discovery — until a concrete persistence/discovery
 card creates a real need. No persistence, schema, API endpoint, or CRUD
 was added — nothing in the card's Definition of Done requires it.
+
+---
+
+**Decision:** Add `Type` as a second, fully independent enum on
+`CandidateTrack`, rather than extending `Category` or deriving `Type`
+from `Category`.
+
+**Context:** Card 32 introduces a `CandidateType` concept (`Classic`,
+`Current`, `Discovery`) distinct from the editorial `Category` (`Past`,
+`Present`, `Emerging`, `New Release`) Card 31 defined. `Category`
+describes where a candidate sits editorially; `Type` describes how it
+entered the editorial process — e.g. Discovery does not imply Emerging,
+and Classic does not imply Past. The card explicitly forbids any
+compatibility or inference rule between the two.
+
+**Reason:** `Category` and `Status` already established a convention
+(`type X string` + `const` block + `Valid() bool`, field self-named
+after its type) for exactly this kind of small, closed domain enum.
+Reusing it for `Type` needed no new abstraction — no generic enum
+framework, no shared validation helper — since three independent copies
+of a five-line pattern is cheaper than building one shared mechanism for
+a shape this small. `Type` is required and validated at construction
+like `Category` (not defaulted like `Status`), since Card 32 explicitly
+rejects a meaningless default such as always defaulting to `Classic`.
+
+**Consequences:** `backend/internal/candidate/candidate.go` gains `Type`
+(`TypeClassic`, `TypeCurrent`, `TypeDiscovery`) and a `Type Type` field
+on both `CandidateTrack` and `NewCandidateTrackParams`. `errors.go` gains
+`ErrInvalidType`. `Validate()` checks `Type.Valid()` independently of
+`Category.Valid()` — no cross-field rule was added, so combinations like
+`Type: Discovery, Category: Past` or `Type: Classic, Category: New
+Release` are valid and unremarkable. No persistence, API, or discovery
+logic was added — nothing in the card's Definition of Done requires it.
