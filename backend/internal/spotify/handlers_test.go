@@ -687,6 +687,96 @@ func TestTrackHandlerEmptyID(t *testing.T) {
 	}
 }
 
+func TestArtistHandlerUsesPathID(t *testing.T) {
+	var gotPath string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/artists/a-1", func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		json.NewEncoder(w).Encode(map[string]any{"id": "a-1", "name": "Artist One"})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc := newTestService(t, server.URL)
+	ctx := newTestContext()
+	if err := svc.store.Upsert(ctx, Connection{
+		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
+	}); err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+
+	mux2 := http.NewServeMux()
+	mux2.HandleFunc("GET /api/spotify/artists/{id}", svc.ArtistHandler)
+
+	rec := httptest.NewRecorder()
+	mux2.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/spotify/artists/a-1", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if gotPath != "/v1/artists/a-1" {
+		t.Errorf("expected the path ID to reach Spotify as /v1/artists/a-1, got %q", gotPath)
+	}
+	var artist Artist
+	if err := json.NewDecoder(rec.Body).Decode(&artist); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if artist.Name != "Artist One" {
+		t.Errorf("unexpected artist: %+v", artist)
+	}
+}
+
+func TestArtistHandlerForbidden(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/artists/a-1", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "inaccessible"}})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc := newTestService(t, server.URL)
+	ctx := newTestContext()
+	if err := svc.store.Upsert(ctx, Connection{
+		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
+	}); err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+
+	mux2 := http.NewServeMux()
+	mux2.HandleFunc("GET /api/spotify/artists/{id}", svc.ArtistHandler)
+
+	rec := httptest.NewRecorder()
+	mux2.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/spotify/artists/a-1", nil))
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected a Spotify-forbidden artist to map to 502 (not 403), got %d", rec.Code)
+	}
+}
+
+func TestArtistHandlerEmptyID(t *testing.T) {
+	svc := newTestService(t, "")
+	ctx := newTestContext()
+	if err := svc.store.Upsert(ctx, Connection{
+		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
+	}); err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/spotify/artists/", nil)
+	req.SetPathValue("id", "")
+
+	rec := httptest.NewRecorder()
+	svc.ArtistHandler(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
 func assertRedirectTo(t *testing.T, rec *httptest.ResponseRecorder, want string) {
 	t.Helper()
 	if rec.Code != http.StatusFound {

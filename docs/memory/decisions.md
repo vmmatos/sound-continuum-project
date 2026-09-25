@@ -560,3 +560,38 @@ through to `writeSpotifyError`.
 **Consequences:** `ErrEmptyTrackID` added to `errors.go`; `TrackHandler`
 special-cases it exactly as `SearchHandler` special-cases
 `ErrSearchLimitTooHigh`. `writeSpotifyError` itself is unchanged.
+
+---
+
+**Decision:** Extend the existing `Artist` type for Card 29's `GetArtist`
+(`type`, `images`, `genres`), rather than a parallel "detailed artist"
+type; do not add `followers`/`popularity`; do not implement a bulk artist
+endpoint or `/artists/{id}/top-tracks`.
+
+**Context:** Card 29 needs the full single-artist response
+(`GET /artists/{id}`) for future editorial workflows inspecting an
+artist behind a track or playlist. `Artist` already existed (Card 26) as
+a simplified shape shared by `Track.Artists`, `Album.Artists`, and
+`SearchResult.Artists` (Card 28 already extended it once with
+`href`/`external_urls`).
+
+**Reason:** Same reasoning as Card 28's `Track`/`Album` decision above —
+the fuller artist field set is additive and backward-compatible with
+every existing decode path, so a second type would only duplicate
+`Artist` for no behavioral difference. `followers` and `popularity` were
+removed by Spotify from the Artist object for Development Mode (per the
+Card 23 API-changes research); inventing or estimating replacement
+values would misrepresent Spotify data as something it isn't. The bulk
+artist endpoint (`GET /artists?ids=`) and `/artists/{id}/top-tracks` are
+both removed for Development Mode — same status as the bulk-tracks
+removal Card 28 already worked around — so this card makes one request
+per artist and does not wrap the removed top-tracks endpoint.
+
+**Consequences:** `Track.Artists`, `Album.Artists`, and
+`SearchResult.Artists` pick up `type`/`images`/`genres` automatically,
+since all three already reuse `Artist`. `genres` is decoded as optional,
+deprecated Spotify metadata only — no genre normalization or mapping
+into Sound Continuum's musical DNA is built on top of it. A future
+workflow needing several artists' data must batch explicitly at the
+application layer (with awareness of rate limits and partial failures),
+not inside this client.

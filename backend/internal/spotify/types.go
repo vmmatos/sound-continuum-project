@@ -188,7 +188,11 @@ type Track struct {
 }
 
 // Artist is the subset of a Spotify artist object referenced from a track
-// or album.
+// or album, and the full decoded shape returned by GET /v1/artists/{id}.
+// Genres is deprecated, optional Spotify metadata — do not treat it as
+// authoritative for Sound Continuum genre classification. Followers and
+// Popularity are intentionally absent: Spotify removed both from the
+// Artist object for Development Mode; see decisions.md.
 type Artist struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
@@ -197,6 +201,9 @@ type Artist struct {
 	ExternalURLs struct {
 		Spotify string `json:"spotify"`
 	} `json:"external_urls"`
+	Type   string   `json:"type"`
+	Images []Image  `json:"images"`
+	Genres []string `json:"genres"`
 }
 
 // SearchResult carries only the object types Sound Continuum's curation
