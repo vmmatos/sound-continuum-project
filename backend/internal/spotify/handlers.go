@@ -282,6 +282,17 @@ func (s *Service) Playlists(ctx context.Context, limit, offset int) (Paging[Play
 	return page, err
 }
 
+// Playlist returns metadata for a single playlist the curator can access.
+func (s *Service) Playlist(ctx context.Context, playlistID string) (Playlist, error) {
+	var playlist Playlist
+	err := s.withToken(ctx, func(accessToken string) error {
+		var err error
+		playlist, err = s.client.Playlist(ctx, accessToken, playlistID)
+		return err
+	})
+	return playlist, err
+}
+
 // PlaylistItems returns a page of items from one of the curator's playlists.
 func (s *Service) PlaylistItems(ctx context.Context, playlistID string, limit, offset int) (Paging[PlaylistItem], error) {
 	var page Paging[PlaylistItem]
@@ -326,6 +337,18 @@ func (s *Service) PlaylistsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(page)
+}
+
+// PlaylistHandler exposes GET /api/spotify/playlists/{id}.
+func (s *Service) PlaylistHandler(w http.ResponseWriter, r *http.Request) {
+	playlist, err := s.Playlist(r.Context(), r.PathValue("id"))
+	if err != nil {
+		log.Printf("Spotify /playlists/{id} request failed: %v", err)
+		writeSpotifyError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(playlist)
 }
 
 // PlaylistItemsHandler exposes

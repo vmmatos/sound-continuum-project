@@ -477,6 +477,75 @@ func TestPlaylistsHandlerPassesQueryParams(t *testing.T) {
 	}
 }
 
+func TestPlaylistHandlerUsesPathID(t *testing.T) {
+	var gotPath string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/playlists/abc123", func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		json.NewEncoder(w).Encode(map[string]any{"id": "abc123", "name": "Chapter One", "items": map[string]any{"total": 3}})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc := newTestService(t, server.URL)
+	ctx := newTestContext()
+	if err := svc.store.Upsert(ctx, Connection{
+		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
+	}); err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+
+	mux2 := http.NewServeMux()
+	mux2.HandleFunc("GET /api/spotify/playlists/{id}", svc.PlaylistHandler)
+
+	rec := httptest.NewRecorder()
+	mux2.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/spotify/playlists/abc123", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if gotPath != "/v1/playlists/abc123" {
+		t.Errorf("expected the path ID to reach Spotify as /v1/playlists/abc123, got %q", gotPath)
+	}
+	var playlist Playlist
+	if err := json.NewDecoder(rec.Body).Decode(&playlist); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if playlist.Name != "Chapter One" || playlist.Items.Total != 3 {
+		t.Errorf("unexpected playlist: %+v", playlist)
+	}
+}
+
+func TestPlaylistHandlerForbidden(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/playlists/abc123", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "inaccessible"}})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc := newTestService(t, server.URL)
+	ctx := newTestContext()
+	if err := svc.store.Upsert(ctx, Connection{
+		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
+	}); err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+
+	mux2 := http.NewServeMux()
+	mux2.HandleFunc("GET /api/spotify/playlists/{id}", svc.PlaylistHandler)
+
+	rec := httptest.NewRecorder()
+	mux2.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/spotify/playlists/abc123", nil))
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected a Spotify-forbidden playlist to map to 502 (not 404), got %d", rec.Code)
+	}
+}
+
 func TestPlaylistItemsHandlerUsesPathID(t *testing.T) {
 	var gotPath string
 	mux := http.NewServeMux()

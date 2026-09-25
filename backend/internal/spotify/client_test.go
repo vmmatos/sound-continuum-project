@@ -214,7 +214,12 @@ func TestClientPlaylistItemsSuccess(t *testing.T) {
 		}
 		json.NewEncoder(w).Encode(map[string]any{
 			"items": []map[string]any{
-				{"added_at": "2026-01-01T00:00:00Z", "item": map[string]any{"id": "t-1", "name": "Track One"}},
+				{
+					"added_at": "2026-01-01T00:00:00Z",
+					"added_by": map[string]any{"id": "curator-1"},
+					"is_local": false,
+					"item":     map[string]any{"type": "track", "id": "t-1", "name": "Track One"},
+				},
 			},
 			"total": 1, "limit": 20, "offset": 0,
 		})
@@ -228,8 +233,141 @@ func TestClientPlaylistItemsSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PlaylistItems returned error: %v", err)
 	}
-	if len(page.Items) != 1 || page.Items[0].Track.Name != "Track One" {
-		t.Errorf("unexpected page: %+v", page)
+	if len(page.Items) != 1 {
+		t.Fatalf("unexpected page: %+v", page)
+	}
+	item := page.Items[0]
+	if item.ItemType != "track" || item.Track == nil || item.Track.Name != "Track One" {
+		t.Errorf("unexpected item: %+v", item)
+	}
+	if item.AddedBy.ID != "curator-1" {
+		t.Errorf("unexpected added_by: %+v", item.AddedBy)
+	}
+}
+
+func TestClientPlaylistItemsEpisode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{
+				{
+					"added_at": "2026-01-01T00:00:00Z",
+					"item":     map[string]any{"type": "episode", "id": "e-1", "name": "Episode One"},
+				},
+			},
+			"total": 1, "limit": 20, "offset": 0,
+		})
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	page, err := c.PlaylistItems(context.Background(), "access-123", "pl-1", 0, -1)
+	if err != nil {
+		t.Fatalf("PlaylistItems returned error: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("unexpected page: %+v", page)
+	}
+	item := page.Items[0]
+	if item.ItemType != "episode" || item.Episode == nil || item.Episode.Name != "Episode One" {
+		t.Errorf("unexpected item: %+v", item)
+	}
+	if item.Track != nil {
+		t.Errorf("episode item must not populate Track, got %+v", item.Track)
+	}
+}
+
+func TestClientPlaylistItemsUnavailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{
+				{"added_at": "2026-01-01T00:00:00Z", "item": nil},
+			},
+			"total": 1, "limit": 20, "offset": 0,
+		})
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	page, err := c.PlaylistItems(context.Background(), "access-123", "pl-1", 0, -1)
+	if err != nil {
+		t.Fatalf("PlaylistItems returned error: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("unexpected page: %+v", page)
+	}
+	item := page.Items[0]
+	if item.ItemType != "unavailable" || item.Track != nil || item.Episode != nil {
+		t.Errorf("expected an unavailable item with no track/episode, got %+v", item)
+	}
+}
+
+func TestClientPlaylistSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/playlists/pl-1" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "pl-1", "name": "Chapter One", "href": "https://api.spotify.com/v1/playlists/pl-1",
+			"public": false, "collaborative": true, "snapshot_id": "snap-1",
+			"external_urls": map[string]any{"spotify": "https://open.spotify.com/playlist/pl-1"},
+			"images":        []map[string]any{{"url": "https://example.com/cover.jpg", "height": 300, "width": 300}},
+			"items":         map[string]any{"total": 42},
+		})
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	playlist, err := c.Playlist(context.Background(), "access-123", "pl-1")
+	if err != nil {
+		t.Fatalf("Playlist returned error: %v", err)
+	}
+	if playlist.SnapshotID != "snap-1" || playlist.Collaborative != true || playlist.Public != false {
+		t.Errorf("unexpected playlist metadata: %+v", playlist)
+	}
+	if playlist.Items.Total != 42 {
+		t.Errorf("expected item count 42, got %d", playlist.Items.Total)
+	}
+	if playlist.ExternalURLs.Spotify != "https://open.spotify.com/playlist/pl-1" {
+		t.Errorf("unexpected external URL: %+v", playlist.ExternalURLs)
+	}
+	if len(playlist.Images) != 1 || playlist.Images[0].Height != 300 {
+		t.Errorf("unexpected images: %+v", playlist.Images)
+	}
+}
+
+func TestClientPlaylistEmptyItems(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "pl-empty", "name": "Empty Chapter", "items": map[string]any{"total": 0},
+		})
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	playlist, err := c.Playlist(context.Background(), "access-123", "pl-empty")
+	if err != nil {
+		t.Fatalf("Playlist returned error: %v", err)
+	}
+	if playlist.Items.Total != 0 {
+		t.Errorf("expected 0 items, got %+v", playlist)
+	}
+}
+
+func TestClientPlaylistForbidden(t *testing.T) {
+	c, server := newErrorClient(t, http.StatusForbidden, "")
+	defer server.Close()
+
+	_, err := c.Playlist(context.Background(), "access-123", "pl-inaccessible")
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
 	}
 }
 

@@ -169,6 +169,32 @@
 - [x] No playlist creation/management, no Last.fm, no discovery/ranking/
       curation logic added
 
+## Done (Card 27 — Retrieve and Inspect Spotify Playlists)
+
+- [x] `GET /api/spotify/playlists/{id}` added (`Client.Playlist`,
+      `Service.Playlist`, `PlaylistHandler`) — no scope change
+- [x] `Playlist` gained `href`, `collaborative`, `snapshot_id`,
+      `external_urls.spotify`, `images` (`Image`, new)
+- [x] `PlaylistItem` reworked to a discriminated union (`ItemType` +
+      `Track`/`Episode` pointers, `AddedBy`, `IsLocal`) via custom
+      `UnmarshalJSON`/`MarshalJSON` — no longer silently casts every item
+      to `Track`; a null item decodes to `ItemType: "unavailable"`,
+      `Episode` is a new minimal type
+- [x] Backend tests: new success/403/empty/episode/unavailable-item cases
+      in `client_test.go`/`handlers_test.go`, existing Card 26 tests
+      updated for the `Track` pointer change — same conventions, no real
+      Spotify calls
+- [x] Real Spotify integration test: `/playlists/{id}` and
+      `/playlists/{id}/items` verified against the real API (existing dev
+      connection, no reconnect needed); confirmed metadata stays available
+      for a playlist the curator doesn't own while its items 403; no
+      tokens/secrets in logs
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+- [x] `docs/spotify-integration.md` updated (§23)
+- [x] No playlist write, no Sound Continuum playlist discovery (deferred —
+      no name/ID config exists), no frontend UI
+
 ## In progress
 
 - Nothing currently in progress.

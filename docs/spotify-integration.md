@@ -505,3 +505,82 @@ scope. Result: `GET /api/spotify/me` returned the real profile;
 real track data for an owned playlist (correct after the `items`/`item`
 field-name fix above). Server logs contained no tokens, secrets, or
 Authorization headers at any point.
+
+## 23. Implementation (Card #27)
+
+Single-playlist retrieval and playlist-item type discrimination are added
+on top of Card #26's playlist list/items client, in the same
+`backend/internal/spotify/` package.
+
+### Endpoints
+
+```
+GET /api/spotify/playlists/{id}    metadata for one playlist
+```
+
+New this card. `GET /api/spotify/playlists` (list) and
+`GET /api/spotify/playlists/{id}/items` are unchanged from Card #26. All
+still read-only. No OAuth scope change — Card 26's
+`playlist-read-private` already covers `GET /playlists/{id}`.
+
+### Playlist metadata
+
+`Playlist` gained `href`, `collaborative`, `snapshot_id`,
+`external_urls.spotify`, `images` (`[]Image{URL, Height, Width}`) — the
+fields Card #27 asks for to identify and inspect a specific playlist.
+Confirmed live: `images[].height`/`width` can be `null` (decodes to Go's
+zero value `0`, no error) — see [`decisions.md`](memory/decisions.md).
+
+### Playlist item type discrimination
+
+`PlaylistItem` no longer assumes every item is a track. It now carries
+`ItemType` (`"track"`, `"episode"`, or `"unavailable"`) and exactly one of
+`Track *Track` / `Episode *Episode` (both `nil` for `"unavailable"`),
+decoded by a custom `UnmarshalJSON` that peeks the nested item's `type`
+field before deciding how to decode it, and a custom `MarshalJSON` that
+re-serializes as `{"added_at", "added_by", "is_local", "type",
+"track"|"episode"}` for the dev-facing JSON response. `Episode` is a new,
+minimal type (`ID`, `Name`, `URI`, `DurationMS`). See
+[`decisions.md`](memory/decisions.md) for why (discriminated union via two
+pointer fields, not an interface or generic payload).
+
+### Error handling
+
+Unchanged from Card #26 — reused as-is, not duplicated.
+`GET /playlists/{id}` goes through the same `Client.request` /
+`writeSpotifyError` path as every other operation. Confirmed live: a
+playlist the curator doesn't own still returns its metadata (`200`,
+including `items.total == 0`), while that same playlist's items 403
+(`Service.PlaylistHandler`/`PlaylistItemsHandler` both map this through
+`writeSpotifyError`'s default case — `502`, not a fabricated `404` — same
+as every other Spotify error since Card #26).
+
+### Playlist discovery
+
+Not implemented. See [`decisions.md`](memory/decisions.md) — no Sound
+Continuum playlist name/ID configuration exists anywhere in this repo, and
+Card #27 explicitly forbids hardcoding one. Deferred to a later
+application/service layer.
+
+### Testing
+
+`client_test.go`/`handlers_test.go` extended, same conventions as prior
+cards. Covers: `GetPlaylist`-equivalent success (metadata fields,
+`snapshot_id`, `collaborative`), 403 (stays `ErrForbidden`, not remapped),
+empty-items decode, episode-type decode, null/unavailable-item decode (no
+panic), and the handler-level path-ID + 403 pass-through.
+
+### Real Spotify integration test
+
+Performed against the real Spotify API using the existing dev connection
+(no new Spotify app, no reconnect needed — scope unchanged from Card #26).
+`GET /api/spotify/playlists` returned the curator's 86 real playlists;
+`GET /api/spotify/playlists/{id}` on an owned playlist returned full
+metadata (`snapshot_id`, `collaborative`, `external_urls`, `images`) and
+`GET /api/spotify/playlists/{id}/items` returned real, correctly-typed
+track data. On a playlist owned by someone else: metadata still returned
+(`200`, `items.total: 0`), while `/items` returned `502` (Spotify's `403`
+mapped through the existing default case) — confirming playlist metadata
+stays available when contents don't. A nonexistent playlist ID returned `502`
+(Spotify's `400 Invalid base62 id`). Server logs contained no tokens,
+secrets, or Authorization headers at any point.
