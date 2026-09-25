@@ -315,6 +315,17 @@ func (s *Service) Search(ctx context.Context, query, types string, limit, offset
 	return result, err
 }
 
+// Track returns metadata for a single track.
+func (s *Service) Track(ctx context.Context, trackID string) (Track, error) {
+	var track Track
+	err := s.withToken(ctx, func(accessToken string) error {
+		var err error
+		track, err = s.client.Track(ctx, accessToken, trackID)
+		return err
+	})
+	return track, err
+}
+
 // MeHandler exposes GET /api/spotify/me.
 func (s *Service) MeHandler(w http.ResponseWriter, r *http.Request) {
 	profile, err := s.Me(r.Context())
@@ -379,6 +390,22 @@ func (s *Service) SearchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+}
+
+// TrackHandler exposes GET /api/spotify/tracks/{id}.
+func (s *Service) TrackHandler(w http.ResponseWriter, r *http.Request) {
+	track, err := s.Track(r.Context(), r.PathValue("id"))
+	if errors.Is(err, ErrEmptyTrackID) {
+		http.Error(w, "track id must not be empty", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		log.Printf("Spotify /tracks/{id} request failed: %v", err)
+		writeSpotifyError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(track)
 }
 
 // queryInt parses a query parameter as an int, returning 0 if it's absent

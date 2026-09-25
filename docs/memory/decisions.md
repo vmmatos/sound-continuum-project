@@ -497,3 +497,66 @@ surface as of Card 27. Playlist discovery is deferred to a later
 application/service layer, once a concrete decision exists about how the
 Sound Continuum playlist is identified (config value, naming convention,
 or otherwise).
+
+---
+
+**Decision:** Extend the existing `Track`/`Artist` types and add one new
+`Album` type for Card 28's `GetTrack`, rather than a parallel "detailed
+track" type.
+
+**Context:** Card 28 needs full track metadata (album, explicit flag,
+track/disc numbers, external IDs) to support future editorial review of a
+track before it's added to a playlist. `Track` already existed (Card 26),
+reused by `PlaylistItem.Track` and `SearchResult.Tracks`.
+
+**Reason:** Spotify's fuller track field set is additive and backward-
+compatible with every existing decode path — a second "detailed track"
+type would duplicate `Track` for no behavioral difference, only more
+fields. `Artist` (already shared by `Track.Artists`) also gains fields
+(`href`, `external_urls`) needed by the new `Album.Artists`, rather than a
+second artist type.
+
+**Consequences:** `PlaylistItem.Track` and `SearchResult.Tracks` pick up
+every new field automatically. `Artist`'s decoded shape changes (a
+compatible superset) everywhere it's already used. Audio features,
+`popularity`, `available_markets`, and `linked_from` remain explicitly
+excluded, consistent with the existing M3 audio-features decision above.
+
+---
+
+**Decision:** `Client.Track`/`Service.Track` accept no `market` parameter.
+
+**Context:** Spotify's `GET /tracks/{id}` supports an optional `market`
+query parameter. Card 28 asked for a deliberate decision on this rather
+than defaulting silently.
+
+**Reason:** `Service.withToken` always supplies a user (Authorization
+Code) access token — this client has no Client Credentials path. Spotify
+infers market from the authenticated user's account when `market` is
+omitted; it's only required for app-only tokens. Threading an unused
+parameter through `Client`/`Service`/handler now would be the same kind of
+premature configuration this project already avoided once (the Card 27
+playlist-discovery deferral above).
+
+**Consequences:** No global market configuration exists. If a concrete
+market-mismatch symptom appears later, add the parameter then, not ahead
+of need.
+
+---
+
+**Decision:** Reject an empty track ID client-side (`ErrEmptyTrackID`),
+mirroring `Client.Search`'s `ErrSearchLimitTooHigh` pattern.
+
+**Context:** `GET /tracks/{id}` with an empty ID would build a malformed
+`/v1/tracks/` path — Spotify's bulk tracks endpoint, already established
+as unavailable/out of scope for this project.
+
+**Reason:** Reuse the exact validate-before-request pattern
+`Client.Search` already established, rather than inventing a different
+validation mechanism for one new endpoint: one sentinel, checked before
+any HTTP call, special-cased in the handler to `400` before falling
+through to `writeSpotifyError`.
+
+**Consequences:** `ErrEmptyTrackID` added to `errors.go`; `TrackHandler`
+special-cases it exactly as `SearchHandler` special-cases
+`ErrSearchLimitTooHigh`. `writeSpotifyError` itself is unchanged.

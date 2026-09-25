@@ -226,6 +226,20 @@ func (c *Client) Search(ctx context.Context, accessToken, query, types string, l
 	return result, err
 }
 
+// Track fetches metadata for a single track by ID. No market parameter —
+// this client always uses a user access token, and Spotify infers market
+// from the authenticated user's account when market is omitted; see
+// decisions.md.
+func (c *Client) Track(ctx context.Context, accessToken, trackID string) (Track, error) {
+	if trackID == "" {
+		return Track{}, ErrEmptyTrackID
+	}
+	var t Track
+	path := "/v1/tracks/" + url.PathEscape(trackID)
+	err := c.request(ctx, http.MethodGet, path, nil, nil, accessToken, &t)
+	return t, err
+}
+
 // request performs an authenticated Spotify Web API call and decodes a
 // JSON response into out (nil to discard the body). method/body support
 // POST/PUT/DELETE for a future write operation — every Card #26 operation

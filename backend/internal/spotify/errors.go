@@ -26,6 +26,10 @@ var (
 	// request. Spotify's Development Mode caps search limit at 10 — this
 	// project rejects an out-of-range limit rather than silently clamping it.
 	ErrSearchLimitTooHigh = errors.New("spotify: search limit exceeds Spotify's maximum of 10")
+
+	// ErrEmptyTrackID is returned by Client.Track without making a request —
+	// avoids generating a malformed "/v1/tracks/" path.
+	ErrEmptyTrackID = errors.New("spotify: track id must not be empty")
 )
 
 // APIError carries the HTTP status code, Spotify's own error message (safe
