@@ -269,81 +269,67 @@ func (s *Service) withToken(ctx context.Context, fn func(accessToken string) err
 	return fn(conn.AccessToken)
 }
 
-// Me returns the curator's Spotify profile.
-func (s *Service) Me(ctx context.Context) (Profile, error) {
-	var profile Profile
+// withTokenResult calls fn with a live access token (via withToken) and
+// returns its result, collapsing the "declare zero value, run withToken,
+// assign inside the closure" boilerplate every Service passthrough below
+// would otherwise repeat.
+func withTokenResult[T any](ctx context.Context, s *Service, fn func(accessToken string) (T, error)) (T, error) {
+	var result T
 	err := s.withToken(ctx, func(accessToken string) error {
 		var err error
-		profile, err = s.client.Me(ctx, accessToken)
-		return err
-	})
-	return profile, err
-}
-
-// Playlists returns a page of the curator's own Spotify playlists.
-func (s *Service) Playlists(ctx context.Context, limit, offset int) (Paging[Playlist], error) {
-	var page Paging[Playlist]
-	err := s.withToken(ctx, func(accessToken string) error {
-		var err error
-		page, err = s.client.Playlists(ctx, accessToken, limit, offset)
-		return err
-	})
-	return page, err
-}
-
-// Playlist returns metadata for a single playlist the curator can access.
-func (s *Service) Playlist(ctx context.Context, playlistID string) (Playlist, error) {
-	var playlist Playlist
-	err := s.withToken(ctx, func(accessToken string) error {
-		var err error
-		playlist, err = s.client.Playlist(ctx, accessToken, playlistID)
-		return err
-	})
-	return playlist, err
-}
-
-// PlaylistItems returns a page of items from one of the curator's playlists.
-func (s *Service) PlaylistItems(ctx context.Context, playlistID string, limit, offset int) (Paging[PlaylistItem], error) {
-	var page Paging[PlaylistItem]
-	err := s.withToken(ctx, func(accessToken string) error {
-		var err error
-		page, err = s.client.PlaylistItems(ctx, accessToken, playlistID, limit, offset)
-		return err
-	})
-	return page, err
-}
-
-// Search queries the Spotify catalog on the curator's behalf.
-func (s *Service) Search(ctx context.Context, query, types string, limit, offset int) (SearchResult, error) {
-	var result SearchResult
-	err := s.withToken(ctx, func(accessToken string) error {
-		var err error
-		result, err = s.client.Search(ctx, accessToken, query, types, limit, offset)
+		result, err = fn(accessToken)
 		return err
 	})
 	return result, err
 }
 
+// Me returns the curator's Spotify profile.
+func (s *Service) Me(ctx context.Context) (Profile, error) {
+	return withTokenResult(ctx, s, func(accessToken string) (Profile, error) {
+		return s.client.Me(ctx, accessToken)
+	})
+}
+
+// Playlists returns a page of the curator's own Spotify playlists.
+func (s *Service) Playlists(ctx context.Context, limit, offset int) (Paging[Playlist], error) {
+	return withTokenResult(ctx, s, func(accessToken string) (Paging[Playlist], error) {
+		return s.client.Playlists(ctx, accessToken, limit, offset)
+	})
+}
+
+// Playlist returns metadata for a single playlist the curator can access.
+func (s *Service) Playlist(ctx context.Context, playlistID string) (Playlist, error) {
+	return withTokenResult(ctx, s, func(accessToken string) (Playlist, error) {
+		return s.client.Playlist(ctx, accessToken, playlistID)
+	})
+}
+
+// PlaylistItems returns a page of items from one of the curator's playlists.
+func (s *Service) PlaylistItems(ctx context.Context, playlistID string, limit, offset int) (Paging[PlaylistItem], error) {
+	return withTokenResult(ctx, s, func(accessToken string) (Paging[PlaylistItem], error) {
+		return s.client.PlaylistItems(ctx, accessToken, playlistID, limit, offset)
+	})
+}
+
+// Search queries the Spotify catalog on the curator's behalf.
+func (s *Service) Search(ctx context.Context, query, types string, limit, offset int) (SearchResult, error) {
+	return withTokenResult(ctx, s, func(accessToken string) (SearchResult, error) {
+		return s.client.Search(ctx, accessToken, query, types, limit, offset)
+	})
+}
+
 // Track returns metadata for a single track.
 func (s *Service) Track(ctx context.Context, trackID string) (Track, error) {
-	var track Track
-	err := s.withToken(ctx, func(accessToken string) error {
-		var err error
-		track, err = s.client.Track(ctx, accessToken, trackID)
-		return err
+	return withTokenResult(ctx, s, func(accessToken string) (Track, error) {
+		return s.client.Track(ctx, accessToken, trackID)
 	})
-	return track, err
 }
 
 // Artist returns metadata for a single artist.
 func (s *Service) Artist(ctx context.Context, artistID string) (Artist, error) {
-	var artist Artist
-	err := s.withToken(ctx, func(accessToken string) error {
-		var err error
-		artist, err = s.client.Artist(ctx, accessToken, artistID)
-		return err
+	return withTokenResult(ctx, s, func(accessToken string) (Artist, error) {
+		return s.client.Artist(ctx, accessToken, artistID)
 	})
-	return artist, err
 }
 
 // InitializeOfficialPlaylist ensures the one official Sound Continuum

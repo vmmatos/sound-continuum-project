@@ -144,6 +144,18 @@ func (c *Client) tokenRequest(ctx context.Context, form url.Values) (Token, erro
 	}, nil
 }
 
+// clampPaging applies Spotify's own limit/offset defaults (20, 0) in place
+// of an unset or invalid caller value.
+func clampPaging(limit, offset int) (int, int) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
+}
+
 // Me fetches the curator's Spotify profile using a valid access token.
 func (c *Client) Me(ctx context.Context, accessToken string) (Profile, error) {
 	var p Profile
@@ -154,12 +166,7 @@ func (c *Client) Me(ctx context.Context, accessToken string) (Profile, error) {
 // Playlists fetches a page of the curator's own Spotify playlists.
 // limit <= 0 and offset < 0 fall back to Spotify's own defaults (20, 0).
 func (c *Client) Playlists(ctx context.Context, accessToken string, limit, offset int) (Paging[Playlist], error) {
-	if limit <= 0 {
-		limit = 20
-	}
-	if offset < 0 {
-		offset = 0
-	}
+	limit, offset = clampPaging(limit, offset)
 	query := url.Values{
 		"limit":  {strconv.Itoa(limit)},
 		"offset": {strconv.Itoa(offset)},
@@ -184,12 +191,7 @@ func (c *Client) Playlist(ctx context.Context, accessToken, playlistID string) (
 // /items endpoint (the historical /tracks endpoint was removed).
 // limit <= 0 and offset < 0 fall back to Spotify's own defaults (20, 0).
 func (c *Client) PlaylistItems(ctx context.Context, accessToken, playlistID string, limit, offset int) (Paging[PlaylistItem], error) {
-	if limit <= 0 {
-		limit = 20
-	}
-	if offset < 0 {
-		offset = 0
-	}
+	limit, offset = clampPaging(limit, offset)
 	query := url.Values{
 		"limit":  {strconv.Itoa(limit)},
 		"offset": {strconv.Itoa(offset)},
