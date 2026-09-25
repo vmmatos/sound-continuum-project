@@ -440,3 +440,60 @@ behavioral difference, only the item type varies.
 **Consequences:** `Client.Playlists` returns `Paging[Playlist]`,
 `Client.PlaylistItems` returns `Paging[PlaylistItem]`, `SearchResult`'s
 fields are `*Paging[Track]`/`*Paging[Artist]`/`*Paging[Playlist]`.
+
+---
+
+**Decision:** Represent a playlist item's payload as a discriminated union
+(`ItemType` string + exactly one of `Track`/`Episode` set, `Episode` a new
+type) via a custom `UnmarshalJSON`/`MarshalJSON` on `PlaylistItem`, instead
+of always decoding into `Track`.
+
+**Context:** Card 27 requires inspecting a playlist item's `type` before
+treating it as a track — Spotify documents `track` and `episode` as
+current playlist item types, and an item can be `null` (removed/
+unavailable content). Card 26's `PlaylistItem.Track Track` silently
+decoded every item as a track regardless of type, and would zero-value a
+null item rather than reporting it as unavailable.
+
+**Reason:** A generic `interface{}`/`any` payload would push the type
+switch onto every caller. A shared `Item` interface with `Track`/`Episode`
+implementations is more machinery than two concrete pointer fields need.
+Two nilable fields plus one type tag, decoded once via a custom
+`UnmarshalJSON`, is the minimum that lets callers safely ignore whichever
+type they don't care about (`if item.Track != nil`) without a type switch
+or risking a false-positive zero-value `Track`.
+
+**Consequences:** `PlaylistItem` also gained `AddedBy`/`IsLocal`
+(previously absent). A matching `MarshalJSON` re-serializes the item as
+`{"type", "track"?, "episode"?, ...}` for the dev-facing JSON response,
+rather than dropping the payload behind unexported/`json:"-"` fields.
+Confirmed live: Spotify can also return `height`/`width` as `null` on a
+playlist's `images` (decodes to Go's zero value `0`, no error) — noted
+here in case a future card needs to distinguish "unknown dimensions" from
+"zero-size image".
+
+---
+
+**Decision:** Do not add Sound Continuum playlist-discovery logic
+(finding "the" Sound Continuum playlist by name/ID) in Card 27.
+
+**Context:** Card 27's spec describes a future
+`Spotify account → current user's playlists → find Sound Continuum
+playlist → inspect → retrieve items` workflow, but explicitly forbids
+hardcoding a playlist ID or name and forbids fuzzy matching. No playlist
+name or ID configuration exists anywhere in this repo (`dev/.env`,
+`dev/.secrets.env`, or elsewhere) as of Card 27.
+
+**Reason:** There is no existing, clean place for this decision to live —
+introducing one now would mean inventing both the config mechanism and the
+actual name/ID value speculatively, ahead of any card that has decided
+what they should be. That's exactly the kind of premature
+config/abstraction this project's MVP discipline avoids.
+
+**Consequences:** `GET /api/spotify/playlists` (list), `GET
+/api/spotify/playlists/{id}` (this card), and `GET
+/api/spotify/playlists/{id}/items` are the complete read-only playlist
+surface as of Card 27. Playlist discovery is deferred to a later
+application/service layer, once a concrete decision exists about how the
+Sound Continuum playlist is identified (config value, naming convention,
+or otherwise).

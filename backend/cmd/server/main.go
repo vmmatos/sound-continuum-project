@@ -45,6 +45,7 @@ func main() {
 	mux.HandleFunc("GET /api/spotify/status", spotifyService.StatusHandler)
 	mux.HandleFunc("GET /api/spotify/me", spotifyService.MeHandler)
 	mux.HandleFunc("GET /api/spotify/playlists", spotifyService.PlaylistsHandler)
+	mux.HandleFunc("GET /api/spotify/playlists/{id}", spotifyService.PlaylistHandler)
 	mux.HandleFunc("GET /api/spotify/playlists/{id}/items", spotifyService.PlaylistItemsHandler)
 	mux.HandleFunc("GET /api/spotify/search", spotifyService.SearchHandler)
 

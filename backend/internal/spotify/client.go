@@ -169,6 +169,16 @@ func (c *Client) Playlists(ctx context.Context, accessToken string, limit, offse
 	return page, err
 }
 
+// Playlist fetches metadata for a single playlist by ID. Playlist name
+// discovery (finding "the" Sound Continuum playlist) is application-level
+// logic and deliberately does not live here — see decisions.md.
+func (c *Client) Playlist(ctx context.Context, accessToken, playlistID string) (Playlist, error) {
+	var p Playlist
+	path := "/v1/playlists/" + url.PathEscape(playlistID)
+	err := c.request(ctx, http.MethodGet, path, nil, nil, accessToken, &p)
+	return p, err
+}
+
 // PlaylistItems fetches a page of items from a playlist via the current
 // /items endpoint (the historical /tracks endpoint was removed).
 // limit <= 0 and offset < 0 fall back to Spotify's own defaults (20, 0).

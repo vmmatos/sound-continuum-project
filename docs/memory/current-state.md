@@ -140,6 +140,26 @@
   was not exercised live. No playlist write, no Last.fm, no discovery/
   ranking/curation logic.
 
+- Single-playlist retrieval and playlist-item type discrimination are
+  implemented (Card 27, see
+  [`docs/spotify-integration.md`](../spotify-integration.md) §23), still in
+  `backend/internal/spotify/` — no new package, no scope change (Card 26's
+  `playlist-read-private` already covers it). `GET /api/spotify/playlists/{id}`
+  is new (`Client.Playlist`, `Service.Playlist`, `PlaylistHandler`); `Playlist`
+  gained `href`, `collaborative`, `snapshot_id`, `external_urls.spotify`,
+  `images`. `PlaylistItem` no longer unconditionally decodes into `Track` —
+  it now inspects the nested item's `type` and populates exactly one of
+  `Track`/`Episode`, or neither with `ItemType: "unavailable"` for a null
+  item, via a custom `UnmarshalJSON`/`MarshalJSON` pair (`Episode` is a new,
+  minimal type). Verified live: playlist metadata (including
+  `items.total == 0`) stays available for a playlist the curator doesn't
+  own, while that same playlist's items 403; a nonexistent playlist ID 400s.
+  Both map through the existing `writeSpotifyError` default case (502, not a
+  fabricated 404) — unchanged from Card 26. No Sound Continuum playlist
+  discovery logic was added — no playlist name/ID configuration exists
+  anywhere in the repo, and none was introduced; that lookup is deferred to
+  a later application/service layer. No playlist write, no frontend UI.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.
