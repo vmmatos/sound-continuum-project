@@ -845,9 +845,15 @@ This is a known, deliberate test-coverage limitation, not an oversight.
 
 ### Real Spotify verification
 
-Pending — requires the curator to reconnect Spotify (new
-`playlist-modify-public` scope) via the running app and confirm: the
-playlist is created, visible, public, non-collaborative, named exactly
-`Sound Continuum — Weekly Journey`, has the correct description and zero
-tracks, and that calling the endpoint again does not create a second
-playlist. Update this section with the actual result once performed.
+Performed against the real Spotify API. The curator reconnected with the
+new `playlist-modify-public` scope, then `POST /api/spotify/playlist`
+created a playlist visible in Spotify: named exactly `Sound Continuum —
+Weekly Journey`, public, non-collaborative, correct description, zero
+tracks. No cover image — expected, since playlist cover upload is
+explicitly out of scope for this card; Spotify shows a placeholder until
+one is set or tracks are added. The endpoint returned
+`spotify_playlist_id`/`name`/`url`; calling it again returned the
+identical `spotify_playlist_id` and confirmed no second playlist was
+created (verified both via the response and by inspecting the
+`official_playlist` SQLite row directly). Server logs contained no
+tokens, secrets, or Authorization headers at any point.

@@ -223,7 +223,9 @@
   created empty (public, non-collaborative, fixed description) — no
   track-adding, no editorial workflow, no Sound Continuum playlist
   discovery-by-name. Real Spotify verification against the live account
-  is pending (requires the curator to reconnect with the new scope).
+  is done: the official playlist exists (public, non-collaborative,
+  correct name/description, 0 tracks), and a second initialization call
+  confirmed no duplicate was created.
 
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for

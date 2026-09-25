@@ -284,15 +284,16 @@
       store
 - [x] Project memory updated (`current-state.md`, `decisions.md`)
 - [x] `docs/spotify-integration.md` updated (§26)
-- [ ] Real Spotify integration test — pending curator reconnect with the
-      new scope
+- [x] Real Spotify integration test — verified: playlist created, public,
+      non-collaborative, correct name/description, 0 tracks; second call
+      confirmed no duplicate
 - [x] No track-adding, no editorial workflow, no playlist discovery by
       name/search, no distributed transaction for the Spotify-succeeds/
       local-save-fails case (documented limitation)
 
 ## In progress
 
-- Card 30's real Spotify verification (pending curator reconnect).
+- Nothing currently in progress.
 
 ## Planned
 
