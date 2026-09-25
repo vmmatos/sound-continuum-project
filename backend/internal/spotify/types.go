@@ -22,6 +22,12 @@ type Image struct {
 	Width  int    `json:"width"`
 }
 
+// ExternalURLs is Spotify's external_urls object, shared by every object
+// type (playlist, album, track, artist) that carries one.
+type ExternalURLs struct {
+	Spotify string `json:"spotify"`
+}
+
 // Playlist is the subset of a Spotify playlist object this MVP needs to
 // list and inspect the curator's playlists. Confirmed live: the playlist's
 // item-count summary is returned under the "items" key, not the historical
@@ -43,10 +49,8 @@ type Playlist struct {
 	Items struct {
 		Total int `json:"total"`
 	} `json:"items"`
-	ExternalURLs struct {
-		Spotify string `json:"spotify"`
-	} `json:"external_urls"`
-	Images []Image `json:"images"`
+	ExternalURLs ExternalURLs `json:"external_urls"`
+	Images       []Image      `json:"images"`
 }
 
 // PlaylistCreateRequest is the request body for POST /me/playlists.
@@ -160,13 +164,11 @@ type Album struct {
 	TotalTracks          int    `json:"total_tracks"`
 	ReleaseDate          string `json:"release_date"`
 	ReleaseDatePrecision string `json:"release_date_precision"`
-	URI                  string `json:"uri"`
-	Href                 string `json:"href"`
-	ExternalURLs         struct {
-		Spotify string `json:"spotify"`
-	} `json:"external_urls"`
-	Images  []Image  `json:"images"`
-	Artists []Artist `json:"artists"`
+	URI                  string       `json:"uri"`
+	Href                 string       `json:"href"`
+	ExternalURLs         ExternalURLs `json:"external_urls"`
+	Images               []Image      `json:"images"`
+	Artists              []Artist     `json:"artists"`
 }
 
 // Track is the subset of a Spotify track object this MVP needs. Fields
@@ -185,12 +187,10 @@ type Track struct {
 	TrackNumber  int      `json:"track_number"`
 	IsLocal      bool     `json:"is_local"`
 	PreviewURL   string   `json:"preview_url"`
-	Artists      []Artist `json:"artists"`
-	Album        Album    `json:"album"`
-	ExternalURLs struct {
-		Spotify string `json:"spotify"`
-	} `json:"external_urls"`
-	ExternalIDs struct {
+	Artists      []Artist     `json:"artists"`
+	Album        Album        `json:"album"`
+	ExternalURLs ExternalURLs `json:"external_urls"`
+	ExternalIDs  struct {
 		ISRC string `json:"isrc"`
 	} `json:"external_ids"`
 }
@@ -203,15 +203,13 @@ type Track struct {
 // Artist object for Development Mode; see decisions.md.
 type Artist struct {
 	ID           string `json:"id"`
-	Name         string `json:"name"`
-	URI          string `json:"uri"`
-	Href         string `json:"href"`
-	ExternalURLs struct {
-		Spotify string `json:"spotify"`
-	} `json:"external_urls"`
-	Type   string   `json:"type"`
-	Images []Image  `json:"images"`
-	Genres []string `json:"genres"`
+	Name         string       `json:"name"`
+	URI          string       `json:"uri"`
+	Href         string       `json:"href"`
+	ExternalURLs ExternalURLs `json:"external_urls"`
+	Type         string       `json:"type"`
+	Images       []Image      `json:"images"`
+	Genres       []string     `json:"genres"`
 }
 
 // SearchResult carries only the object types Sound Continuum's curation
