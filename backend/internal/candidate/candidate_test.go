@@ -149,51 +149,6 @@ func TestNewCandidateTrackEmptyID(t *testing.T) {
 	}
 }
 
-func TestNewCandidateTrackValidTypeClassic(t *testing.T) {
-	c, err := NewCandidateTrack(NewCandidateTrackParams{
-		ID:       "cand-1",
-		Source:   SourceManual,
-		Category: CategoryPast,
-		Type:     TypeClassic,
-	})
-	if err != nil {
-		t.Fatalf("NewCandidateTrack returned error: %v", err)
-	}
-	if c.Type != TypeClassic {
-		t.Errorf("Type = %q, want %q", c.Type, TypeClassic)
-	}
-}
-
-func TestNewCandidateTrackValidTypeCurrent(t *testing.T) {
-	c, err := NewCandidateTrack(NewCandidateTrackParams{
-		ID:       "cand-1",
-		Source:   SourceManual,
-		Category: CategoryNewRelease,
-		Type:     TypeCurrent,
-	})
-	if err != nil {
-		t.Fatalf("NewCandidateTrack returned error: %v", err)
-	}
-	if c.Type != TypeCurrent {
-		t.Errorf("Type = %q, want %q", c.Type, TypeCurrent)
-	}
-}
-
-func TestNewCandidateTrackValidTypeDiscovery(t *testing.T) {
-	c, err := NewCandidateTrack(NewCandidateTrackParams{
-		ID:       "cand-1",
-		Source:   SourceManual,
-		Category: CategoryEmerging,
-		Type:     TypeDiscovery,
-	})
-	if err != nil {
-		t.Fatalf("NewCandidateTrack returned error: %v", err)
-	}
-	if c.Type != TypeDiscovery {
-		t.Errorf("Type = %q, want %q", c.Type, TypeDiscovery)
-	}
-}
-
 func TestNewCandidateTrackInvalidType(t *testing.T) {
 	for _, typ := range []Type{"", "classic", "CLASSIC", "New", "Vintage", "Emerging"} {
 		_, err := NewCandidateTrack(NewCandidateTrackParams{
@@ -222,9 +177,10 @@ func TestNewCandidateTrackCategoryValidationUnaffectedByType(t *testing.T) {
 }
 
 func TestNewCandidateTrackTypeAndCategoryAreIndependent(t *testing.T) {
-	// Type and Category are two unrelated dimensions: no combination is
-	// rejected or rewritten based on the other. Discovery does not imply
-	// Emerging, Current does not imply Present, Classic does not imply Past.
+	// Also covers all three valid Type values. Type and Category are two
+	// unrelated dimensions: no combination is rejected or rewritten based
+	// on the other. Discovery does not imply Emerging, Current does not
+	// imply Present, Classic does not imply Past.
 	cases := []struct {
 		typ      Type
 		category Category
