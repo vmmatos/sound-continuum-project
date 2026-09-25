@@ -227,6 +227,23 @@
   correct name/description, 0 tracks), and a second initialization call
   confirmed no duplicate was created.
 
+- M4 (Discovery & Curation) begins with the `CandidateTrack` domain model
+  (Card 31, see [`decisions.md`](decisions.md)) in a new package,
+  `backend/internal/candidate/` — the project's first domain package
+  outside `spotify`/`health`. A `CandidateTrack` represents a track
+  discovered and under editorial consideration for a future Sound
+  Continuum edition; it is **not** a Spotify track and **not** yet a
+  playlist selection. It carries its own internal `candidate.ID`, distinct
+  from the external `SpotifyTrackID` (empty unless `Source ==
+  SourceSpotify`), and only the track metadata (title/artist) the
+  editorial process actually needs — no copy of Spotify's `Track`/
+  `Artist`/`Album`. Supported sources: `Spotify`, `Last.fm`, `Manual`.
+  Supported editorial categories: `Past`, `Present`, `Emerging`, `New
+  Release`. Lifecycle: `discovered` → `under review` → `selected` /
+  `rejected`, all validated in `Validate()`. No ID generation, no
+  persistence, no API endpoint, no CRUD, and no frontend UI exist yet —
+  this card is the domain model only.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.
