@@ -867,6 +867,127 @@ func TestClientArtistRejectsEmptyID(t *testing.T) {
 	}
 }
 
+func TestClientArtistAlbumsSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/artists/a-1/albums" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("limit") != "5" || r.URL.Query().Get("offset") != "10" {
+			t.Errorf("unexpected query: %s", r.URL.RawQuery)
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{{"id": "al-1", "name": "Album One"}},
+			"total": 1, "limit": 5, "offset": 10,
+		})
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	page, err := c.ArtistAlbums(context.Background(), "access-123", "a-1", 5, 10)
+	if err != nil {
+		t.Fatalf("ArtistAlbums returned error: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Name != "Album One" {
+		t.Errorf("unexpected page: %+v", page)
+	}
+}
+
+func TestClientArtistAlbumsSendsIncludeGroups(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("include_groups") != "album,single" {
+			t.Errorf("expected include_groups=album,single, got %q", r.URL.RawQuery)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"items": []any{}, "total": 0, "limit": 20, "offset": 0})
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	if _, err := c.ArtistAlbums(context.Background(), "access-123", "a-1", 0, -1); err != nil {
+		t.Fatalf("ArtistAlbums returned error: %v", err)
+	}
+}
+
+func TestClientArtistAlbumsRejectsEmptyID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("ArtistAlbums must not make a request when artistID is empty")
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	_, err := c.ArtistAlbums(context.Background(), "access-123", "", 0, 0)
+	if !errors.Is(err, ErrEmptyArtistID) {
+		t.Fatalf("expected ErrEmptyArtistID, got %v", err)
+	}
+}
+
+func TestClientArtistAlbumsNotFound(t *testing.T) {
+	c, server := newErrorClient(t, http.StatusNotFound, "")
+	defer server.Close()
+
+	_, err := c.ArtistAlbums(context.Background(), "access-123", "missing-artist", 0, 0)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestClientAlbumTracksSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/albums/al-1/tracks" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("limit") != "5" || r.URL.Query().Get("offset") != "10" {
+			t.Errorf("unexpected query: %s", r.URL.RawQuery)
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{{"id": "t-1", "name": "Track One"}},
+			"total": 1, "limit": 5, "offset": 10,
+		})
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	page, err := c.AlbumTracks(context.Background(), "access-123", "al-1", 5, 10)
+	if err != nil {
+		t.Fatalf("AlbumTracks returned error: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Name != "Track One" {
+		t.Errorf("unexpected page: %+v", page)
+	}
+}
+
+func TestClientAlbumTracksRejectsEmptyID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("AlbumTracks must not make a request when albumID is empty")
+	}))
+	defer server.Close()
+
+	c := NewClient("cid", "secret")
+	c.APIBaseURL = server.URL
+
+	_, err := c.AlbumTracks(context.Background(), "access-123", "", 0, 0)
+	if !errors.Is(err, ErrEmptyAlbumID) {
+		t.Fatalf("expected ErrEmptyAlbumID, got %v", err)
+	}
+}
+
+func TestClientAlbumTracksNotFound(t *testing.T) {
+	c, server := newErrorClient(t, http.StatusNotFound, "")
+	defer server.Close()
+
+	_, err := c.AlbumTracks(context.Background(), "access-123", "missing-album", 0, 0)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
 func TestClientCreatePlaylistSuccess(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

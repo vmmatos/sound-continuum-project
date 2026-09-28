@@ -256,6 +256,37 @@
   `Category: New Release`. Discovery is not synonymous with Emerging or
   New Release. Still no persistence, API endpoint, CRUD, or frontend UI.
 
+- Classic music discovery is implemented (Card 33, see
+  [`decisions.md`](decisions.md) and
+  [`spotify-integration.md`](../spotify-integration.md) §27) — M4's first
+  discovery workflow, in a new package, `backend/internal/discovery/`, no
+  new dependency, reusing the existing `spotify.Service` and
+  `candidate.CandidateTrack`. `discovery.PastReferenceArtists` (15 names)
+  is the single canonical source for Sound Continuum's "Past" reference
+  artists — the first place this list exists anywhere in the repo.
+  `discovery.Service.DiscoverClassic` resolves each artist via exact,
+  case-insensitive Spotify `Search` name match (no fuzzy matching,
+  unresolved artists surfaced on `Result.UnresolvedArtists`, never
+  dropped), walks `GET /artists/{id}/albums` (fixed
+  `include_groups=album,single`) then `GET /albums/{id}/tracks` — two new
+  `spotify.Client`/`spotify.Service` methods, `ArtistAlbums`/
+  `AlbumTracks`, reusing the existing `Album`/`Track`/`Paging[T]` types —
+  and builds `CandidateTrack`s with
+  `Source=Spotify/Type=Classic/Category=Past/Status=discovered`,
+  deduplicated by Spotify track ID. A candidate's `ID` reuses its Spotify
+  track ID directly (no UUID dependency). Bounded by a constructor-
+  injected `Config` (`DefaultConfig()`: 5 albums/artist, 10 tracks/album,
+  150 candidates total) — no unbounded catalogue crawl. Per-artist/album/
+  track failures are recorded on `Result.Failures` and the run continues;
+  only a Spotify connection failure (`ErrNotConnected`/`ErrInvalidGrant`)
+  aborts the whole run. `POST /api/discovery/classic` exposes it — no
+  persistence, no request body, no popularity/ranking of any kind. Real
+  Spotify verification: all 15 reference artists resolve, no unresolved
+  artists, no failures, no duplicate candidates, official playlist
+  unchanged, no candidate auto-selected. No Last.fm, no AI, no musical
+  bridge logic, no Current/Discovery-type discovery — all explicitly
+  deferred to later M4/M5 cards.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

@@ -34,6 +34,10 @@ var (
 	// ErrEmptyArtistID is returned by Client.Artist without making a
 	// request — avoids generating a malformed "/v1/artists/" path.
 	ErrEmptyArtistID = errors.New("spotify: artist id must not be empty")
+
+	// ErrEmptyAlbumID is returned by Client.AlbumTracks without making a
+	// request — avoids generating a malformed "/v1/albums//tracks" path.
+	ErrEmptyAlbumID = errors.New("spotify: album id must not be empty")
 )
 
 // APIError carries the HTTP status code, Spotify's own error message (safe

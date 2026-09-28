@@ -315,13 +315,47 @@
 - [x] No persistence/schema, no API endpoint, no CRUD, no frontend UI, no
       Spotify API calls, no Last.fm integration
 
+## Done (Card 33 — Build Classic Music Discovery)
+
+- [x] `backend/internal/discovery/` — new package, M4's first discovery
+      workflow
+- [x] `PastReferenceArtists` (15 names) — the single canonical source for
+      Sound Continuum's "Past" reference artists, previously undocumented
+      anywhere in the repo
+- [x] `Client.ArtistAlbums`/`Client.AlbumTracks` +
+      `Service.ArtistAlbums`/`Service.AlbumTracks` added to
+      `internal/spotify` (`GET /artists/{id}/albums`,
+      `GET /albums/{id}/tracks`) — no second Spotify client
+- [x] `DiscoverClassic`: exact-match artist resolution via `Search` (no
+      fuzzy matching, unresolved artists surfaced, never dropped), bounded
+      album/track pagination (`Config`: max albums/artist, max
+      tracks/album, max total candidates), dedup by Spotify track ID
+- [x] Every candidate: `Source=Spotify`, `Type=Classic`, `Category=Past`,
+      `Status=discovered` — no popularity/ranking, no AI, no musical
+      bridge logic
+- [x] Per-artist/album/track failures recorded and the run continues;
+      only a Spotify connection failure aborts the whole run
+- [x] `POST /api/discovery/classic` — minimal endpoint, no persistence, no
+      frontend UI
+- [x] Unit tests (spotify client/service passthroughs + discovery package,
+      19 scenarios) — no real Spotify calls in automated tests
+- [x] Real Spotify verification: all 15 reference artists resolved, zero
+      unresolved, zero failures, zero duplicate candidates, official
+      playlist unchanged, no candidate auto-selected
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`, `spotify-integration.md`)
+- [x] No Last.fm, no persistence layer, no Current/Discovery-type
+      discovery, no musical bridge logic, no final editorial selection
+
 ## In progress
 
 - Nothing currently in progress.
 
 ## Planned
 
-- M4: Discovery engine (candidate persistence, discovery sources, CRUD/API)
+- M4: Discovery engine (candidate persistence, Current/Emerging discovery,
+      Last.fm discovery, CRUD/API — classic discovery from the Past
+      reference artist set is done, see Card 33 above)
 - M5: Musical ranking & bridges
 - M6: Curator experience
 - M7: Weekly editorial workflow

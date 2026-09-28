@@ -332,6 +332,21 @@ func (s *Service) Artist(ctx context.Context, artistID string) (Artist, error) {
 	})
 }
 
+// ArtistAlbums returns a page of an artist's albums (album/single groups
+// only — see Client.ArtistAlbums).
+func (s *Service) ArtistAlbums(ctx context.Context, artistID string, limit, offset int) (Paging[Album], error) {
+	return withTokenResult(ctx, s, func(accessToken string) (Paging[Album], error) {
+		return s.client.ArtistAlbums(ctx, accessToken, artistID, limit, offset)
+	})
+}
+
+// AlbumTracks returns a page of an album's tracks.
+func (s *Service) AlbumTracks(ctx context.Context, albumID string, limit, offset int) (Paging[Track], error) {
+	return withTokenResult(ctx, s, func(accessToken string) (Paging[Track], error) {
+		return s.client.AlbumTracks(ctx, accessToken, albumID, limit, offset)
+	})
+}
+
 // InitializeOfficialPlaylist ensures the one official Sound Continuum
 // Spotify playlist exists, creating it on Spotify at most once ever. If a
 // playlist is already persisted locally, it's returned immediately with

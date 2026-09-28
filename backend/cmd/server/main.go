@@ -9,6 +9,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/vmmatos/sound-continuum-project/internal/discovery"
 	"github.com/vmmatos/sound-continuum-project/internal/health"
 	"github.com/vmmatos/sound-continuum-project/internal/spotify"
 )
@@ -38,6 +39,8 @@ func main() {
 		log.Fatalf("failed to initialize Spotify service: %v", err)
 	}
 
+	discoveryService := discovery.NewService(spotifyService, discovery.DefaultConfig())
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.Handler)
 	mux.HandleFunc("GET /api/spotify/auth", spotifyService.AuthHandler)
@@ -51,6 +54,7 @@ func main() {
 	mux.HandleFunc("GET /api/spotify/search", spotifyService.SearchHandler)
 	mux.HandleFunc("GET /api/spotify/tracks/{id}", spotifyService.TrackHandler)
 	mux.HandleFunc("GET /api/spotify/artists/{id}", spotifyService.ArtistHandler)
+	mux.HandleFunc("POST /api/discovery/classic", discoveryService.ClassicHandler)
 
 	addr := ":" + port
 	log.Printf("sound-continuum server listening on %s", addr)
