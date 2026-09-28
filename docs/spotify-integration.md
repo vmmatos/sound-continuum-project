@@ -59,8 +59,8 @@ here.
   (currently it's kept in `.secrets.env` alongside the Client Secret to
   keep all Spotify credentials in one file — see below).
 - **`dev/.secrets.env`** — local secrets: `SPOTIFY_CLIENT_ID`,
-  `SPOTIFY_CLIENT_SECRET`. `LASTFM_API_KEY` is intentionally not stubbed
-  here — Last.fm is out of M3 scope ([§17](#17-lastfm-boundary)).
+  `SPOTIFY_CLIENT_SECRET`, `LASTFM_API_KEY` (Card #35 —
+  [§17](#17-lastfm-boundary)).
 - Docker Compose loads `dev/.env` into both the `backend` and `frontend`
   services via `env_file:`, and `dev/.secrets.env` into `backend` only —
   the frontend container structurally cannot see `SPOTIFY_CLIENT_SECRET`.
@@ -236,13 +236,14 @@ of scope for the MVP.
 
 ## 17. Last.fm boundary
 
-Last.fm remains out of scope for M3 (reaffirms the existing decision in
-[`docs/memory/decisions.md`](memory/decisions.md)). No Last.fm dependency,
-client, configuration, or environment variable is introduced by this
-architecture. Last.fm is a candidate discovery/similarity source for M4;
-this architecture doesn't design for it, but a Spotify-specific
-`internal/spotify/` package (rather than a generic provider abstraction)
-keeps that future work unblocked without speculative code now.
+Last.fm was out of scope for M3 by design — this architecture deliberately
+kept `internal/spotify/` Spotify-specific rather than a generic provider
+abstraction, so a future Last.fm client wouldn't be blocked by nor forced
+through Spotify's own shapes. Card #35 (M4) introduced that client as a
+standalone `internal/lastfm/` package, used only for `artist.getsimilar` as
+an external discovery signal — Spotify remains the authoritative source
+for artist/track identity and catalogue data; see
+[`docs/memory/decisions.md`](memory/decisions.md) for the full reasoning.
 
 ## 18. Architecture diagram
 

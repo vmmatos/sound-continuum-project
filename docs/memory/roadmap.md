@@ -11,13 +11,14 @@ of future implementation requirements.
   retrieval, single-artist retrieval, search — are implemented; playlist
   creation/management and Sound Continuum playlist discovery still open)
 - **M4 — Discovery Engine** — In progress (the `CandidateTrack` domain
-  model is defined; classic music discovery from the Past reference
-  artist set and current music discovery from the Present reference
-  artist set are both implemented via Spotify's artist-albums/album-tracks
-  endpoints, producing candidate pools — not a ranking — with
-  `POST /api/discovery/classic` and `POST /api/discovery/current`;
-  persistence, Emerging discovery, Last.fm, and musical bridge logic are
-  still open)
+  model is defined; all three planned discovery workflows are implemented:
+  classic music discovery from the Past reference artist set, current
+  music discovery from the Present reference artist set, and emerging
+  artist discovery via a single Last.fm `artist.getsimilar` hop from the
+  Emerging reference artist set, resolved through Spotify — all producing
+  candidate pools, not a ranking — with `POST /api/discovery/classic`,
+  `POST /api/discovery/current`, and `POST /api/discovery/emerging`;
+  persistence and musical bridge logic are still open)
 - **M5 — Musical Ranking & Bridges** — Planned
 - **M6 — Curator Experience** — Planned
 - **M7 — Weekly Editorial Workflow** — Planned

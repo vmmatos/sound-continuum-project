@@ -393,15 +393,77 @@
 - [x] No Last.fm, no persistence layer, no Emerging/New-Release discovery,
       no musical bridge logic, no final editorial selection
 
+## Done (Card 35 — Build Emerging Artist Discovery)
+
+- [x] `backend/internal/lastfm/` — new package, the repo's first Last.fm
+      integration; one file, `artist.getsimilar` only, no provider
+      abstraction
+- [x] `lastfm.Client.SimilarArtists` — injects `LASTFM_API_KEY`, sets an
+      identifiable `User-Agent`, returns `[]SimilarArtist{Name, Match}`;
+      a missing API key returns `ErrMissingAPIKey` with no request made
+- [x] Typed Last.fm errors (`ErrMissingAPIKey`, `ErrRateLimited` — code 29,
+      `ErrAPIFailure`, `ErrTransport`, `ErrDecode`) + `APIError{Code,
+      Message, Unwrap}`, mirroring `internal/spotify`'s own pattern
+- [x] `EmergingReferenceArtists` (15 names) added to
+      `backend/internal/discovery/reference_artists.go` — the canonical
+      "Emerging" seed-artist list, alongside `PastReferenceArtists`/
+      `PresentReferenceArtists`
+- [x] `isCanonicalReferenceArtist` — excludes any Last.fm result already
+      present in Past/Present/Emerging (case-insensitive, trimmed)
+- [x] `DiscoverEmerging`: one Last.fm hop per seed only (never calls
+      `SimilarArtists` with a discovered name), dedup by discovered-artist
+      name, `resolveArtist` reused unchanged, recent catalogue reused via
+      new shared `recentTracksForArtist` (extracted from `DiscoverCurrent`
+      — same "recent" definition, no second one invented)
+- [x] `EmergingConfig` (own struct): `MaxSimilarPerSeed`, `MaxDiscoveredArtists`,
+      plus the same recent-catalogue fields as `CurrentConfig`; `Service`
+      gains a `lastfm similarArtistFinder` dependency, `NewService` takes
+      a `*lastfm.Client`
+- [x] Every candidate: `Source=Spotify` (never `SourceLastFM`),
+      `Type=Discovery`, `Category=Emerging`, `Status=discovered` — no
+      popularity/ranking, no Last.fm-match-as-score, no AI
+- [x] `discovery.Result` gained `EmergingProvenance
+      []ArtistProvenance{SeedArtist, DiscoveredArtist, Source, Match}` —
+      discovery metadata only, never used to select/order/score; empty for
+      Classic/Current
+- [x] One seed's Last.fm failure recorded (`Stage: "similar"`), run
+      continues; a missing `LASTFM_API_KEY` or a Spotify connection
+      failure aborts the whole run with a clear error — never a silent
+      empty success
+- [x] `POST /api/discovery/emerging` — minimal endpoint, no persistence, no
+      frontend UI
+- [x] Unit tests (`internal/lastfm`: 7 scenarios covering request shape,
+      API key injection, response parsing, rate-limit/API/transport/decode
+      errors; `internal/discovery`: 21 new scenarios covering single-hop
+      enforcement, seed walking, exclusion, cross-seed dedup, unresolved
+      surfacing, recency-window reuse, candidate fields, track dedup,
+      both bound types, partial failure continuation, connection/config
+      abort, no Match-based reordering, provenance, handler status
+      mapping) — no real Last.fm/Spotify calls in automated tests
+- [x] Real Last.fm verification: `artist.getsimilar` confirmed live against
+      a seed artist via direct `curl` and via the running server
+- [x] Real Spotify verification: full bounded `DiscoverEmerging` run
+      against the live server correctly aborted with a clear 503 ("Spotify
+      is not connected") — same pre-existing behavior as Classic/Current
+      in this dev environment (no stored Spotify connection); confirmed
+      missing `LASTFM_API_KEY` also aborts with a clear 503, never an
+      empty 200
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`); `README.md`/`docs/spotify-integration.md` env docs
+      updated to list `LASTFM_API_URL`/`LASTFM_API_KEY`
+- [x] No Last.fm user authentication, no scoring/ranking engine, no
+      recursive/multi-hop discovery, no persistence layer, no musical
+      bridge logic, no final editorial selection, no playlist modified
+
 ## In progress
 
 - Nothing currently in progress.
 
 ## Planned
 
-- M4: Discovery engine (candidate persistence, Emerging discovery, Last.fm
-      discovery, CRUD/API — classic and current discovery from the Past/
-      Present reference artist sets are done, see Cards 33-34 above)
+- M4: Discovery engine (candidate persistence, CRUD/API — classic, current,
+      and emerging discovery from the Past/Present/Emerging reference
+      artist sets are all done, see Cards 33-35 above)
 - M5: Musical ranking & bridges
 - M6: Curator experience
 - M7: Weekly editorial workflow

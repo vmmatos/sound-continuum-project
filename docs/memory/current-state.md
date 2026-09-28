@@ -326,6 +326,56 @@
   New Release discovery, no musical bridge logic, no editorial selection —
   all still deferred.
 
+- Emerging artist discovery is implemented (Card 35, see
+  [`decisions.md`](decisions.md)) — M4's third and final discovery
+  workflow, and the repo's first Last.fm integration. A new standalone
+  `internal/lastfm` package (one file, no provider abstraction) wraps
+  `artist.getsimilar` only: `lastfm.Client.SimilarArtists` injects the API
+  key, sets an identifiable `User-Agent`, and returns typed
+  `[]lastfm.SimilarArtist{Name, Match}` — a missing API key returns
+  `ErrMissingAPIKey` without making a request, which is what makes a
+  missing `LASTFM_API_KEY` fail the whole discovery run loudly (503)
+  instead of silently returning an empty result.
+  `discovery.EmergingReferenceArtists` (15 names) is the canonical
+  "Emerging" seed-artist list, alongside `PastReferenceArtists`/
+  `PresentReferenceArtists`; a new `isCanonicalReferenceArtist` helper
+  excludes any Last.fm result already present in any of the three lists
+  (case-insensitive, trimmed). `discovery.Service.DiscoverEmerging` walks
+  each seed once through `SimilarArtists` (exactly one hop — it never calls
+  Last.fm with a discovered artist's name), deduplicates discovered artists
+  by lowercased/trimmed name, resolves the remainder through the same
+  `resolveArtist` Classic/Current already use, then explores their recent
+  catalogue via a new shared `recentTracksForArtist` helper — extracted
+  from `DiscoverCurrent`'s own scan/filter/sort/truncate/track-walk block,
+  since Card 35 needed the exact same "recent" definition a third time and
+  duplicating it again would have been real, not speculative, duplication.
+  `discovery.Service` now also holds a `lastfm similarArtistFinder`
+  dependency and an `emergingCfg EmergingConfig` (own struct, same
+  reasoning as `Config`/`CurrentConfig` staying separate: it owns
+  Last.fm-hop-specific bounds — `MaxSimilarPerSeed`, `MaxDiscoveredArtists`
+  — the other two workflows have no use for). `NewService` now takes a
+  `*lastfm.Client` alongside `*spotify.Service`. Candidates use
+  `Source=Spotify` (never `SourceLastFM` — Last.fm is a discovery signal,
+  not a candidate-identity source), `Type=Discovery`, `Category=Emerging`,
+  `Status=discovered`, deduplicated by Spotify track ID exactly like
+  Classic/Current. `discovery.Result` gained `EmergingProvenance
+  []ArtistProvenance{SeedArtist, DiscoveredArtist, Source, Match}` — Last.fm's
+  own similarity value, kept as discovery metadata only and never used to
+  select, order, or score anything; it lives on `Result`, not on
+  `CandidateTrack`, which has no structured provenance field. One seed's
+  Last.fm failure is recorded on `Result.Failures` (`Stage: "similar"`) and
+  the run continues; only a missing Last.fm API key or a Spotify connection
+  failure aborts the whole run. `POST /api/discovery/emerging` exposes it —
+  no persistence, no request body, no popularity/ranking of any kind. Real
+  Last.fm + Spotify verification: `artist.getsimilar` confirmed live
+  against a seed artist; the full bounded workflow correctly aborts with a
+  clear 503 when Spotify has no stored connection (same pre-existing
+  behavior as Classic/Current) and with a clear 503 when `LASTFM_API_KEY`
+  is unset — never a silent empty success either way. No AI, no musical
+  bridge logic, no editorial selection, no persistence — all still
+  deferred. M4 (Discovery Engine) is now feature-complete for its three
+  planned discovery workflows.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.
