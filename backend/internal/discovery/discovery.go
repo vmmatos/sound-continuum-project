@@ -46,14 +46,14 @@ const currentDiscoveryReason = "Discovered from Present reference artist recent 
 // produces.
 const emergingDiscoveryReason = "Discovered via Last.fm similarity from an Emerging reference artist."
 
-// CurrentConfig bounds one DiscoverCurrent run. Kept separate from Config
-// rather than merged into one shared struct — DiscoverCurrent has a
-// filter-by-recency-then-sort step DiscoverClassic doesn't, so a shared
-// struct would carry fields each workflow ignores.
-type CurrentConfig struct {
+// recentCatalogueParams bounds one recentTracksForArtist call. Embedded in
+// both CurrentConfig and EmergingConfig, which share this exact bound set,
+// so a caller passes its config's embedded value straight through instead
+// of copying four fields by hand.
+type recentCatalogueParams struct {
 	// LookbackDays is the recent-catalogue window: a release is only
-	// considered "current" if its release date falls within this many
-	// days of now. See parseReleaseDate for how partial release dates
+	// considered "current"/"recent" if its release date falls within this
+	// many days of now. See parseReleaseDate for how partial release dates
 	// are resolved against this window.
 	LookbackDays int
 	// MaxAlbumsScannedPerArtist bounds the raw albums/singles fetched per
@@ -64,6 +64,14 @@ type CurrentConfig struct {
 	// releases (after filtering and sorting) are inspected for tracks.
 	MaxAlbumsPerArtist int
 	MaxTracksPerAlbum  int
+}
+
+// CurrentConfig bounds one DiscoverCurrent run. Kept separate from Config
+// rather than merged into one shared struct — DiscoverCurrent has a
+// filter-by-recency-then-sort step DiscoverClassic doesn't, so a shared
+// struct would carry fields each workflow ignores.
+type CurrentConfig struct {
+	recentCatalogueParams
 	MaxTotalCandidates int
 }
 
@@ -79,20 +87,23 @@ type CurrentConfig struct {
 // not encoded here.
 func DefaultCurrentConfig() CurrentConfig {
 	return CurrentConfig{
-		LookbackDays:              90,
-		MaxAlbumsScannedPerArtist: 50,
-		MaxAlbumsPerArtist:        5,
-		MaxTracksPerAlbum:         10,
-		MaxTotalCandidates:        150,
+		recentCatalogueParams: recentCatalogueParams{
+			LookbackDays:              90,
+			MaxAlbumsScannedPerArtist: 50,
+			MaxAlbumsPerArtist:        5,
+			MaxTracksPerAlbum:         10,
+		},
+		MaxTotalCandidates: 150,
 	}
 }
 
 // EmergingConfig bounds one DiscoverEmerging run. Kept separate from
 // CurrentConfig — same reasoning as CurrentConfig vs Config — even though
-// it shares CurrentConfig's recent-catalogue fields, because it also owns
-// the Last.fm-hop-specific bounds (MaxSimilarPerSeed, MaxDiscoveredArtists)
+// it embeds the same recentCatalogueParams, because it also owns the
+// Last.fm-hop-specific bounds (MaxSimilarPerSeed, MaxDiscoveredArtists)
 // that the other two workflows have no use for.
 type EmergingConfig struct {
+	recentCatalogueParams
 	// MaxSimilarPerSeed bounds how many similar artists Last.fm returns per
 	// seed (the `limit` param on artist.getsimilar) — this is also what
 	// keeps the one allowed discovery hop itself bounded.
@@ -100,12 +111,8 @@ type EmergingConfig struct {
 	// MaxDiscoveredArtists bounds the total number of distinct discovered
 	// artists (after exclusion and dedup) resolved through Spotify across
 	// the whole run.
-	MaxDiscoveredArtists      int
-	LookbackDays              int
-	MaxAlbumsScannedPerArtist int
-	MaxAlbumsPerArtist        int
-	MaxTracksPerAlbum         int
-	MaxTotalCandidates        int
+	MaxDiscoveredArtists int
+	MaxTotalCandidates   int
 }
 
 // DefaultEmergingConfig bounds a DiscoverEmerging run at 10 similar artists
@@ -113,13 +120,15 @@ type EmergingConfig struct {
 // window as DefaultCurrentConfig, and 150 candidates total.
 func DefaultEmergingConfig() EmergingConfig {
 	return EmergingConfig{
-		MaxSimilarPerSeed:         10,
-		MaxDiscoveredArtists:      50,
-		LookbackDays:              90,
-		MaxAlbumsScannedPerArtist: 50,
-		MaxAlbumsPerArtist:        5,
-		MaxTracksPerAlbum:         10,
-		MaxTotalCandidates:        150,
+		recentCatalogueParams: recentCatalogueParams{
+			LookbackDays:              90,
+			MaxAlbumsScannedPerArtist: 50,
+			MaxAlbumsPerArtist:        5,
+			MaxTracksPerAlbum:         10,
+		},
+		MaxSimilarPerSeed:    10,
+		MaxDiscoveredArtists: 50,
+		MaxTotalCandidates:   150,
 	}
 }
 
@@ -184,11 +193,12 @@ type Failure struct {
 // own similarity value. This is operational/editorial context, not a
 // ranking signal — Match is never used to select, order, or score
 // candidates (see docs/memory/decisions.md). It lives on Result rather
-// than on CandidateTrack, which has no structured provenance field.
+// than on CandidateTrack, which has no structured provenance field. The
+// discovery source is always Last.fm (DiscoverEmerging's only signal), so
+// there's no Source field to carry that as data.
 type ArtistProvenance struct {
 	SeedArtist       string
 	DiscoveredArtist string
-	Source           string // always "Last.fm" for DiscoverEmerging
 	Match            float64
 }
 
@@ -348,12 +358,7 @@ artists:
 			continue
 		}
 
-		rc, stage, err := s.recentTracksForArtist(ctx, artistID, recentCatalogueParams{
-			LookbackDays:              s.currentCfg.LookbackDays,
-			MaxAlbumsScannedPerArtist: s.currentCfg.MaxAlbumsScannedPerArtist,
-			MaxAlbumsPerArtist:        s.currentCfg.MaxAlbumsPerArtist,
-			MaxTracksPerAlbum:         s.currentCfg.MaxTracksPerAlbum,
-		})
+		rc, stage, err := s.recentTracksForArtist(ctx, artistID, s.currentCfg.recentCatalogueParams)
 		if isConnectionError(err) {
 			return result, err
 		}
@@ -401,15 +406,6 @@ artists:
 	}
 
 	return result, nil
-}
-
-// recentCatalogueParams bounds one recentTracksForArtist call. Its fields
-// mirror CurrentConfig/EmergingConfig's own recent-catalogue fields.
-type recentCatalogueParams struct {
-	LookbackDays              int
-	MaxAlbumsScannedPerArtist int
-	MaxAlbumsPerArtist        int
-	MaxTracksPerAlbum         int
 }
 
 // recentCatalogue is what recentTracksForArtist found for one artist.
@@ -546,7 +542,6 @@ seeds:
 			result.EmergingProvenance = append(result.EmergingProvenance, ArtistProvenance{
 				SeedArtist:       seed,
 				DiscoveredArtist: name,
-				Source:           "Last.fm",
 				Match:            sim.Match,
 			})
 
@@ -562,12 +557,7 @@ seeds:
 				continue
 			}
 
-			rc, stage, err := s.recentTracksForArtist(ctx, artistID, recentCatalogueParams{
-				LookbackDays:              s.emergingCfg.LookbackDays,
-				MaxAlbumsScannedPerArtist: s.emergingCfg.MaxAlbumsScannedPerArtist,
-				MaxAlbumsPerArtist:        s.emergingCfg.MaxAlbumsPerArtist,
-				MaxTracksPerAlbum:         s.emergingCfg.MaxTracksPerAlbum,
-			})
+			rc, stage, err := s.recentTracksForArtist(ctx, artistID, s.emergingCfg.recentCatalogueParams)
 			if isConnectionError(err) {
 				return result, err
 			}

@@ -359,7 +359,7 @@
   not a candidate-identity source), `Type=Discovery`, `Category=Emerging`,
   `Status=discovered`, deduplicated by Spotify track ID exactly like
   Classic/Current. `discovery.Result` gained `EmergingProvenance
-  []ArtistProvenance{SeedArtist, DiscoveredArtist, Source, Match}` — Last.fm's
+  []ArtistProvenance{SeedArtist, DiscoveredArtist, Match}` — Last.fm's
   own similarity value, kept as discovery metadata only and never used to
   select, order, or score anything; it lives on `Result`, not on
   `CandidateTrack`, which has no structured provenance field. One seed's

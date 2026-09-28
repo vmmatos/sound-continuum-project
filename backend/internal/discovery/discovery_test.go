@@ -86,11 +86,13 @@ func newTestSvcCurrent(f *fakeCatalogue, cfg CurrentConfig) *Service {
 
 func testCurrentConfig() CurrentConfig {
 	return CurrentConfig{
-		LookbackDays:              90,
-		MaxAlbumsScannedPerArtist: 50,
-		MaxAlbumsPerArtist:        5,
-		MaxTracksPerAlbum:         10,
-		MaxTotalCandidates:        100,
+		recentCatalogueParams: recentCatalogueParams{
+			LookbackDays:              90,
+			MaxAlbumsScannedPerArtist: 50,
+			MaxAlbumsPerArtist:        5,
+			MaxTracksPerAlbum:         10,
+		},
+		MaxTotalCandidates: 100,
 	}
 }
 
@@ -124,13 +126,15 @@ func newTestSvcEmerging(f *fakeCatalogue, lf *fakeSimilarArtistFinder, cfg Emerg
 
 func testEmergingConfig() EmergingConfig {
 	return EmergingConfig{
-		MaxSimilarPerSeed:         10,
-		MaxDiscoveredArtists:      50,
-		LookbackDays:              90,
-		MaxAlbumsScannedPerArtist: 50,
-		MaxAlbumsPerArtist:        5,
-		MaxTracksPerAlbum:         10,
-		MaxTotalCandidates:        100,
+		recentCatalogueParams: recentCatalogueParams{
+			LookbackDays:              90,
+			MaxAlbumsScannedPerArtist: 50,
+			MaxAlbumsPerArtist:        5,
+			MaxTracksPerAlbum:         10,
+		},
+		MaxSimilarPerSeed:    10,
+		MaxDiscoveredArtists: 50,
+		MaxTotalCandidates:   100,
 	}
 }
 
@@ -1320,7 +1324,7 @@ func TestDiscoverEmergingProvenanceRecorded(t *testing.T) {
 		t.Fatalf("expected 1 provenance entry, got %+v", result.EmergingProvenance)
 	}
 	p := result.EmergingProvenance[0]
-	if p.SeedArtist != "The Twins" || p.DiscoveredArtist != "New Discovery" || p.Source != "Last.fm" || p.Match != 0.75 {
+	if p.SeedArtist != "The Twins" || p.DiscoveredArtist != "New Discovery" || p.Match != 0.75 {
 		t.Errorf("unexpected provenance entry: %+v", p)
 	}
 }

@@ -1091,8 +1091,8 @@ it being read as an editorial signal later; keeping it on the transient
 `Result` makes clear it's operational output from one discovery run, not
 persisted candidate metadata.
 
-**Consequences:** `ArtistProvenance{SeedArtist, DiscoveredArtist, Source,
-Match}` is populated only by `DiscoverEmerging`; `DiscoverClassic`/
+**Consequences:** `ArtistProvenance{SeedArtist, DiscoveredArtist, Match}`
+is populated only by `DiscoverEmerging`; `DiscoverClassic`/
 `DiscoverCurrent` always leave it `nil`. `Match` is never read by any
 sorting, filtering, or selection logic — `DiscoverEmerging` appends
 candidates in Last.fm's own per-seed discovery order, never resorted by
