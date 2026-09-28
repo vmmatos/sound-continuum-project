@@ -16,9 +16,9 @@
   application shell (`views/HomeView.vue`) proving the build/dev pipeline
   works, a `services/` boundary (`services/health.ts`) calling the
   backend's `GET /health` non-blockingly, and a single `/` route via Vue
-  Router. Pinia is configured (`main.ts`) and `frontend/src/stores/` is the
-  established convention for future stores (Card 17); no stores exist yet —
-  none are needed until a future card introduces real application state.
+  Router. No state-management library is installed — Pinia (Card 17) was
+  removed after sitting unused with zero stores; reinstate it if a future
+  card introduces real shared application state (see `decisions.md`).
   Frontend/backend separation is physical: `frontend/` vs. everything else
   at repo root; the frontend talks to the backend only over HTTP, via
   `VITE_API_BASE_URL`.

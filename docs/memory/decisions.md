@@ -830,3 +830,29 @@ appearances, `include_groups` should become a parameter then, not ahead
 of need — matching the Card #27 (playlist discovery) and Card #28
 (`market` parameter) precedent of not threading unused configuration
 speculatively.
+
+---
+
+**Decision:** Remove Pinia (`frontend/package.json` dependency,
+`createPinia()` bootstrap in `main.ts`, the empty `frontend/src/stores/`
+placeholder) until a real store is needed.
+
+**Context:** Card 17 configured Pinia ahead of any actual shared frontend
+state, on the expectation it would be needed soon. As of this decision, no
+`defineStore` call exists anywhere in the repo — every card since (25/26/
+30) that needed frontend state used page-local `ref`s instead, explicitly
+noting "no new Pinia store" each time.
+
+**Reason:** A wired-but-unused state-management dependency is exactly the
+kind of ahead-of-need complexity this project's MVP discipline otherwise
+avoids everywhere else (see the Card 27/28/33 precedents of not adding
+config/parameters ahead of a concrete caller). Carrying it costs nothing
+today, but it's dead weight in the dependency tree and the `main.ts`
+bootstrap, with no code exercising it.
+
+**Consequences:** `frontend/src/main.ts` no longer calls `.use(createPinia())`;
+`package.json`/`package-lock.json` no longer list `pinia`;
+`frontend/src/stores/` (previously just a `.gitkeep`) is removed. Card 17's
+"Configure Pinia" decision is superseded by this one. If a future card
+introduces real shared frontend state, reinstate the dependency and the
+`stores/` convention then, not before.

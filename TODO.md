@@ -27,6 +27,18 @@
       installed via `frontend/package.json`)
 - [x] `frontend/src/stores/` established as the store location convention
 - [x] No stores created — no real shared application state exists yet
+- **Superseded** — Pinia sat unused with zero stores through every later
+      frontend card; removed (dependency, bootstrap, `stores/` placeholder)
+      via the over-engineering audit cleanup below. Reinstate when a real
+      store is needed.
+
+## Done (Remove unused Pinia dependency)
+
+- [x] `frontend/package.json`/`package-lock.json` — `pinia` removed
+- [x] `frontend/src/main.ts` — `.use(createPinia())` removed
+- [x] `frontend/src/stores/` (empty `.gitkeep` placeholder) removed
+- [x] `npm run build` (type-check + Vite build) verified clean
+- [x] Project memory updated (`current-state.md`, `decisions.md`)
 
 ## Done (Card 18 — Configure Docker Compose)
 
