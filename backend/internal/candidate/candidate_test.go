@@ -88,23 +88,6 @@ func TestNewCandidateTrackSpotifySourceCarriesSpotifyTrackID(t *testing.T) {
 	}
 }
 
-func TestNewCandidateTrackManualSourceRequiresNoSpotifyTrackID(t *testing.T) {
-	c, err := NewCandidateTrack(NewCandidateTrackParams{
-		ID:          "cand-1",
-		Source:      SourceManual,
-		Category:    CategoryPast,
-		Type:        TypeDiscovery,
-		TrackTitle:  "A Rediscovered Classic",
-		TrackArtist: "Some Artist",
-	})
-	if err != nil {
-		t.Fatalf("NewCandidateTrack returned error: %v", err)
-	}
-	if c.SpotifyTrackID != "" {
-		t.Errorf("SpotifyTrackID = %q, want empty for a manual candidate", c.SpotifyTrackID)
-	}
-}
-
 func TestNewCandidateTrackSpotifySourceMissingSpotifyTrackID(t *testing.T) {
 	_, err := NewCandidateTrack(NewCandidateTrackParams{
 		ID:       "cand-1",
@@ -117,32 +100,9 @@ func TestNewCandidateTrackSpotifySourceMissingSpotifyTrackID(t *testing.T) {
 	}
 }
 
-func TestNewCandidateTrackEditorialContextWithoutSpotifyData(t *testing.T) {
-	c, err := NewCandidateTrack(NewCandidateTrackParams{
-		ID:                  "cand-1",
-		Source:              SourceLastFM,
-		Category:            CategoryEmerging,
-		Type:                TypeDiscovery,
-		TrackTitle:          "A Track From Last.fm",
-		TrackArtist:         "An Artist",
-		DiscoveryReason:     "Surfaced via similar-artist lookup",
-		EditorialNote:       "Could provide a transition into contemporary soul",
-		PotentialConnection: "Bridges atmospheric electronic into soul",
-	})
-	if err != nil {
-		t.Fatalf("NewCandidateTrack returned error: %v", err)
-	}
-	if c.DiscoveryReason == "" || c.EditorialNote == "" || c.PotentialConnection == "" {
-		t.Error("editorial fields were not retained")
-	}
-	if c.SpotifyTrackID != "" {
-		t.Errorf("SpotifyTrackID = %q, want empty for a Last.fm candidate", c.SpotifyTrackID)
-	}
-}
-
 func TestNewCandidateTrackEmptyID(t *testing.T) {
 	_, err := NewCandidateTrack(NewCandidateTrackParams{
-		Source:   SourceManual,
+		Source:   SourceSpotify,
 		Category: CategoryPresent,
 	})
 	if !errors.Is(err, ErrEmptyCandidateID) {
@@ -154,7 +114,7 @@ func TestNewCandidateTrackInvalidType(t *testing.T) {
 	for _, typ := range []Type{"", "classic", "CLASSIC", "New", "Vintage", "Emerging"} {
 		_, err := NewCandidateTrack(NewCandidateTrackParams{
 			ID:       "cand-1",
-			Source:   SourceManual,
+			Source:   SourceSpotify,
 			Category: CategoryPresent,
 			Type:     typ,
 		})
@@ -180,10 +140,11 @@ func TestNewCandidateTrackTypeAndCategoryAreIndependent(t *testing.T) {
 	}
 	for _, tc := range cases {
 		c, err := NewCandidateTrack(NewCandidateTrackParams{
-			ID:       "cand-1",
-			Source:   SourceManual,
-			Category: tc.category,
-			Type:     tc.typ,
+			ID:             "cand-1",
+			SpotifyTrackID: "spotify-track-1",
+			Source:         SourceSpotify,
+			Category:       tc.category,
+			Type:           tc.typ,
 		})
 		if err != nil {
 			t.Fatalf("Type %q + Category %q: NewCandidateTrack returned error: %v", tc.typ, tc.category, err)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/vmmatos/sound-continuum-project/internal/discovery"
 	"github.com/vmmatos/sound-continuum-project/internal/health"
+	"github.com/vmmatos/sound-continuum-project/internal/lastfm"
 	"github.com/vmmatos/sound-continuum-project/internal/spotify"
 )
 
@@ -39,7 +40,12 @@ func main() {
 		log.Fatalf("failed to initialize Spotify service: %v", err)
 	}
 
-	discoveryService := discovery.NewService(spotifyService, discovery.DefaultConfig())
+	lastfmClient := lastfm.NewClient(os.Getenv("LASTFM_API_KEY"), os.Getenv("LASTFM_API_URL"))
+
+	discoveryService := discovery.NewService(
+		spotifyService, lastfmClient,
+		discovery.DefaultConfig(), discovery.DefaultCurrentConfig(), discovery.DefaultEmergingConfig(),
+	)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.Handler)
@@ -55,6 +61,8 @@ func main() {
 	mux.HandleFunc("GET /api/spotify/tracks/{id}", spotifyService.TrackHandler)
 	mux.HandleFunc("GET /api/spotify/artists/{id}", spotifyService.ArtistHandler)
 	mux.HandleFunc("POST /api/discovery/classic", discoveryService.ClassicHandler)
+	mux.HandleFunc("POST /api/discovery/current", discoveryService.CurrentHandler)
+	mux.HandleFunc("POST /api/discovery/emerging", discoveryService.EmergingHandler)
 
 	addr := ":" + port
 	log.Printf("sound-continuum server listening on %s", addr)

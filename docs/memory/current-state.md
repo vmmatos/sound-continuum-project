@@ -237,12 +237,17 @@
   from the external `SpotifyTrackID` (empty unless `Source ==
   SourceSpotify`), and only the track metadata (title/artist) the
   editorial process actually needs — no copy of Spotify's `Track`/
-  `Artist`/`Album`. Supported sources: `Spotify`, `Last.fm`, `Manual`.
-  Supported editorial categories: `Past`, `Present`, `Emerging`, `New
-  Release`. Lifecycle: `discovered` → `under review` → `selected` /
-  `rejected`, all validated in `Validate()`. No ID generation, no
-  persistence, no API endpoint, no CRUD, and no frontend UI exist yet —
-  this card is the domain model only.
+  `Artist`/`Album`. `Source`, `Status`, and the `EditorialNote`/
+  `PotentialConnection` fields originally covered more ground (`Last.fm`/
+  `Manual` sources, an `under review`/`selected`/`rejected` lifecycle,
+  free-text curator notes) than any workflow actually constructed — a
+  repo-wide audit found zero call sites for any of it, so it was trimmed
+  back to what's used (`Source: Spotify` only, `Status: discovered` only,
+  no editorial-note fields) rather than left as unused scaffolding; see
+  [`decisions.md`](decisions.md). Supported editorial categories remain
+  `Past`, `Present`, `Emerging`, `New Release` (kept ahead of use
+  deliberately — see decisions.md). No ID generation, no persistence, no
+  API endpoint, no CRUD, and no frontend UI exist yet.
 
 - `CandidateTrack` also carries an independent `Type` (Card 32, see
   [`decisions.md`](decisions.md)): `Classic`, `Current`, `Discovery`,
@@ -286,6 +291,96 @@
   unchanged, no candidate auto-selected. No Last.fm, no AI, no musical
   bridge logic, no Current/Discovery-type discovery — all explicitly
   deferred to later M4/M5 cards.
+
+- Current music discovery is implemented (Card 34, see
+  [`decisions.md`](decisions.md)) — M4's second discovery workflow, still in
+  `backend/internal/discovery/`, no new package, reusing Card 33's
+  `spotify.Service`/`candidate.CandidateTrack`/`spotifyCatalogue` seam/
+  `walkPages`/`resolveArtist`/`isConnectionError`/`writeDiscoveryError`.
+  `discovery.PresentReferenceArtists` (15 names) is the canonical "Present"
+  reference-artist list, alongside Card 33's `PastReferenceArtists`.
+  `discovery.Service.DiscoverCurrent` resolves each artist the same way as
+  `DiscoverClassic`, then walks `ArtistAlbums` (already fixed to
+  `include_groups=album,single`, so singles are included and compilations/
+  appears-on stay excluded), filters releases to a configurable recency
+  window (`CurrentConfig.LookbackDays`, default 90 days), sorts survivors
+  release-date-descending (Spotify's artist-albums order isn't documented
+  as chronological) with Spotify album ID as a stable tiebreaker, then
+  walks `AlbumTracks` on the most recent ones and builds
+  `CandidateTrack`s with `Source=Spotify/Type=Current/Category=Present/
+  Status=discovered`, deduplicated by Spotify track ID exactly like
+  Classic. Spotify's partial release dates (`release_date_precision`
+  "month"/"year") resolve to the earliest instant consistent with that
+  precision — a conservative reading for a recency filter, documented on
+  `parseReleaseDate`. `discovery.Service` now holds two configs
+  (`classicCfg Config`, `currentCfg CurrentConfig`) — `NewService` takes
+  both. `CurrentConfig` adds `MaxAlbumsScannedPerArtist` (raw releases
+  fetched per artist, default 50 — one Spotify page) as a separate bound
+  from `MaxAlbumsPerArtist` (most recent qualifying releases kept per
+  artist after filtering/sorting, default 5), plus the existing
+  `MaxTracksPerAlbum`/`MaxTotalCandidates` shape (10/150 defaults).
+  Building this surfaced a real, undocumented Spotify Development Mode
+  constraint: `GET /artists/{id}/albums` rejects `limit>10` for this app
+  (confirmed live), unlike `GET /albums/{id}/tracks` (still fine at 50) —
+  `walkPages` now takes an explicit per-call page-size cap
+  (`maxArtistAlbumsPageSize=10`/`maxAlbumTracksPageSize=50`) instead of one
+  hardcoded 50 shared by every endpoint; Classic's behavior is unchanged.
+  `discovery.Result` gained one field, `ReleasesOutsideWindow`, always 0
+  for Classic. `POST /api/discovery/current` exposes it — no persistence,
+  no request body, no popularity/ranking. No Last.fm, no AI, no Emerging/
+  New Release discovery, no musical bridge logic, no editorial selection —
+  all still deferred.
+
+- Emerging artist discovery is implemented (Card 35, see
+  [`decisions.md`](decisions.md)) — M4's third and final discovery
+  workflow, and the repo's first Last.fm integration. A new standalone
+  `internal/lastfm` package (one file, no provider abstraction) wraps
+  `artist.getsimilar` only: `lastfm.Client.SimilarArtists` injects the API
+  key, sets an identifiable `User-Agent`, and returns typed
+  `[]lastfm.SimilarArtist{Name, Match}` — a missing API key returns
+  `ErrMissingAPIKey` without making a request, which is what makes a
+  missing `LASTFM_API_KEY` fail the whole discovery run loudly (503)
+  instead of silently returning an empty result.
+  `discovery.EmergingReferenceArtists` (15 names) is the canonical
+  "Emerging" seed-artist list, alongside `PastReferenceArtists`/
+  `PresentReferenceArtists`; a new `isCanonicalReferenceArtist` helper
+  excludes any Last.fm result already present in any of the three lists
+  (case-insensitive, trimmed). `discovery.Service.DiscoverEmerging` walks
+  each seed once through `SimilarArtists` (exactly one hop — it never calls
+  Last.fm with a discovered artist's name), deduplicates discovered artists
+  by lowercased/trimmed name, resolves the remainder through the same
+  `resolveArtist` Classic/Current already use, then explores their recent
+  catalogue via a new shared `recentTracksForArtist` helper — extracted
+  from `DiscoverCurrent`'s own scan/filter/sort/truncate/track-walk block,
+  since Card 35 needed the exact same "recent" definition a third time and
+  duplicating it again would have been real, not speculative, duplication.
+  `discovery.Service` now also holds a `lastfm similarArtistFinder`
+  dependency and an `emergingCfg EmergingConfig` (own struct, same
+  reasoning as `Config`/`CurrentConfig` staying separate: it owns
+  Last.fm-hop-specific bounds — `MaxSimilarPerSeed`, `MaxDiscoveredArtists`
+  — the other two workflows have no use for). `NewService` now takes a
+  `*lastfm.Client` alongside `*spotify.Service`. Candidates use
+  `Source=Spotify` (Last.fm is a discovery signal, not a candidate-identity
+  source — `candidate.Source` has no Last.fm value at all, see
+  decisions.md), `Type=Discovery`, `Category=Emerging`,
+  `Status=discovered`, deduplicated by Spotify track ID exactly like
+  Classic/Current. `discovery.Result` gained `EmergingProvenance
+  []ArtistProvenance{SeedArtist, DiscoveredArtist, Match}` — Last.fm's
+  own similarity value, kept as discovery metadata only and never used to
+  select, order, or score anything; it lives on `Result`, not on
+  `CandidateTrack`, which has no structured provenance field. One seed's
+  Last.fm failure is recorded on `Result.Failures` (`Stage: "similar"`) and
+  the run continues; only a missing Last.fm API key or a Spotify connection
+  failure aborts the whole run. `POST /api/discovery/emerging` exposes it —
+  no persistence, no request body, no popularity/ranking of any kind. Real
+  Last.fm + Spotify verification: `artist.getsimilar` confirmed live
+  against a seed artist; the full bounded workflow correctly aborts with a
+  clear 503 when Spotify has no stored connection (same pre-existing
+  behavior as Classic/Current) and with a clear 503 when `LASTFM_API_KEY`
+  is unset — never a silent empty success either way. No AI, no musical
+  bridge logic, no editorial selection, no persistence — all still
+  deferred. M4 (Discovery Engine) is now feature-complete for its three
+  planned discovery workflows.
 
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
