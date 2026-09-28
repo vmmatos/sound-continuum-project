@@ -287,6 +287,45 @@
   bridge logic, no Current/Discovery-type discovery — all explicitly
   deferred to later M4/M5 cards.
 
+- Current music discovery is implemented (Card 34, see
+  [`decisions.md`](decisions.md)) — M4's second discovery workflow, still in
+  `backend/internal/discovery/`, no new package, reusing Card 33's
+  `spotify.Service`/`candidate.CandidateTrack`/`spotifyCatalogue` seam/
+  `walkPages`/`resolveArtist`/`isConnectionError`/`writeDiscoveryError`.
+  `discovery.PresentReferenceArtists` (15 names) is the canonical "Present"
+  reference-artist list, alongside Card 33's `PastReferenceArtists`.
+  `discovery.Service.DiscoverCurrent` resolves each artist the same way as
+  `DiscoverClassic`, then walks `ArtistAlbums` (already fixed to
+  `include_groups=album,single`, so singles are included and compilations/
+  appears-on stay excluded), filters releases to a configurable recency
+  window (`CurrentConfig.LookbackDays`, default 90 days), sorts survivors
+  release-date-descending (Spotify's artist-albums order isn't documented
+  as chronological) with Spotify album ID as a stable tiebreaker, then
+  walks `AlbumTracks` on the most recent ones and builds
+  `CandidateTrack`s with `Source=Spotify/Type=Current/Category=Present/
+  Status=discovered`, deduplicated by Spotify track ID exactly like
+  Classic. Spotify's partial release dates (`release_date_precision`
+  "month"/"year") resolve to the earliest instant consistent with that
+  precision — a conservative reading for a recency filter, documented on
+  `parseReleaseDate`. `discovery.Service` now holds two configs
+  (`classicCfg Config`, `currentCfg CurrentConfig`) — `NewService` takes
+  both. `CurrentConfig` adds `MaxAlbumsScannedPerArtist` (raw releases
+  fetched per artist, default 50 — one Spotify page) as a separate bound
+  from `MaxAlbumsPerArtist` (most recent qualifying releases kept per
+  artist after filtering/sorting, default 5), plus the existing
+  `MaxTracksPerAlbum`/`MaxTotalCandidates` shape (10/150 defaults).
+  Building this surfaced a real, undocumented Spotify Development Mode
+  constraint: `GET /artists/{id}/albums` rejects `limit>10` for this app
+  (confirmed live), unlike `GET /albums/{id}/tracks` (still fine at 50) —
+  `walkPages` now takes an explicit per-call page-size cap
+  (`maxArtistAlbumsPageSize=10`/`maxAlbumTracksPageSize=50`) instead of one
+  hardcoded 50 shared by every endpoint; Classic's behavior is unchanged.
+  `discovery.Result` gained one field, `ReleasesOutsideWindow`, always 0
+  for Classic. `POST /api/discovery/current` exposes it — no persistence,
+  no request body, no popularity/ranking. No Last.fm, no AI, no Emerging/
+  New Release discovery, no musical bridge logic, no editorial selection —
+  all still deferred.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.
