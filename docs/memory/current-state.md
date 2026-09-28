@@ -237,12 +237,17 @@
   from the external `SpotifyTrackID` (empty unless `Source ==
   SourceSpotify`), and only the track metadata (title/artist) the
   editorial process actually needs — no copy of Spotify's `Track`/
-  `Artist`/`Album`. Supported sources: `Spotify`, `Last.fm`, `Manual`.
-  Supported editorial categories: `Past`, `Present`, `Emerging`, `New
-  Release`. Lifecycle: `discovered` → `under review` → `selected` /
-  `rejected`, all validated in `Validate()`. No ID generation, no
-  persistence, no API endpoint, no CRUD, and no frontend UI exist yet —
-  this card is the domain model only.
+  `Artist`/`Album`. `Source`, `Status`, and the `EditorialNote`/
+  `PotentialConnection` fields originally covered more ground (`Last.fm`/
+  `Manual` sources, an `under review`/`selected`/`rejected` lifecycle,
+  free-text curator notes) than any workflow actually constructed — a
+  repo-wide audit found zero call sites for any of it, so it was trimmed
+  back to what's used (`Source: Spotify` only, `Status: discovered` only,
+  no editorial-note fields) rather than left as unused scaffolding; see
+  [`decisions.md`](decisions.md). Supported editorial categories remain
+  `Past`, `Present`, `Emerging`, `New Release` (kept ahead of use
+  deliberately — see decisions.md). No ID generation, no persistence, no
+  API endpoint, no CRUD, and no frontend UI exist yet.
 
 - `CandidateTrack` also carries an independent `Type` (Card 32, see
   [`decisions.md`](decisions.md)): `Classic`, `Current`, `Discovery`,
@@ -355,8 +360,9 @@
   Last.fm-hop-specific bounds — `MaxSimilarPerSeed`, `MaxDiscoveredArtists`
   — the other two workflows have no use for). `NewService` now takes a
   `*lastfm.Client` alongside `*spotify.Service`. Candidates use
-  `Source=Spotify` (never `SourceLastFM` — Last.fm is a discovery signal,
-  not a candidate-identity source), `Type=Discovery`, `Category=Emerging`,
+  `Source=Spotify` (Last.fm is a discovery signal, not a candidate-identity
+  source — `candidate.Source` has no Last.fm value at all, see
+  decisions.md), `Type=Discovery`, `Category=Emerging`,
   `Status=discovered`, deduplicated by Spotify track ID exactly like
   Classic/Current. `discovery.Result` gained `EmergingProvenance
   []ArtistProvenance{SeedArtist, DiscoveredArtist, Match}` — Last.fm's

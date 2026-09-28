@@ -1100,3 +1100,53 @@ candidates in Last.fm's own per-seed discovery order, never resorted by
 after Card #35's `Result` is consumed into some persistence layer not yet
 built), that's a new decision for whoever builds that layer — this card
 does not attempt to anticipate it.
+
+---
+
+**Decision:** Trim `candidate.Source` to `SourceSpotify` only,
+`candidate.Status` to `StatusDiscovered` only, and remove
+`CandidateTrack.EditorialNote`/`PotentialConnection`. Keep
+`candidate.Category`'s four values (including `CategoryNewRelease`) and
+Pinia's `frontend/src/stores/` scaffolding as-is.
+
+**Context:** A repo-wide over-engineering audit (post-Card #35) found that
+`SourceLastFM`, `SourceManual`, `StatusUnderReview`/`StatusSelected`/
+`StatusRejected`, and `EditorialNote`/`PotentialConnection` — all introduced
+by Card #31 as forward-looking domain vocabulary — had zero constructors
+anywhere in the codebase: three discovery workflows now exist (Cards
+#33-#35) and none of them, including the Last.fm-backed one, ever
+constructs a candidate with any of these. `CategoryNewRelease` and Pinia
+were flagged too but kept: `CategoryNewRelease` is exercised by
+`TestNewCandidateTrackTypeAndCategoryAreIndependent` as one of `Category`'s
+four values and is closer to "the enum's fourth member," not a separate
+unused subsystem; Pinia is a single `package.json` line + a two-line
+`main.ts` wire-up already on the roadmap's stack, not comparable in size
+or risk to a domain-model rewrite.
+
+**Reason:** Card #31's own rationale for these fields was "domain concept
+only, no integration implemented" — explicitly provisional. Three cards
+later, with real discovery workflows shipped and none of them needing
+`SourceLastFM`/`SourceManual`/the extra `Status` values/the editorial-note
+fields, "provisional" had become "unused scaffolding for a workflow
+(human editorial review, M6/M7) that doesn't exist yet" — exactly what
+this project's own conventions (CLAUDE.md, and the `ponytail` review
+discipline applied throughout M4) argue against keeping. Trimming now,
+while only `internal/candidate`'s own tests reference these symbols (no
+`internal/discovery` code does — confirmed by repo-wide grep before
+trimming), is far cheaper than trimming after a persistence layer or API
+serializes the wider shape.
+
+**Consequences:** `candidate.Source`/`candidate.Status` are still
+`type X string` + `const` + `Valid()`, unchanged in *shape* — re-adding a
+value later (e.g. `SourceLastFM` when a workflow constructs a
+Last.fm-sourced candidate, or `StatusUnderReview` when M6's review
+workflow lands) is a small, additive change, not a redesign.
+`CandidateTrack`/`NewCandidateTrackParams` lost the two editorial-note
+fields; re-add them together with the workflow that writes them.
+`candidate_test.go`'s `SourceManual`/`SourceLastFM`/editorial-field tests
+were removed or rewritten to use `SourceSpotify`
+(`TestNewCandidateTrackManualSourceRequiresNoSpotifyTrackID` and
+`TestNewCandidateTrackEditorialContextWithoutSpotifyData` deleted outright
+— they tested values that no longer exist).
+`docs/memory/current-state.md`'s Card #31 snapshot paragraph updated to
+describe the trimmed shape.
