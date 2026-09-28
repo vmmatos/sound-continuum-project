@@ -44,7 +44,9 @@ func main() {
 
 	discoveryService := discovery.NewService(
 		spotifyService, lastfmClient,
-		discovery.DefaultConfig(), discovery.DefaultCurrentConfig(), discovery.DefaultEmergingConfig(),
+		discovery.DefaultConfig(),
+		discovery.DefaultCurrentConfig(),
+		discovery.DefaultEmergingConfig(),
 	)
 
 	mux := http.NewServeMux()
