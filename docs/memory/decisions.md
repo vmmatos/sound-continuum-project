@@ -717,3 +717,116 @@ on both `CandidateTrack` and `NewCandidateTrackParams`. `errors.go` gains
 `Type: Discovery, Category: Past` or `Type: Classic, Category: New
 Release` are valid and unremarkable. No persistence, API, or discovery
 logic was added — nothing in the card's Definition of Done requires it.
+
+---
+
+**Decision:** Introduce `backend/internal/discovery` as a new, flat,
+feature-named package (sibling to `candidate`/`spotify`) for classic music
+discovery, rather than a subpackage of `candidate` or `spotify`, or a
+generic multi-source discovery framework.
+
+**Context:** Card #33 builds M4's first discovery workflow: turning Sound
+Continuum's 15 "Past" reference artists into `Classic`/`Past`/`discovered`
+candidates via Spotify's artist-albums/album-tracks endpoints. The card
+explicitly forbids building separate services per candidate type
+(Classic/Current/Emerging) or a generic provider/plugin architecture
+ahead of need.
+
+**Reason:** Same reasoning as Cards 31/32's `candidate` package decision —
+the repo's only convention is flat, feature-named packages; no
+`internal/domain` or `internal/discovery/classic` layering exists to
+extend. `discovery` depends on both `spotify` (catalogue access) and
+`candidate` (the type it produces), so it cannot live inside either
+without an import cycle or misplaced ownership.
+
+**Consequences:** `backend/internal/discovery/reference_artists.go` holds
+`PastReferenceArtists`, the first canonical definition of this list
+anywhere in the repo (previously undocumented in any runtime form) —
+plain curator-editable data, not database-driven. `discovery.go` holds
+`Config`, `Service`, `DiscoverClassic`, and `ClassicHandler`. A future
+Current/Emerging/Last.fm discovery card should follow the same
+"reference data as a package-level var, one focused use case per card"
+pattern rather than generalizing this package prematurely — see the
+card's explicit "do not create a generic discovery framework" constraint.
+
+---
+
+**Decision:** Give `discovery.Service` a small unexported interface seam
+(`spotifyCatalogue`: `Search`/`ArtistAlbums`/`AlbumTracks`) over
+`*spotify.Service`, instead of testing against a real `spotify.Service`
+pointed at an `httptest.Server` (the pattern every `spotify` package test
+uses).
+
+**Context:** Every existing Spotify HTTP-mocking test lives inside
+package `spotify` itself and redirects `Service`'s internal `*Client` by
+setting its `AuthBaseURL`/`APIBaseURL` fields directly — these are
+exported on `Client`, but `Service.client` itself is an unexported field.
+`discovery` is a separate package and has no access to it, and `spotify`
+exposes no constructor or setter that would let an external package point
+a `*spotify.Service` at a fake server.
+
+**Reason:** The alternatives were worse: adding a test-only exported hook
+to `spotify.Service` (new production surface serving only one external
+package's tests) or seeding a connection through the real OAuth handler
+flow (`AuthHandler`/`CallbackHandler`) — which still cannot redirect the
+token exchange or catalogue calls away from the real Spotify hosts,
+since that redirection is the same unexported-field problem one level
+up. A three-method interface, satisfied structurally by `*spotify.Service`
+with zero changes to the `spotify` package, is the smallest fix — matches
+"introduce only the minimum new code required."
+
+**Consequences:** `discovery.NewService` still takes a concrete
+`*spotify.Service` (production callers, `main.go` included, are
+unaffected and unaware of the interface). `discovery_test.go` implements
+a `fakeCatalogue` satisfying the same interface entirely in memory — no
+HTTP server, no SQLite database needed for discovery's own tests. This is
+a one-off seam for this package's specific testing gap, not a general
+provider-abstraction precedent; it should not be read as license to wrap
+every `spotify.Service` consumer in an interface.
+
+---
+
+**Decision:** Reuse the Spotify track ID directly as `candidate.ID`
+(`candidate.ID(track.ID)`), rather than generating a separate identifier.
+
+**Context:** `candidate.ID` has been caller-supplied since Card #31, with
+no generation mechanism anywhere in the repo — decisions.md flagged this
+as deferred "until a concrete persistence/discovery card creates a real
+need."
+
+**Reason:** `CandidateTrack.Validate()` has no rule requiring `ID` and
+`SpotifyTrackID` to differ. The Spotify track ID is already a stable,
+externally unique string fetched as part of discovery — generating a
+second identifier (e.g. via `google/uuid`, already an indirect
+dependency but not a direct one) would add a dependency and a step for no
+behavioral benefit within one discovery run's scope.
+
+**Consequences:** For Source=Spotify candidates, `ID == SpotifyTrackID`
+always holds. A future persistence layer or a non-Spotify source (Last.fm,
+Manual) will need its own ID strategy — this decision only covers Card
+#33's Spotify-sourced candidates, and is not a general ID-generation
+policy.
+
+---
+
+**Decision:** `Client.ArtistAlbums` always sends a fixed
+`include_groups=album,single`, with no caller-supplied override.
+
+**Context:** Card #33 needs an artist's own catalogue (for Classic
+discovery), explicitly warning against building an album-classification
+engine or inferring musical quality from metadata.
+
+**Reason:** Spotify's `include_groups` (`album,single,compilation,
+appears_on`) defaults to all four when omitted. `compilation`/
+`appears_on` results are compilations/reissues and guest-appearance
+credits — noise that would waste a bounded per-artist album budget rather
+than reflect the artist's own historical catalogue. This is one fixed
+query parameter value with exactly one caller today, not a
+classification system: it excludes two Spotify-defined groups, it does
+not rank, score, or interpret album metadata.
+
+**Consequences:** If a future card needs compilations or guest
+appearances, `include_groups` should become a parameter then, not ahead
+of need — matching the Card #27 (playlist discovery) and Card #28
+(`market` parameter) precedent of not threading unused configuration
+speculatively.

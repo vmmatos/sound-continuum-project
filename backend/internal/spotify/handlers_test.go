@@ -777,6 +777,76 @@ func TestArtistHandlerEmptyID(t *testing.T) {
 	}
 }
 
+func TestServiceArtistAlbumsPassesArgs(t *testing.T) {
+	var gotPath, gotQuery string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/artists/a-1/albums", func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.RawQuery
+		json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{{"id": "al-1", "name": "Album One"}}, "total": 1, "limit": 5, "offset": 0,
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc := newTestService(t, server.URL)
+	ctx := newTestContext()
+	if err := svc.store.Upsert(ctx, Connection{
+		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
+	}); err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+
+	page, err := svc.ArtistAlbums(ctx, "a-1", 5, 0)
+	if err != nil {
+		t.Fatalf("ArtistAlbums returned error: %v", err)
+	}
+	if gotPath != "/v1/artists/a-1/albums" {
+		t.Errorf("unexpected path: %q", gotPath)
+	}
+	if !strings.Contains(gotQuery, "limit=5") {
+		t.Errorf("expected limit to reach Spotify, got query %q", gotQuery)
+	}
+	if len(page.Items) != 1 || page.Items[0].Name != "Album One" {
+		t.Errorf("unexpected page: %+v", page)
+	}
+}
+
+func TestServiceAlbumTracksPassesArgs(t *testing.T) {
+	var gotPath string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/albums/al-1/tracks", func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{{"id": "t-1", "name": "Track One"}}, "total": 1, "limit": 10, "offset": 0,
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc := newTestService(t, server.URL)
+	ctx := newTestContext()
+	if err := svc.store.Upsert(ctx, Connection{
+		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
+	}); err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+
+	page, err := svc.AlbumTracks(ctx, "al-1", 10, 0)
+	if err != nil {
+		t.Fatalf("AlbumTracks returned error: %v", err)
+	}
+	if gotPath != "/v1/albums/al-1/tracks" {
+		t.Errorf("unexpected path: %q", gotPath)
+	}
+	if len(page.Items) != 1 || page.Items[0].Name != "Track One" {
+		t.Errorf("unexpected page: %+v", page)
+	}
+}
+
 func TestInitializeOfficialPlaylistCreatesOnFirstCall(t *testing.T) {
 	var createCalls int
 	mux := http.NewServeMux()

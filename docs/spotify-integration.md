@@ -857,3 +857,50 @@ identical `spotify_playlist_id` and confirmed no second playlist was
 created (verified both via the response and by inspecting the
 `official_playlist` SQLite row directly). Server logs contained no
 tokens, secrets, or Authorization headers at any point.
+
+## 27. Implementation (Card #33)
+
+M4's first discovery workflow — Classic Music Discovery — is implemented
+in a new package, `backend/internal/discovery/`, reusing the existing
+Spotify client/`Service` (no second client). Full design in
+[`decisions.md`](memory/decisions.md).
+
+### New Spotify endpoints used
+
+```
+GET /artists/{id}/albums    Client.ArtistAlbums / Service.ArtistAlbums
+GET /albums/{id}/tracks     Client.AlbumTracks / Service.AlbumTracks
+```
+
+Both are internal to `spotify.Service` — no new HTTP routes were added to
+`/api/spotify/*`. `ArtistAlbums` always sends
+`include_groups=album,single`, fixed, excluding compilations and
+appears-on credits. Neither takes a `market` parameter, matching the
+existing `Track`/`Artist` precedent (user-token auth infers it). No
+`market`, no deprecated top-tracks, no Recommendations/Audio Features/
+Audio Analysis are used anywhere in this card.
+
+### New Sound Continuum endpoint
+
+```
+POST /api/discovery/classic    run classic discovery, return the result
+```
+
+Runs `discovery.Service.DiscoverClassic` once per call — no persistence,
+no request body, no query parameters. Never modifies the official
+playlist; never marks a candidate `selected`.
+
+### Real Spotify verification
+
+Performed against the real Spotify API with the curator's existing
+connection. All 15 `discovery.PastReferenceArtists` resolved via exact
+name match on the first `Search` call — zero unresolved, zero failures.
+A full run (temporarily raising `MaxTotalCandidates` past the 150
+default, for verification only — reverted before commit) inspected 75
+albums and 715 tracks, producing 715 unique candidates (zero duplicate
+Spotify track IDs), every one with
+`Source=Spotify/Type=Classic/Category=Past/Status=discovered`. The
+official playlist's item count and `snapshot_id` were identical before
+and after the run — confirmed unmodified. No candidate was auto-selected.
+With `DefaultConfig()` (the shipped default), a real run stops at exactly
+150 candidates after 4 artists, as designed.

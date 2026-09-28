@@ -256,6 +256,50 @@ func (c *Client) Artist(ctx context.Context, accessToken, artistID string) (Arti
 	return a, err
 }
 
+// ArtistAlbums fetches a page of an artist's albums, restricted to
+// include_groups=album,single — this excludes compilations and
+// appears-on credits, which would otherwise waste a caller's album
+// budget on duplicate or guest-appearance tracks rather than the
+// artist's own catalogue. A single fixed query value, not a
+// classification engine. limit <= 0 and offset < 0 fall back to
+// Spotify's own defaults (20, 0).
+func (c *Client) ArtistAlbums(ctx context.Context, accessToken, artistID string, limit, offset int) (Paging[Album], error) {
+	if artistID == "" {
+		return Paging[Album]{}, ErrEmptyArtistID
+	}
+	limit, offset = clampPaging(limit, offset)
+	query := url.Values{
+		"include_groups": {"album,single"},
+		"limit":          {strconv.Itoa(limit)},
+		"offset":         {strconv.Itoa(offset)},
+	}
+
+	var page Paging[Album]
+	path := "/v1/artists/" + url.PathEscape(artistID) + "/albums"
+	err := c.request(ctx, http.MethodGet, path, query, nil, accessToken, &page)
+	return page, err
+}
+
+// AlbumTracks fetches a page of an album's tracks. Returned Track values
+// have a zero Album field — Spotify's simplified-track shape (used by
+// this endpoint) omits it. limit <= 0 and offset < 0 fall back to
+// Spotify's own defaults (20, 0).
+func (c *Client) AlbumTracks(ctx context.Context, accessToken, albumID string, limit, offset int) (Paging[Track], error) {
+	if albumID == "" {
+		return Paging[Track]{}, ErrEmptyAlbumID
+	}
+	limit, offset = clampPaging(limit, offset)
+	query := url.Values{
+		"limit":  {strconv.Itoa(limit)},
+		"offset": {strconv.Itoa(offset)},
+	}
+
+	var page Paging[Track]
+	path := "/v1/albums/" + url.PathEscape(albumID) + "/tracks"
+	err := c.request(ctx, http.MethodGet, path, query, nil, accessToken, &page)
+	return page, err
+}
+
 // CreatePlaylist creates a new playlist owned by the current user via
 // POST /me/playlists (the current API — never the deprecated
 // /users/{user_id}/playlists).
