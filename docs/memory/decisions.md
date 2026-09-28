@@ -830,3 +830,127 @@ appearances, `include_groups` should become a parameter then, not ahead
 of need — matching the Card #27 (playlist discovery) and Card #28
 (`market` parameter) precedent of not threading unused configuration
 speculatively.
+
+---
+
+**Decision:** Give `discovery.Service` two separate config fields
+(`classicCfg Config`, `currentCfg CurrentConfig`), rather than one shared
+`Config` struct used by both `DiscoverClassic` and `DiscoverCurrent`.
+
+**Context:** Card #34 adds `DiscoverCurrent`, which needs a recency window
+(`LookbackDays`) and a raw-scan-vs-selected-releases split
+(`MaxAlbumsScannedPerArtist` vs `MaxAlbumsPerArtist`) that `DiscoverClassic`
+has no use for.
+
+**Reason:** `DiscoverClassic` walks every album it fetches up to its per-
+artist cap, in whatever order Spotify returns; `DiscoverCurrent` must
+filter by date and sort before applying that cap, so it needs a wider raw
+fetch bound than its final per-artist selection count. Cramming both
+shapes into one `Config` would leave 2-3 fields meaningless for whichever
+workflow doesn't use them. Two small structs, each fully used by its own
+`Discover*` method, is simpler to read than one struct with conditional
+meaning.
+
+**Consequences:** `NewService` now takes `(spotifyService, classicCfg,
+currentCfg)`; `cmd/server/main.go` passes `discovery.DefaultConfig()` and
+`discovery.DefaultCurrentConfig()`. `discovery.Result` is still shared by
+both methods — its shape (candidates/failures/unresolved artists/
+inspection counters) applies identically to both, with one addition,
+`ReleasesOutsideWindow`, that only `DiscoverCurrent` populates.
+
+---
+
+**Decision:** Resolve a partial Spotify `release_date` (month/year
+precision) to the earliest instant consistent with that precision, for
+`DiscoverCurrent`'s recency-window filter.
+
+**Context:** Spotify's `release_date_precision` can be `"day"`, `"month"`,
+or `"year"` — a release with `"year"` precision and `release_date:
+"2024"` could have actually been released any day in 2024. Card #34
+explicitly requires documenting how this ambiguity is handled rather than
+"pretending a partial release date is an exact day."
+
+**Reason:** A recency filter has two possible failure directions:
+overestimating recency (treating a possibly-old release as current) or
+underestimating it (treating a possibly-recent release as too old).
+Resolving to the earliest possible date (the 1st of the month/year) never
+overestimates recency — an ambiguous release only passes the lookback
+window if it would still qualify under the least generous reading of its
+own metadata. The alternative (assume the latest possible date) risks
+quietly admitting genuinely old catalogue entries as "current."
+
+**Consequences:** `parseReleaseDate(raw, precision string) (time.Time,
+bool)` in `discovery.go` implements this via `time.Parse` with a
+precision-selected layout (`"2006-01-02"`/`"2006-01"`/`"2006"`); an
+unparseable value returns `ok=false` and the release is excluded (counted
+in `Result.ReleasesOutsideWindow`) rather than guessed. Only
+`DiscoverCurrent` uses this — `DiscoverClassic` has no recency window.
+
+---
+
+**Decision:** Explicitly sort each artist's recent releases by release
+date (descending, Spotify album ID as a stable tiebreaker) before
+truncating to `CurrentConfig.MaxAlbumsPerArtist`, rather than trusting
+`ArtistAlbums`' returned order.
+
+**Context:** Card #34 requires that, when an artist has more qualifying
+releases than the configured per-artist cap, the *most recent* ones are
+kept — and requires documenting the ordering used. Spotify's
+`GET /artists/{id}/albums` response order is not documented to be
+chronological.
+
+**Reason:** `DiscoverClassic` never needed this — for classic discovery,
+which albums get walked among an artist's back catalogue doesn't matter
+editorially. For current discovery, "most recent" is the entire point, so
+relying on an unspecified upstream ordering would make the per-artist cap
+non-deterministic and potentially wrong. Sorting explicitly, on a field
+this workflow already parses (`release_date`), is a few lines and removes
+that assumption. The ID tiebreaker keeps ordering deterministic for
+same-day releases without introducing a popularity-like signal.
+
+**Consequences:** `DiscoverCurrent` fetches up to `CurrentConfig.
+MaxAlbumsScannedPerArtist` raw releases first (bounding the Spotify calls
+regardless of an artist's true catalogue size), filters by
+`LookbackDays`, sorts the survivors, then truncates to
+`MaxAlbumsPerArtist` before walking tracks. If a future card finds the
+default scan cap (50 — Spotify's max single-page size) insufficient for
+some artist's release cadence, raising it is a config change, not a
+redesign.
+
+---
+
+**Decision:** Cap each individual `GET /artists/{id}/albums` request at
+`limit=10`, separately from `GET /albums/{id}/tracks` (still capped at 50)
+— `walkPages` now takes an explicit `maxPageSize` per call instead of a
+single hardcoded 50 for every endpoint.
+
+**Context:** Building `DiscoverCurrent` with `MaxAlbumsScannedPerArtist:
+50` surfaced, against the real Spotify API, that this app's Development
+Mode access rejects `limit>10` on `GET /artists/{id}/albums` with `400
+Invalid limit` — confirmed by direct `curl` testing (`limit=10` succeeds,
+`limit=15` and `limit=50` both fail). This is undocumented by Spotify (the
+public docs state a default max of 50) and was never hit by Card #33,
+whose `MaxAlbumsPerArtist` default (5) stayed under it by coincidence.
+`GET /albums/{id}/tracks` was confirmed live to accept `limit=50` without
+issue.
+
+**Reason:** `walkPages`'s per-request page size was a single hardcoded
+constant (50) shared by every caller. Silently clamping the *effective*
+limit inside `Client.ArtistAlbums` instead (rather than changing what
+`walkPages` requests) would break `walkPages`'s own pagination-termination
+check, which compares the number of items returned against the size it
+believes it asked for — a caller-transparent silent clamp would make
+`walkPages` think it saw a partial/last page after the very first request
+and stop early, silently truncating the scan. Parameterizing the page size
+at the call site is the smallest fix that keeps `walkPages` correct.
+
+**Consequences:** `walkPages[T any](maxItems, maxPageSize int, fetch)`
+gained a parameter; all four call sites (Classic's and Current's
+album/track walks) now pass one of two named constants,
+`maxArtistAlbumsPageSize = 10` / `maxAlbumTracksPageSize = 50`, both
+documented with this empirical finding. Classic's behavior is unchanged
+(its configured `MaxAlbumsPerArtist`/`MaxTracksPerAlbum` were already
+under both caps). If a future card needs to fetch more than 10 raw
+releases per artist in one request, that ceiling is a real, tested
+constraint of this app's current Spotify access tier, not a
+project-internal choice to revisit lightly.

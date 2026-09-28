@@ -347,15 +347,61 @@
 - [x] No Last.fm, no persistence layer, no Current/Discovery-type
       discovery, no musical bridge logic, no final editorial selection
 
+## Done (Card 34 — Build Current Music Discovery)
+
+- [x] `PresentReferenceArtists` (15 names) added to
+      `backend/internal/discovery/reference_artists.go` — the canonical
+      "Present" reference-artist list, alongside Card 33's
+      `PastReferenceArtists`
+- [x] `DiscoverCurrent` reuses `resolveArtist`/`walkPages`/
+      `isConnectionError`/`writeDiscoveryError`/the `spotifyCatalogue` seam
+      from Card 33 unchanged; `Service` now holds `classicCfg Config` +
+      `currentCfg CurrentConfig`, `NewService` takes both
+- [x] `CurrentConfig`: configurable `LookbackDays` (default 90),
+      `MaxAlbumsScannedPerArtist` (raw releases fetched per artist, default
+      50) separate from `MaxAlbumsPerArtist` (most recent qualifying
+      releases kept after filtering/sorting, default 5), plus
+      `MaxTracksPerAlbum`/`MaxTotalCandidates`
+- [x] `parseReleaseDate` resolves partial `release_date_precision`
+      (month/year) to the earliest consistent instant — documented
+      conservative handling, never overestimates recency
+- [x] Recent releases explicitly sorted release-date-descending (Spotify
+      album ID as stable tiebreaker) before truncating to
+      `MaxAlbumsPerArtist` — Spotify's artist-albums order isn't documented
+      as chronological
+- [x] Singles included via the existing `include_groups=album,single`
+      fetch (Card 33); no album-type filtering added
+- [x] Every candidate: `Source=Spotify`, `Type=Current`, `Category=Present`,
+      `Status=discovered` — no popularity/ranking, no AI, no musical
+      bridge logic
+- [x] `discovery.Result` gained `ReleasesOutsideWindow` (always 0 for
+      Classic); dedup by Spotify track ID, same as Classic
+- [x] `POST /api/discovery/current` — minimal endpoint, no persistence, no
+      frontend UI
+- [x] Unit tests (discovery package, 19 new scenarios covering resolution,
+      candidate fields, window filtering, singles, dedup, unresolved
+      artists, failure continuation, connection abort, scan/selection
+      bounding, total-candidate cutoff, no popularity reordering,
+      release-date-precision parsing, handler status mapping) — no real
+      Spotify calls in automated tests
+- [x] Real Spotify verification: small-subset run confirmed genuinely
+      recent candidates, correct metadata, no duplicates, official
+      playlist unchanged; full 15-artist reference set run confirmed safe
+      under the bounded limits
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+- [x] No Last.fm, no persistence layer, no Emerging/New-Release discovery,
+      no musical bridge logic, no final editorial selection
+
 ## In progress
 
 - Nothing currently in progress.
 
 ## Planned
 
-- M4: Discovery engine (candidate persistence, Current/Emerging discovery,
-      Last.fm discovery, CRUD/API — classic discovery from the Past
-      reference artist set is done, see Card 33 above)
+- M4: Discovery engine (candidate persistence, Emerging discovery, Last.fm
+      discovery, CRUD/API — classic and current discovery from the Past/
+      Present reference artist sets are done, see Cards 33-34 above)
 - M5: Musical ranking & bridges
 - M6: Curator experience
 - M7: Weekly editorial workflow

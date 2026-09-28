@@ -39,7 +39,7 @@ func main() {
 		log.Fatalf("failed to initialize Spotify service: %v", err)
 	}
 
-	discoveryService := discovery.NewService(spotifyService, discovery.DefaultConfig())
+	discoveryService := discovery.NewService(spotifyService, discovery.DefaultConfig(), discovery.DefaultCurrentConfig())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.Handler)
@@ -55,6 +55,7 @@ func main() {
 	mux.HandleFunc("GET /api/spotify/tracks/{id}", spotifyService.TrackHandler)
 	mux.HandleFunc("GET /api/spotify/artists/{id}", spotifyService.ArtistHandler)
 	mux.HandleFunc("POST /api/discovery/classic", discoveryService.ClassicHandler)
+	mux.HandleFunc("POST /api/discovery/current", discoveryService.CurrentHandler)
 
 	addr := ":" + port
 	log.Printf("sound-continuum server listening on %s", addr)

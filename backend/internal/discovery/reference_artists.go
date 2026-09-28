@@ -10,3 +10,13 @@ var PastReferenceArtists = []string{
 	"Aphex Twin", "Björk", "Daft Punk", "Radiohead", "Nina Simone",
 	"Cocteau Twins",
 }
+
+// PresentReferenceArtists is Sound Continuum's canonical "Present" category
+// reference-artist list (see docs/manifesto.md). Curator-edited data, not
+// derived from any Spotify query — the single source of truth for current
+// discovery's starting points.
+var PresentReferenceArtists = []string{
+	"Fred again.", "James Blake", "FKA twigs", "Jai Paul", "Fontaines D.C.",
+	"Little Simz", "Sampha", "Caroline Polachek", "Yaeji", "Peggy Gou",
+	"Rosalía", "Arca", "The Smile", "Kelela", "Blood Orange",
+}

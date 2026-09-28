@@ -12,10 +12,12 @@ of future implementation requirements.
   creation/management and Sound Continuum playlist discovery still open)
 - **M4 — Discovery Engine** — In progress (the `CandidateTrack` domain
   model is defined; classic music discovery from the Past reference
-  artist set is implemented via Spotify's artist-albums/album-tracks
-  endpoints, producing a candidate pool — not a ranking — with
-  `POST /api/discovery/classic`; persistence, Current/Emerging discovery,
-  Last.fm, and musical bridge logic are still open)
+  artist set and current music discovery from the Present reference
+  artist set are both implemented via Spotify's artist-albums/album-tracks
+  endpoints, producing candidate pools — not a ranking — with
+  `POST /api/discovery/classic` and `POST /api/discovery/current`;
+  persistence, Emerging discovery, Last.fm, and musical bridge logic are
+  still open)
 - **M5 — Musical Ranking & Bridges** — Planned
 - **M6 — Curator Experience** — Planned
 - **M7 — Weekly Editorial Workflow** — Planned
