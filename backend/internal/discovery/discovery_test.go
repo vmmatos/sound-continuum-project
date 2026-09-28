@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/vmmatos/sound-continuum-project/internal/candidate"
+	"github.com/vmmatos/sound-continuum-project/internal/lastfm"
 	"github.com/vmmatos/sound-continuum-project/internal/spotify"
 )
 
@@ -85,11 +86,13 @@ func newTestSvcCurrent(f *fakeCatalogue, cfg CurrentConfig) *Service {
 
 func testCurrentConfig() CurrentConfig {
 	return CurrentConfig{
-		LookbackDays:              90,
-		MaxAlbumsScannedPerArtist: 50,
-		MaxAlbumsPerArtist:        5,
-		MaxTracksPerAlbum:         10,
-		MaxTotalCandidates:        100,
+		recentCatalogueParams: recentCatalogueParams{
+			LookbackDays:              90,
+			MaxAlbumsScannedPerArtist: 50,
+			MaxAlbumsPerArtist:        5,
+			MaxTracksPerAlbum:         10,
+		},
+		MaxTotalCandidates: 100,
 	}
 }
 
@@ -97,6 +100,42 @@ func testCurrentConfig() CurrentConfig {
 // Spotify release_date.
 func daysAgo(n int) string {
 	return time.Now().AddDate(0, 0, -n).Format("2006-01-02")
+}
+
+// fakeSimilarArtistFinder is an in-memory stand-in for lastfm.Client,
+// implementing exactly the similarArtistFinder seam DiscoverEmerging
+// depends on.
+type fakeSimilarArtistFinder struct {
+	similar map[string][]lastfm.SimilarArtist // seed artist -> similar artists
+	err     map[string]error                  // seed artist -> error
+
+	calls []string // every artist name SimilarArtists was called with, in order
+}
+
+func (f *fakeSimilarArtistFinder) SimilarArtists(ctx context.Context, artist string, limit int) ([]lastfm.SimilarArtist, error) {
+	f.calls = append(f.calls, artist)
+	if err, ok := f.err[artist]; ok {
+		return nil, err
+	}
+	return f.similar[artist], nil
+}
+
+func newTestSvcEmerging(f *fakeCatalogue, lf *fakeSimilarArtistFinder, cfg EmergingConfig) *Service {
+	return &Service{spotify: f, lastfm: lf, emergingCfg: cfg}
+}
+
+func testEmergingConfig() EmergingConfig {
+	return EmergingConfig{
+		recentCatalogueParams: recentCatalogueParams{
+			LookbackDays:              90,
+			MaxAlbumsScannedPerArtist: 50,
+			MaxAlbumsPerArtist:        5,
+			MaxTracksPerAlbum:         10,
+		},
+		MaxSimilarPerSeed:    10,
+		MaxDiscoveredArtists: 50,
+		MaxTotalCandidates:   100,
+	}
 }
 
 func TestDiscoverClassicResolvesExactNameMatch(t *testing.T) {
@@ -862,5 +901,499 @@ func TestCurrentHandlerInvalidGrantMapsTo401(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestIsCanonicalReferenceArtist(t *testing.T) {
+	cases := []struct {
+		name string
+		want bool
+	}{
+		{"David Bowie", true},     // Past
+		{"  david bowie  ", true}, // Past, case/whitespace variant
+		{"Fred again.", true},     // Present
+		{"The Twins", true},       // Emerging
+		{"Some Totally New Artist", false},
+	}
+	for _, tc := range cases {
+		if got := isCanonicalReferenceArtist(tc.name); got != tc.want {
+			t.Errorf("isCanonicalReferenceArtist(%q) = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestDiscoverEmergingWalksAllSeeds(t *testing.T) {
+	lf := &fakeSimilarArtistFinder{}
+	svc := newTestSvcEmerging(&fakeCatalogue{}, lf, testEmergingConfig())
+
+	result, err := svc.DiscoverEmerging(context.Background())
+	if err != nil {
+		t.Fatalf("DiscoverEmerging returned error: %v", err)
+	}
+	if len(lf.calls) != len(EmergingReferenceArtists) {
+		t.Fatalf("expected SimilarArtists called once per seed (%d), got %d: %+v",
+			len(EmergingReferenceArtists), len(lf.calls), lf.calls)
+	}
+	if len(result.Candidates) != 0 {
+		t.Errorf("expected no candidates with no similar artists seeded, got %+v", result.Candidates)
+	}
+}
+
+func TestDiscoverEmergingSingleHopOnly(t *testing.T) {
+	// "Discovered Artist" is NOT itself a member of EmergingReferenceArtists,
+	// so if DiscoverEmerging ever called SimilarArtists on a discovered
+	// name (a second hop), it would show up in lf.calls.
+	lf := &fakeSimilarArtistFinder{
+		similar: map[string][]lastfm.SimilarArtist{
+			"The Twins": {{Name: "Discovered Artist", Match: 0.9}},
+		},
+	}
+	f := &fakeCatalogue{
+		artists: map[string][]spotify.Artist{"Discovered Artist": {{ID: "a-1", Name: "Discovered Artist"}}},
+	}
+	svc := newTestSvcEmerging(f, lf, testEmergingConfig())
+
+	if _, err := svc.DiscoverEmerging(context.Background()); err != nil {
+		t.Fatalf("DiscoverEmerging returned error: %v", err)
+	}
+	for _, call := range lf.calls {
+		if !slices.Contains(EmergingReferenceArtists, call) {
+			t.Errorf("SimilarArtists called with %q, which is not a seed — discovery hopped past the allowed single hop", call)
+		}
+	}
+}
+
+func TestDiscoverEmergingExcludesCanonicalReferenceArtists(t *testing.T) {
+	lf := &fakeSimilarArtistFinder{
+		similar: map[string][]lastfm.SimilarArtist{
+			"The Twins": {
+				{Name: "David Bowie", Match: 0.8},     // Past, exact
+				{Name: "  Fred again.  ", Match: 0.7}, // Present, whitespace variant
+				{Name: "toxe", Match: 0.6},            // Emerging, case variant
+				{Name: "Genuinely New Artist", Match: 0.5},
+			},
+		},
+	}
+	f := &fakeCatalogue{
+		artists: map[string][]spotify.Artist{
+			"Genuinely New Artist": {{ID: "a-new", Name: "Genuinely New Artist"}},
+		},
+	}
+	svc := newTestSvcEmerging(f, lf, testEmergingConfig())
+
+	result, err := svc.DiscoverEmerging(context.Background())
+	if err != nil {
+		t.Fatalf("DiscoverEmerging returned error: %v", err)
+	}
+	if len(result.EmergingProvenance) != 1 || result.EmergingProvenance[0].DiscoveredArtist != "Genuinely New Artist" {
+		t.Fatalf("expected only the non-canonical artist recorded, got %+v", result.EmergingProvenance)
+	}
+	if len(result.UnresolvedArtists) != 0 {
+		t.Errorf("excluded canonical artists should never reach Spotify resolution, got %+v", result.UnresolvedArtists)
+	}
+}
+
+func TestDiscoverEmergingDedupesDiscoveredArtistAcrossSeeds(t *testing.T) {
+	lf := &fakeSimilarArtistFinder{
+		similar: map[string][]lastfm.SimilarArtist{
+			"The Twins": {{Name: "Shared Artist", Match: 0.8}},
+			"Toxe":      {{Name: "shared artist", Match: 0.5}}, // same artist, case variant
+		},
+	}
+	f := &fakeCatalogue{
+		artists: map[string][]spotify.Artist{"Shared Artist": {{ID: "a-1", Name: "Shared Artist"}}},
+		albums:  map[string][]spotify.Album{"a-1": {{ID: "al-1", Name: "Album", ReleaseDate: daysAgo(1), ReleaseDatePrecision: "day"}}},
+		tracks:  map[string][]spotify.Track{"al-1": {{ID: "t-1", Name: "Track"}}},
+	}
+	svc := newTestSvcEmerging(f, lf, testEmergingConfig())
+
+	result, err := svc.DiscoverEmerging(context.Background())
+	if err != nil {
+		t.Fatalf("DiscoverEmerging returned error: %v", err)
+	}
+	if len(result.EmergingProvenance) != 1 {
+		t.Fatalf("expected the discovered artist resolved only once across seeds, got %+v", result.EmergingProvenance)
+	}
+	if len(result.Candidates) != 1 {
+		t.Fatalf("expected 1 candidate, got %d: %+v", len(result.Candidates), result.Candidates)
+	}
+}
+
+func TestDiscoverEmergingUnresolvedArtistSurfacedNotFailure(t *testing.T) {
+	lf := &fakeSimilarArtistFinder{
+		similar: map[string][]lastfm.SimilarArtist{
+			"The Twins": {{Name: "No Spotify Match", Match: 0.8}},
+		},
+	}
+	svc := newTestSvcEmerging(&fakeCatalogue{}, lf, testEmergingConfig())
+
+	result, err := svc.DiscoverEmerging(context.Background())
+	if err != nil {
+		t.Fatalf("DiscoverEmerging returned error: %v", err)
+	}
+	if !slices.Contains(result.UnresolvedArtists, "No Spotify Match") {
+		t.Errorf("expected unresolved artist surfaced, got %+v", result.UnresolvedArtists)
+	}
+	if len(result.Failures) != 0 {
+		t.Errorf("a no-match should not be a Failure, got %+v", result.Failures)
+	}
+}
+
+func TestDiscoverEmergingReusesRecentCatalogueWindow(t *testing.T) {
+	lf := &fakeSimilarArtistFinder{
+		similar: map[string][]lastfm.SimilarArtist{
+			"The Twins": {{Name: "New Discovery", Match: 0.8}},
+		},
+	}
+	f := &fakeCatalogue{
+		artists: map[string][]spotify.Artist{"New Discovery": {{ID: "a-1", Name: "New Discovery"}}},
+		albums: map[string][]spotify.Album{"a-1": {
+			{ID: "al-recent", Name: "Recent", ReleaseDate: daysAgo(10), ReleaseDatePrecision: "day"},
+			{ID: "al-old", Name: "Old", ReleaseDate: "2010-01-01", ReleaseDatePrecision: "day"},
+		}},
+		tracks: map[string][]spotify.Track{
+			"al-recent": {{ID: "t-recent", Name: "Recent Track"}},
+			"al-old":    {{ID: "t-old", Name: "Old Track"}},
+		},
+	}
+	svc := newTestSvcEmerging(f, lf, testEmergingConfig())
+
+	result, err := svc.DiscoverEmerging(context.Background())
+	if err != nil {
+		t.Fatalf("DiscoverEmerging returned error: %v", err)
+	}
+	if len(result.Candidates) != 1 || result.Candidates[0].SpotifyTrackID != "t-recent" {
+		t.Fatalf("expected only the recent release's track, got %+v", result.Candidates)
+	}
+	if result.ReleasesOutsideWindow != 1 {
+		t.Errorf("expected 1 release outside window, got %d", result.ReleasesOutsideWindow)
+	}
+}
+
+func TestDiscoverEmergingCandidateFieldsAreCorrect(t *testing.T) {
+	lf := &fakeSimilarArtistFinder{
+		similar: map[string][]lastfm.SimilarArtist{
+			"The Twins": {{Name: "New Discovery", Match: 0.8}},
+		},
+	}
+	f := &fakeCatalogue{
+		artists: map[string][]spotify.Artist{"New Discovery": {{ID: "a-1", Name: "New Discovery"}}},
+		albums:  map[string][]spotify.Album{"a-1": {{ID: "al-1", Name: "Album", ReleaseDate: daysAgo(1), ReleaseDatePrecision: "day"}}},
+		tracks:  map[string][]spotify.Track{"al-1": {{ID: "t-1", Name: "Track"}}},
+	}
+	svc := newTestSvcEmerging(f, lf, testEmergingConfig())
+
+	result, err := svc.DiscoverEmerging(context.Background())
+	if err != nil {
+		t.Fatalf("DiscoverEmerging returned error: %v", err)
+	}
+	c := result.Candidates[0]
+	if c.Source != candidate.SourceSpotify {
+		t.Errorf("expected Source=Spotify, got %v", c.Source)
+	}
+	if c.Type != candidate.TypeDiscovery {
+		t.Errorf("expected Type=Discovery, got %v", c.Type)
+	}
+	if c.Category != candidate.CategoryEmerging {
+		t.Errorf("expected Category=Emerging, got %v", c.Category)
+	}
+	if c.Status != candidate.StatusDiscovered {
+		t.Errorf("expected Status=discovered, got %v", c.Status)
+	}
+	if c.DiscoveryReason != emergingDiscoveryReason {
+		t.Errorf("expected DiscoveryReason %q, got %q", emergingDiscoveryReason, c.DiscoveryReason)
+	}
+	if c.SpotifyTrackID != "t-1" || string(c.ID) != "t-1" {
+		t.Errorf("expected candidate ID/SpotifyTrackID to be the Spotify track ID, got %+v", c)
+	}
+	if c.TrackArtist != "New Discovery" {
+		t.Errorf("expected TrackArtist to be the discovered artist, got %q", c.TrackArtist)
+	}
+}
+
+func TestDiscoverEmergingDedupesTracksBySpotifyID(t *testing.T) {
+	lf := &fakeSimilarArtistFinder{
+		similar: map[string][]lastfm.SimilarArtist{
+			"The Twins": {{Name: "Artist A", Match: 0.8}},
+			"Toxe":      {{Name: "Artist B", Match: 0.7}},
+		},
+	}
+	f := &fakeCatalogue{
+		artists: map[string][]spotify.Artist{
+			"Artist A": {{ID: "a-1", Name: "Artist A"}},
+			"Artist B": {{ID: "a-2", Name: "Artist B"}},
+		},
+		albums: map[string][]spotify.Album{
+			"a-1": {{ID: "al-1", Name: "Album 1", ReleaseDate: daysAgo(1), ReleaseDatePrecision: "day"}},
+			"a-2": {{ID: "al-2", Name: "Album 2", ReleaseDate: daysAgo(1), ReleaseDatePrecision: "day"}},
+		},
+		tracks: map[string][]spotify.Track{
+			"al-1": {{ID: "t-shared", Name: "Shared Track"}},
+			"al-2": {{ID: "t-shared", Name: "Shared Track (feat.)"}},
+		},
+	}
+	svc := newTestSvcEmerging(f, lf, testEmergingConfig())
+
+	result, err := svc.DiscoverEmerging(context.Background())
+	if err != nil {
+		t.Fatalf("DiscoverEmerging returned error: %v", err)
+	}
+	if len(result.Candidates) != 1 {
+		t.Fatalf("expected 1 deduplicated candidate, got %d: %+v", len(result.Candidates), result.Candidates)
+	}
+	if result.DuplicatesSkipped != 1 {
+		t.Errorf("expected 1 duplicate skipped, got %d", result.DuplicatesSkipped)
+	}
+}
+
+func TestDiscoverEmergingBoundedByMaxDiscoveredArtists(t *testing.T) {
+	similar := map[string][]lastfm.SimilarArtist{}
+	artists := map[string][]spotify.Artist{}
+	for i, seed := range EmergingReferenceArtists {
+		name := fmt.Sprintf("Discovered %d", i)
+		similar[seed] = []lastfm.SimilarArtist{{Name: name, Match: 0.5}}
+		artists[name] = []spotify.Artist{{ID: idOf(i), Name: name}}
+	}
+	lf := &fakeSimilarArtistFinder{similar: similar}
+	f := &fakeCatalogue{artists: artists}
+	cfg := testEmergingConfig()
+	cfg.MaxDiscoveredArtists = 3
+	svc := newTestSvcEmerging(f, lf, cfg)
+
+	result, err := svc.DiscoverEmerging(context.Background())
+	if err != nil {
+		t.Fatalf("DiscoverEmerging returned error: %v", err)
+	}
+	if len(result.EmergingProvenance) != 3 {
+		t.Fatalf("expected exactly MaxDiscoveredArtists (3) artists discovered, got %d: %+v",
+			len(result.EmergingProvenance), result.EmergingProvenance)
+	}
+}
+
+func TestDiscoverEmergingMaxTotalCandidatesCutsOffMidRun(t *testing.T) {
+	similar := map[string][]lastfm.SimilarArtist{}
+	artists := map[string][]spotify.Artist{}
+	albums := map[string][]spotify.Album{}
+	trackMap := map[string][]spotify.Track{}
+	for i, seed := range EmergingReferenceArtists {
+		name := fmt.Sprintf("Discovered %d", i)
+		aid := idOf(i)
+		similar[seed] = []lastfm.SimilarArtist{{Name: name, Match: 0.5}}
+		artists[name] = []spotify.Artist{{ID: aid, Name: name}}
+		albums[aid] = []spotify.Album{{ID: aid + "-al", Name: "Album", ReleaseDate: daysAgo(1), ReleaseDatePrecision: "day"}}
+		tracks := make([]spotify.Track, 5)
+		for j := range tracks {
+			tracks[j] = spotify.Track{ID: aid + "-t" + idOf(j), Name: "Track"}
+		}
+		trackMap[aid+"-al"] = tracks
+	}
+	lf := &fakeSimilarArtistFinder{similar: similar}
+	f := &fakeCatalogue{artists: artists, albums: albums, tracks: trackMap}
+	cfg := testEmergingConfig()
+	cfg.MaxTotalCandidates = 7 // less than 15 seeds * 5 tracks
+	svc := newTestSvcEmerging(f, lf, cfg)
+
+	result, err := svc.DiscoverEmerging(context.Background())
+	if err != nil {
+		t.Fatalf("DiscoverEmerging returned error: %v", err)
+	}
+	if len(result.Candidates) != 7 {
+		t.Fatalf("expected exactly MaxTotalCandidates (7) candidates, got %d", len(result.Candidates))
+	}
+}
+
+func TestDiscoverEmergingOneSeedLastFMFailureRecordedAndContinues(t *testing.T) {
+	lf := &fakeSimilarArtistFinder{
+		err: map[string]error{"The Twins": errors.New("lastfm: boom")},
+		similar: map[string][]lastfm.SimilarArtist{
+			"Toxe": {{Name: "New Discovery", Match: 0.8}},
+		},
+	}
+	f := &fakeCatalogue{
+		artists: map[string][]spotify.Artist{"New Discovery": {{ID: "a-1", Name: "New Discovery"}}},
+		albums:  map[string][]spotify.Album{"a-1": {{ID: "al-1", Name: "Album", ReleaseDate: daysAgo(1), ReleaseDatePrecision: "day"}}},
+		tracks:  map[string][]spotify.Track{"al-1": {{ID: "t-1", Name: "Track"}}},
+	}
+	svc := newTestSvcEmerging(f, lf, testEmergingConfig())
+
+	result, err := svc.DiscoverEmerging(context.Background())
+	if err != nil {
+		t.Fatalf("DiscoverEmerging returned error: %v", err)
+	}
+	found := false
+	for _, fl := range result.Failures {
+		if fl.Artist == "The Twins" && fl.Stage == "similar" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a similar-stage failure for The Twins, got %+v", result.Failures)
+	}
+	if len(result.Candidates) != 1 || result.Candidates[0].SpotifyTrackID != "t-1" {
+		t.Errorf("expected discovery to continue to the next seed, got %+v", result.Candidates)
+	}
+}
+
+func TestDiscoverEmergingSpotifyConnectionErrorAbortsRun(t *testing.T) {
+	lf := &fakeSimilarArtistFinder{
+		similar: map[string][]lastfm.SimilarArtist{
+			"The Twins": {{Name: "New Discovery", Match: 0.8}},
+		},
+	}
+	f := &fakeCatalogue{
+		searchErr: map[string]error{"New Discovery": spotify.ErrNotConnected},
+	}
+	svc := newTestSvcEmerging(f, lf, testEmergingConfig())
+
+	_, err := svc.DiscoverEmerging(context.Background())
+	if !errors.Is(err, spotify.ErrNotConnected) {
+		t.Fatalf("expected ErrNotConnected, got %v", err)
+	}
+	if f.searchCalls != 1 {
+		t.Errorf("expected the run to abort after the first connection failure, got %d search calls", f.searchCalls)
+	}
+}
+
+func TestDiscoverEmergingMissingLastFMAPIKeyAbortsLoudly(t *testing.T) {
+	lf := &fakeSimilarArtistFinder{
+		err: map[string]error{"The Twins": lastfm.ErrMissingAPIKey},
+	}
+	svc := newTestSvcEmerging(&fakeCatalogue{}, lf, testEmergingConfig())
+
+	result, err := svc.DiscoverEmerging(context.Background())
+	if !errors.Is(err, lastfm.ErrMissingAPIKey) {
+		t.Fatalf("expected ErrMissingAPIKey, got %v", err)
+	}
+	if len(result.Candidates) != 0 {
+		t.Errorf("expected no candidates on a config error, got %+v", result.Candidates)
+	}
+}
+
+func TestDiscoverEmergingNoOrderingByMatchOrPopularity(t *testing.T) {
+	lf := &fakeSimilarArtistFinder{
+		similar: map[string][]lastfm.SimilarArtist{
+			"The Twins": {
+				{Name: "Low Match Artist", Match: 0.1},
+				{Name: "High Match Artist", Match: 0.9},
+			},
+		},
+	}
+	f := &fakeCatalogue{
+		artists: map[string][]spotify.Artist{
+			"Low Match Artist":  {{ID: "a-low", Name: "Low Match Artist"}},
+			"High Match Artist": {{ID: "a-high", Name: "High Match Artist"}},
+		},
+		albums: map[string][]spotify.Album{
+			"a-low":  {{ID: "al-low", Name: "Album", ReleaseDate: daysAgo(1), ReleaseDatePrecision: "day"}},
+			"a-high": {{ID: "al-high", Name: "Album", ReleaseDate: daysAgo(1), ReleaseDatePrecision: "day"}},
+		},
+		tracks: map[string][]spotify.Track{
+			"al-low":  {{ID: "t-low", Name: "Track"}},
+			"al-high": {{ID: "t-high", Name: "Track"}},
+		},
+	}
+	svc := newTestSvcEmerging(f, lf, testEmergingConfig())
+
+	result, err := svc.DiscoverEmerging(context.Background())
+	if err != nil {
+		t.Fatalf("DiscoverEmerging returned error: %v", err)
+	}
+	// Candidates must appear in Last.fm's own discovery order (low match
+	// first, as returned), never sorted by Match descending.
+	if len(result.Candidates) != 2 || result.Candidates[0].SpotifyTrackID != "t-low" || result.Candidates[1].SpotifyTrackID != "t-high" {
+		t.Errorf("expected candidates in discovery order with no Match-based reordering, got %+v", result.Candidates)
+	}
+}
+
+func TestDiscoverEmergingProvenanceRecorded(t *testing.T) {
+	lf := &fakeSimilarArtistFinder{
+		similar: map[string][]lastfm.SimilarArtist{
+			"The Twins": {{Name: "New Discovery", Match: 0.75}},
+		},
+	}
+	f := &fakeCatalogue{
+		artists: map[string][]spotify.Artist{"New Discovery": {{ID: "a-1", Name: "New Discovery"}}},
+	}
+	svc := newTestSvcEmerging(f, lf, testEmergingConfig())
+
+	result, err := svc.DiscoverEmerging(context.Background())
+	if err != nil {
+		t.Fatalf("DiscoverEmerging returned error: %v", err)
+	}
+	if len(result.EmergingProvenance) != 1 {
+		t.Fatalf("expected 1 provenance entry, got %+v", result.EmergingProvenance)
+	}
+	p := result.EmergingProvenance[0]
+	if p.SeedArtist != "The Twins" || p.DiscoveredArtist != "New Discovery" || p.Match != 0.75 {
+		t.Errorf("unexpected provenance entry: %+v", p)
+	}
+}
+
+func TestDiscoverClassicAndCurrentHaveNoEmergingProvenance(t *testing.T) {
+	classicResult, err := newTestSvc(&fakeCatalogue{}, testConfig()).DiscoverClassic(context.Background())
+	if err != nil {
+		t.Fatalf("DiscoverClassic returned error: %v", err)
+	}
+	if len(classicResult.EmergingProvenance) != 0 {
+		t.Errorf("expected DiscoverClassic to leave EmergingProvenance empty, got %+v", classicResult.EmergingProvenance)
+	}
+
+	currentResult, err := newTestSvcCurrent(&fakeCatalogue{}, testCurrentConfig()).DiscoverCurrent(context.Background())
+	if err != nil {
+		t.Fatalf("DiscoverCurrent returned error: %v", err)
+	}
+	if len(currentResult.EmergingProvenance) != 0 {
+		t.Errorf("expected DiscoverCurrent to leave EmergingProvenance empty, got %+v", currentResult.EmergingProvenance)
+	}
+}
+
+func TestEmergingHandlerSuccess(t *testing.T) {
+	lf := &fakeSimilarArtistFinder{
+		similar: map[string][]lastfm.SimilarArtist{
+			"The Twins": {{Name: "New Discovery", Match: 0.8}},
+		},
+	}
+	f := &fakeCatalogue{
+		artists: map[string][]spotify.Artist{"New Discovery": {{ID: "a-1", Name: "New Discovery"}}},
+		albums:  map[string][]spotify.Album{"a-1": {{ID: "al-1", Name: "Album", ReleaseDate: daysAgo(1), ReleaseDatePrecision: "day"}}},
+		tracks:  map[string][]spotify.Track{"al-1": {{ID: "t-1", Name: "Track"}}},
+	}
+	svc := newTestSvcEmerging(f, lf, testEmergingConfig())
+
+	rec := httptest.NewRecorder()
+	svc.EmergingHandler(rec, httptest.NewRequest(http.MethodPost, "/api/discovery/emerging", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "t-1") {
+		t.Errorf("expected the response to include the discovered track, got %s", rec.Body.String())
+	}
+}
+
+func TestEmergingHandlerLastFMNotConfiguredMapsTo503(t *testing.T) {
+	lf := &fakeSimilarArtistFinder{err: map[string]error{"The Twins": lastfm.ErrMissingAPIKey}}
+	svc := newTestSvcEmerging(&fakeCatalogue{}, lf, testEmergingConfig())
+
+	rec := httptest.NewRecorder()
+	svc.EmergingHandler(rec, httptest.NewRequest(http.MethodPost, "/api/discovery/emerging", nil))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", rec.Code)
+	}
+}
+
+func TestEmergingHandlerNotConnectedMapsTo503(t *testing.T) {
+	lf := &fakeSimilarArtistFinder{
+		similar: map[string][]lastfm.SimilarArtist{"The Twins": {{Name: "New Discovery", Match: 0.8}}},
+	}
+	f := &fakeCatalogue{searchErr: map[string]error{"New Discovery": spotify.ErrNotConnected}}
+	svc := newTestSvcEmerging(f, lf, testEmergingConfig())
+
+	rec := httptest.NewRecorder()
+	svc.EmergingHandler(rec, httptest.NewRequest(http.MethodPost, "/api/discovery/emerging", nil))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", rec.Code)
 	}
 }

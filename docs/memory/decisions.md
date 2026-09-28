@@ -954,3 +954,199 @@ under both caps). If a future card needs to fetch more than 10 raw
 releases per artist in one request, that ceiling is a real, tested
 constraint of this app's current Spotify access tier, not a
 project-internal choice to revisit lightly.
+
+---
+
+**Decision:** Introduce Last.fm as a standalone `internal/lastfm` package —
+one file, one operation (`artist.getsimilar`), no provider abstraction or
+generic multi-provider interface — for Card #35's Emerging Artist
+Discovery.
+
+**Context:** Card #35 needed an external "similar artist" discovery signal
+that Spotify's Development Mode access doesn't provide (Related Artists is
+unavailable — see the earlier M3 decision ruling out Spotify-provided
+similarity). This is the first time the codebase talks to a second external
+provider alongside Spotify.
+
+**Reason:** The repo already has an explicit precedent against building a
+generic discovery/provider framework ahead of need (Card #33's decision).
+One provider, one method, one file mirrors that: `lastfm.Client` follows
+`spotify.Client`'s own shape (fields for `BaseURL`/`HTTPClient` so tests can
+redirect to an `httptest.Server`, a sentinel-error + `APIError{Unwrap}`
+pattern), but collapsed into a single file since there is exactly one
+operation to support — splitting into client/config/types/errors files
+the way `spotify/` does would be structure for a method count of one.
+`SimilarArtists` returns `[]lastfm.SimilarArtist{Name, Match}`, a provider
+model kept private to `internal/discovery`'s consumption — Last.fm's raw
+JSON shape never reaches `candidate.CandidateTrack` or any Sound Continuum
+domain type.
+
+**Consequences:** `lastfm.Client.SimilarArtists(ctx, artist, limit)` is the
+only exported operation. A missing API key returns `ErrMissingAPIKey`
+without making a request — see the next decision. `discovery.Service`
+depends on it through a narrow `similarArtistFinder` interface (one
+method), the same testability pattern as `spotifyCatalogue`. Adding a
+second Last.fm operation later (e.g. `artist.getInfo` for tags) is a small
+addition to this same file, not a redesign — this decision does not forbid
+growth, it forbids building unused generality now.
+
+---
+
+**Decision:** A missing `LASTFM_API_KEY` aborts the entire
+`DiscoverEmerging` run with a clear error (mapped to HTTP 503,
+"Last.fm is not configured") rather than completing with an empty
+`Result`.
+
+**Context:** Card #35 explicitly distinguishes three failure modes: one
+seed's Last.fm call failing (recoverable — record and continue to the next
+seed), a discovered artist failing Spotify resolution (expected — surfaced
+in `UnresolvedArtists`), and Last.fm being unconfigured entirely (not
+recoverable — nothing this run does can be trusted). Conflating the third
+case with normal "just no results" output would make a broken deployment
+look like a successful empty discovery run.
+
+**Reason:** This mirrors how `DiscoverClassic`/`DiscoverCurrent` already
+treat a missing/invalid Spotify connection (`ErrNotConnected`/
+`ErrInvalidGrant`) as a whole-run abort, not a per-artist failure —
+`isLastFMConfigError` is the Last.fm-side sibling of `isConnectionError`,
+checked at the same point in the loop (before any per-seed failure
+handling) and given the same "abort immediately" treatment.
+
+**Consequences:** `lastfm.Client.SimilarArtists` returns `ErrMissingAPIKey`
+before making any HTTP request when `APIKey == ""`. `DiscoverEmerging`
+checks `isLastFMConfigError(err)` first in its seed loop and returns
+immediately if true. `writeDiscoveryError` gained one case
+(`ErrMissingAPIKey` → 503) alongside the existing Spotify-connection cases.
+Verified live: unsetting `LASTFM_API_KEY` and calling
+`POST /api/discovery/emerging` returns 503 with a clear message, not 200
+with an empty candidate list.
+
+---
+
+**Decision:** Extract a shared `recentTracksForArtist` helper from
+`DiscoverCurrent`'s scan/filter-by-recency/sort/truncate/track-walk block,
+and have both `DiscoverCurrent` and the new `DiscoverEmerging` call it,
+rather than either duplicating that logic a third time or generalizing
+`DiscoverClassic`/`DiscoverCurrent`/`DiscoverEmerging` into one engine.
+
+**Context:** Card #35 explicitly requires reusing Card #34's definition of
+"recent" rather than inventing a second one. Without extraction, that
+definition would exist twice (once in `DiscoverCurrent`, once copied into
+`DiscoverEmerging`) — a maintenance hazard the card's own instructions
+warn against ("do not invent a second definition of recent").
+
+**Reason:** This is the one place in M4 where the repo's own
+"do not create a generic discovery framework" stance (Card #33's decision)
+and its "extract only when duplication is real" stance (project-wide
+convention, not decisions.md-specific) point to different actions if
+followed too literally — but they don't actually conflict: the framework
+stance rules out a generic `DiscoverArtists(seedList, category, type, ...)`
+engine that would absorb Classic too (Classic has no recency window at
+all, so forcing it through a "recent catalogue" abstraction would be
+speculative generality); the extraction stance applies narrowly to the one
+block that is now genuinely duplicated three ways (scan → filter → sort →
+truncate → walk tracks), which only Current and Emerging share. Extracting
+just that block, not the surrounding artist-loop/candidate-construction
+logic (which still differs by `Category`/`Type`/`DiscoveryReason`/
+`TrackArtist` per workflow), keeps each `Discover*` method's editorial
+shape explicit and readable on its own.
+
+**Consequences:** `recentTracksForArtist(ctx, artistID string,
+p recentCatalogueParams) (rc recentCatalogue, stage string, err error)`
+lives in `discovery.go`, taking a small params struct
+(`LookbackDays`/`MaxAlbumsScannedPerArtist`/`MaxAlbumsPerArtist`/
+`MaxTracksPerAlbum`) so `CurrentConfig` and `EmergingConfig` can each
+supply their own bounds. It preserves the original per-album failure
+behavior exactly: an album-scan failure aborts the artist (`stage=
+"albums"`), a connection-error track failure aborts the whole run
+(`stage="tracks"`), and any other track-fetch failure is recorded on
+`rc.TrackFailures` and the walk continues to the next release — the same
+continue-on-failure behavior `DiscoverCurrent` had before extraction.
+`DiscoverCurrent`'s own tests were not changed and still pass unmodified,
+confirming the refactor is behavior-preserving. `DiscoverClassic` is
+untouched — it has no recency window and was never a candidate for this
+extraction.
+
+---
+
+**Decision:** Keep discovery provenance (which seed artist led to a
+discovered artist via Last.fm, and Last.fm's similarity value) on
+`discovery.Result` as a new `EmergingProvenance []ArtistProvenance` field,
+not on `candidate.CandidateTrack`.
+
+**Context:** Card #35 asks for provenance to be traceable, but explicitly
+forbids persisting Last.fm's similarity value as a permanent
+`CandidateTrack` ranking field. `CandidateTrack` has no structured
+provenance field — only a free-text `DiscoveryReason string`, already used
+by Classic/Current for a fixed descriptive sentence.
+
+**Reason:** `Result` is already the established home for run-level
+operational context that isn't part of a candidate's own identity
+(`Failures`, `UnresolvedArtists`, `ArtistsInspected`, etc. — see Card #34's
+own `ReleasesOutsideWindow` addition). Adding `EmergingProvenance` there
+follows that precedent exactly, and keeps `CandidateTrack` — which Cards
+#31/#32 defined deliberately independent of any single provider's data
+shape — untouched. Putting `Match` anywhere near `CandidateTrack` risked
+it being read as an editorial signal later; keeping it on the transient
+`Result` makes clear it's operational output from one discovery run, not
+persisted candidate metadata.
+
+**Consequences:** `ArtistProvenance{SeedArtist, DiscoveredArtist, Match}`
+is populated only by `DiscoverEmerging`; `DiscoverClassic`/
+`DiscoverCurrent` always leave it `nil`. `Match` is never read by any
+sorting, filtering, or selection logic — `DiscoverEmerging` appends
+candidates in Last.fm's own per-seed discovery order, never resorted by
+`Match`. If a future card needs to persist per-candidate provenance (e.g.
+after Card #35's `Result` is consumed into some persistence layer not yet
+built), that's a new decision for whoever builds that layer — this card
+does not attempt to anticipate it.
+
+---
+
+**Decision:** Trim `candidate.Source` to `SourceSpotify` only,
+`candidate.Status` to `StatusDiscovered` only, and remove
+`CandidateTrack.EditorialNote`/`PotentialConnection`. Keep
+`candidate.Category`'s four values (including `CategoryNewRelease`) and
+Pinia's `frontend/src/stores/` scaffolding as-is.
+
+**Context:** A repo-wide over-engineering audit (post-Card #35) found that
+`SourceLastFM`, `SourceManual`, `StatusUnderReview`/`StatusSelected`/
+`StatusRejected`, and `EditorialNote`/`PotentialConnection` — all introduced
+by Card #31 as forward-looking domain vocabulary — had zero constructors
+anywhere in the codebase: three discovery workflows now exist (Cards
+#33-#35) and none of them, including the Last.fm-backed one, ever
+constructs a candidate with any of these. `CategoryNewRelease` and Pinia
+were flagged too but kept: `CategoryNewRelease` is exercised by
+`TestNewCandidateTrackTypeAndCategoryAreIndependent` as one of `Category`'s
+four values and is closer to "the enum's fourth member," not a separate
+unused subsystem; Pinia is a single `package.json` line + a two-line
+`main.ts` wire-up already on the roadmap's stack, not comparable in size
+or risk to a domain-model rewrite.
+
+**Reason:** Card #31's own rationale for these fields was "domain concept
+only, no integration implemented" — explicitly provisional. Three cards
+later, with real discovery workflows shipped and none of them needing
+`SourceLastFM`/`SourceManual`/the extra `Status` values/the editorial-note
+fields, "provisional" had become "unused scaffolding for a workflow
+(human editorial review, M6/M7) that doesn't exist yet" — exactly what
+this project's own conventions (CLAUDE.md, and the `ponytail` review
+discipline applied throughout M4) argue against keeping. Trimming now,
+while only `internal/candidate`'s own tests reference these symbols (no
+`internal/discovery` code does — confirmed by repo-wide grep before
+trimming), is far cheaper than trimming after a persistence layer or API
+serializes the wider shape.
+
+**Consequences:** `candidate.Source`/`candidate.Status` are still
+`type X string` + `const` + `Valid()`, unchanged in *shape* — re-adding a
+value later (e.g. `SourceLastFM` when a workflow constructs a
+Last.fm-sourced candidate, or `StatusUnderReview` when M6's review
+workflow lands) is a small, additive change, not a redesign.
+`CandidateTrack`/`NewCandidateTrackParams` lost the two editorial-note
+fields; re-add them together with the workflow that writes them.
+`candidate_test.go`'s `SourceManual`/`SourceLastFM`/editorial-field tests
+were removed or rewritten to use `SourceSpotify`
+(`TestNewCandidateTrackManualSourceRequiresNoSpotifyTrackID` and
+`TestNewCandidateTrackEditorialContextWithoutSpotifyData` deleted outright
+— they tested values that no longer exist).
+`docs/memory/current-state.md`'s Card #31 snapshot paragraph updated to
+describe the trimmed shape.

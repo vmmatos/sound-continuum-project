@@ -108,6 +108,7 @@ sensitivity. Neither file is committed — both are gitignored.
 PORT=8080
 VITE_API_BASE_URL=http://localhost:8080
 SPOTIFY_REDIRECT_URI=http://127.0.0.1:8080/api/spotify/callback
+LASTFM_API_URL=https://ws.audioscrobbler.com/2.0/
 ```
 
 `dev/.secrets.env` — local secrets, never committed, never sent to the
@@ -116,12 +117,15 @@ frontend container:
 ```
 SPOTIFY_CLIENT_ID=
 SPOTIFY_CLIENT_SECRET=
+LASTFM_API_KEY=
 ```
 
 Create both files locally before running the app (Docker or host). The
 Spotify variables can stay empty if you don't need Spotify locally — the
 `/api/spotify/*` endpoints respond `503` until they're filled in. To connect
-Spotify, see [Connect Spotify](#connect-spotify) below.
+Spotify, see [Connect Spotify](#connect-spotify) below. `LASTFM_API_KEY` can
+stay empty too — `POST /api/discovery/emerging` responds `503` until it's
+filled in; get a key from [Last.fm's API account page](https://www.last.fm/api/account/create).
 
 ### Local development
 

@@ -8,23 +8,20 @@ package candidate
 
 import "time"
 
-// Source identifies where a candidate was discovered.
+// Source identifies where a candidate was discovered. Spotify is the only
+// supported source today — every discovery workflow (Classic/Current/
+// Emerging) resolves candidate identity through Spotify, even when an
+// external signal like Last.fm drove the discovery. Add a new constant
+// here only once a workflow actually constructs a candidate with it.
 type Source string
 
 const (
 	SourceSpotify Source = "Spotify"
-	SourceLastFM  Source = "Last.fm"
-	SourceManual  Source = "Manual"
 )
 
 // Valid reports whether s is a supported discovery source.
 func (s Source) Valid() bool {
-	switch s {
-	case SourceSpotify, SourceLastFM, SourceManual:
-		return true
-	default:
-		return false
-	}
+	return s == SourceSpotify
 }
 
 // Category is the editorial context in which a candidate is being
@@ -75,23 +72,17 @@ func (t Type) Valid() bool {
 
 // Status is a candidate's current editorial lifecycle state. It is
 // deliberately small — no approval workflow, roles, or voting states.
+// Every discovery workflow produces StatusDiscovered only; add a further
+// state here once an editorial-review workflow actually transitions one.
 type Status string
 
 const (
-	StatusDiscovered  Status = "discovered"
-	StatusUnderReview Status = "under review"
-	StatusSelected    Status = "selected"
-	StatusRejected    Status = "rejected"
+	StatusDiscovered Status = "discovered"
 )
 
-// Valid reports whether s is one of the four supported lifecycle states.
+// Valid reports whether s is a supported lifecycle state.
 func (s Status) Valid() bool {
-	switch s {
-	case StatusDiscovered, StatusUnderReview, StatusSelected, StatusRejected:
-		return true
-	default:
-		return false
-	}
+	return s == StatusDiscovered
 }
 
 // ID is a candidate's internal Sound Continuum identity — distinct from
@@ -115,9 +106,7 @@ type CandidateTrack struct {
 	TrackTitle  string
 	TrackArtist string
 
-	DiscoveryReason     string
-	EditorialNote       string
-	PotentialConnection string
+	DiscoveryReason string
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -136,9 +125,7 @@ type NewCandidateTrackParams struct {
 	TrackTitle  string
 	TrackArtist string
 
-	DiscoveryReason     string
-	EditorialNote       string
-	PotentialConnection string
+	DiscoveryReason string
 }
 
 // NewCandidateTrack builds a CandidateTrack in its initial discovered
@@ -156,9 +143,7 @@ func NewCandidateTrack(p NewCandidateTrackParams) (CandidateTrack, error) {
 		TrackTitle:  p.TrackTitle,
 		TrackArtist: p.TrackArtist,
 
-		DiscoveryReason:     p.DiscoveryReason,
-		EditorialNote:       p.EditorialNote,
-		PotentialConnection: p.PotentialConnection,
+		DiscoveryReason: p.DiscoveryReason,
 
 		CreatedAt: now,
 		UpdatedAt: now,
