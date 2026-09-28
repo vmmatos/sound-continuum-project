@@ -3,8 +3,10 @@ package discovery
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -29,7 +31,7 @@ type fakeCatalogue struct {
 	albumsErr map[string]error // artistID -> error
 	tracksErr map[string]error // albumID -> error
 
-	searchCalls, albumsCalls, tracksCalls int
+	searchCalls int
 }
 
 func (f *fakeCatalogue) Search(ctx context.Context, query, types string, limit, offset int) (spotify.SearchResult, error) {
@@ -42,7 +44,6 @@ func (f *fakeCatalogue) Search(ctx context.Context, query, types string, limit, 
 }
 
 func (f *fakeCatalogue) ArtistAlbums(ctx context.Context, artistID string, limit, offset int) (spotify.Paging[spotify.Album], error) {
-	f.albumsCalls++
 	if err, ok := f.albumsErr[artistID]; ok {
 		return spotify.Paging[spotify.Album]{}, err
 	}
@@ -50,7 +51,6 @@ func (f *fakeCatalogue) ArtistAlbums(ctx context.Context, artistID string, limit
 }
 
 func (f *fakeCatalogue) AlbumTracks(ctx context.Context, albumID string, limit, offset int) (spotify.Paging[spotify.Track], error) {
-	f.tracksCalls++
 	if err, ok := f.tracksErr[albumID]; ok {
 		return spotify.Paging[spotify.Track]{}, err
 	}
@@ -115,7 +115,7 @@ func TestDiscoverClassicNoMatchIsUnresolvedNotFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DiscoverClassic returned error: %v", err)
 	}
-	if !contains(result.UnresolvedArtists, "David Bowie") {
+	if !slices.Contains(result.UnresolvedArtists, "David Bowie") {
 		t.Errorf("expected David Bowie unresolved, got %+v", result.UnresolvedArtists)
 	}
 	if len(result.Failures) != 0 {
@@ -455,15 +455,6 @@ func TestClassicHandlerInvalidGrantMapsTo401(t *testing.T) {
 	}
 }
 
-func contains(items []string, want string) bool {
-	for _, it := range items {
-		if it == want {
-			return true
-		}
-	}
-	return false
-}
-
 func idOf(i int) string {
-	return "id-" + string(rune('a'+i%26)) + string(rune('0'+i/26))
+	return fmt.Sprintf("id-%d", i)
 }
