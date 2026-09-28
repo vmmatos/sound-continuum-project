@@ -630,7 +630,6 @@ func TestDiscoverCurrentAlbumAndTrackFetchFailuresRecordedAndContinue(t *testing
 		},
 		albumsErr: map[string]error{"a-fred": errors.New("spotify: boom")},
 		albums:    map[string][]spotify.Album{"a-blake": {{ID: "al-1", Name: "Ok", ReleaseDate: daysAgo(5), ReleaseDatePrecision: "day"}}},
-		tracksErr: map[string]error{},
 		tracks:    map[string][]spotify.Track{"al-1": {{ID: "t-1", Name: "Ok"}}},
 	}
 	svc := newTestSvcCurrent(f, testCurrentConfig())
