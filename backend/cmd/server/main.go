@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
 	_ "modernc.org/sqlite"
 
@@ -42,11 +43,22 @@ func main() {
 
 	lastfmClient := lastfm.NewClient(os.Getenv("LASTFM_API_KEY"), os.Getenv("LASTFM_API_URL"))
 
+	recentTrackLookbackDays := discovery.DefaultRecentTrackLookbackDays
+	if v := os.Getenv("RECENT_TRACK_LOOKBACK_DAYS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			recentTrackLookbackDays = n
+		} else {
+			log.Printf("ignoring invalid RECENT_TRACK_LOOKBACK_DAYS=%q, using default of %d days",
+				v, recentTrackLookbackDays)
+		}
+	}
+
 	discoveryService := discovery.NewService(
 		spotifyService, lastfmClient,
 		discovery.DefaultConfig(),
 		discovery.DefaultCurrentConfig(),
 		discovery.DefaultEmergingConfig(),
+		recentTrackLookbackDays,
 	)
 
 	mux := http.NewServeMux()

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/vmmatos/sound-continuum-project/internal/candidate"
 	"github.com/vmmatos/sound-continuum-project/internal/lastfm"
@@ -13,7 +14,7 @@ import (
 )
 
 func newTestSvcPool(f *fakeCatalogue, lf *fakeSimilarArtistFinder, cc Config, cu CurrentConfig, em EmergingConfig) *Service {
-	return &Service{spotify: f, lastfm: lf, classicCfg: cc, currentCfg: cu, emergingCfg: em}
+	return &Service{spotify: f, lastfm: lf, classicCfg: cc, currentCfg: cu, emergingCfg: em, now: time.Now}
 }
 
 // fullPoolFixture wires a fakeCatalogue/fakeSimilarArtistFinder so all three
@@ -25,6 +26,10 @@ func newTestSvcPool(f *fakeCatalogue, lf *fakeSimilarArtistFinder, cc Config, cu
 // unresolved/empty, which is valid discovery behavior, not a test bug.
 func fullPoolFixture() (*fakeCatalogue, *fakeSimilarArtistFinder) {
 	f := &fakeCatalogue{
+		// An empty official playlist (no playlistItems entry for this ID)
+		// so PoolHandler's FilterRecentTracks step succeeds trivially and
+		// every discovered candidate stays eligible.
+		officialPlaylist: &spotify.OfficialPlaylist{SpotifyPlaylistID: "official-playlist-id"},
 		artists: map[string][]spotify.Artist{
 			"David Bowie":  {{ID: "bowie-id", Name: "David Bowie"}},
 			"Fred again.":  {{ID: "fred-id", Name: "Fred again."}},
@@ -319,5 +324,22 @@ func TestPoolHandlerReturns200WithJSON(t *testing.T) {
 	}
 	if pool.TotalCandidates != 3 {
 		t.Errorf("TotalCandidates = %d, want 3", pool.TotalCandidates)
+	}
+	if pool.RecentTrackFilter.EligibleCount != 3 || pool.RecentTrackFilter.RecentlyUsedCount != 0 {
+		t.Errorf("RecentTrackFilter = %+v, want all 3 candidates eligible (empty official playlist)",
+			pool.RecentTrackFilter)
+	}
+}
+
+func TestPoolHandlerReturnsErrorWhenOfficialPlaylistNotConfigured(t *testing.T) {
+	f, lf := fullPoolFixture()
+	f.officialPlaylist = nil // not initialized yet
+	svc := newTestSvcPool(f, lf, testConfig(), testCurrentConfig(), testEmergingConfig())
+
+	rec := httptest.NewRecorder()
+	svc.PoolHandler(rec, httptest.NewRequest(http.MethodPost, "/api/candidates/pool", nil))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503: %s", rec.Code, rec.Body.String())
 	}
 }

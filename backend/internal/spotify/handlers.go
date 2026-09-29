@@ -396,6 +396,21 @@ func (s *Service) InitializeOfficialPlaylist(ctx context.Context) (OfficialPlayl
 	return official, nil
 }
 
+// OfficialPlaylist returns the persisted official Sound Continuum playlist,
+// or ErrOfficialPlaylistNotConfigured if it hasn't been created yet
+// (InitializeOfficialPlaylist). Read-only — never calls Spotify, never
+// creates the playlist.
+func (s *Service) OfficialPlaylist(ctx context.Context) (*OfficialPlaylist, error) {
+	playlist, err := s.store.GetOfficialPlaylist(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if playlist == nil {
+		return nil, ErrOfficialPlaylistNotConfigured
+	}
+	return playlist, nil
+}
+
 // officialPlaylistResponse is the safe, application-level shape returned by
 // InitializePlaylistHandler.
 type officialPlaylistResponse struct {

@@ -538,6 +538,58 @@
       logic, no ranking, no generic discovery framework, no playlist
       modification
 
+## Done (Card #37 — Avoid Recently Used Tracks)
+
+- [x] `backend/internal/discovery/recent_track_filter.go` — new file,
+      `Service.FilterRecentTracks`, `DefaultRecentTrackLookbackDays`
+      (28-day default, plain `int` — no single-field config struct),
+      `RecentTrackFilterResult`, `RecentlyUsedCandidate`, `ReasonRecentlyUsed`
+- [x] Walks the full official playlist via `spotify.Service.PlaylistItems`
+      (existing, already paginating) with a dedicated pagination loop —
+      never assumes the first page is enough; episodes/unavailable/
+      malformed items skipped individually; duplicate Spotify track IDs
+      keep the maximum `added_at`
+- [x] Documented `>=` lookback boundary, unit-tested exactly at the edge
+- [x] `discovery.Service` gained an unexported `now func() time.Time`
+      clock seam (defaulted to `time.Now`, overridden by same-package
+      tests) — this card's one deliberate exception to the repo's
+      direct-`time.Now()` convention, needed for deterministic boundary
+      tests
+- [x] `RECENT_TRACK_LOOKBACK_DAYS` read in `cmd/server/main.go`
+      (`os.Getenv`/`strconv.Atoi`, falls back to 28), added to `dev/.env`
+- [x] `spotify.Service.OfficialPlaylist` — new read-only accessor,
+      `ErrOfficialPlaylistNotConfigured` sentinel; no OAuth scope change
+      (`playlist-read-private` already covers it)
+- [x] `discovery.spotifyCatalogue` interface extended with
+      `PlaylistItems`/`OfficialPlaylist`; `fakeCatalogue` extended to match
+- [x] `POST /api/candidates/pool` (`PoolHandler`) now also runs
+      `FilterRecentTracks`, attaching `CandidatePool.RecentTrackFilter`;
+      unlike `DiscoverPool`, a filter failure (playlist not configured,
+      Spotify connection/API failure) returns an HTTP error instead of a
+      pool — never a silent all-eligible fallback
+- [x] No `candidate.Status` change — recently-used candidates keep
+      `Status: discovered`; no new blacklist, no artist/album repetition
+      rules, no scoring/ranking
+- [x] 26 new unit tests (15 `recent_track_filter_test.go`, 2 `PoolHandler`,
+      2 `spotify.Service.OfficialPlaylist`) — all against fakes, no real
+      network calls; existing tests remain green
+- [x] `go build ./...`, `go vet ./...`, `go test ./...` verified clean
+- [~] Real Spotify integration verification (via Docker Compose): official
+      playlist had been deleted outside the app (found live — see the
+      Card #30 idempotency limitation logged in `decisions.md`); recreated
+      via the existing unmodified init flow, then confirmed empty-playlist
+      behavior, `RECENT_TRACK_LOOKBACK_DAYS` default, full pagination
+      termination, and no playlist mutation (0 items before/after) for
+      real. All three discovery workflows hit the pre-existing Card #36
+      `ArtistAlbums` 429 rate limit, so `TotalCandidates` was 0 — an
+      actual candidate landing in "recently used" against real data was
+      not confirmed live; covered by unit tests instead. Not a code defect.
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+- [x] No persistence layer, no editorial selection, no musical bridge
+      logic, no ranking, no generic filtering framework, no playlist
+      modification
+
 ## In progress
 
 - Nothing currently in progress.
@@ -545,8 +597,8 @@
 ## Planned
 
 - M4: Discovery engine (candidate persistence, CRUD/API — classic, current,
-      emerging discovery, and the Candidate Pool orchestrating all three
-      are done, see Cards 33-36 above)
+      emerging discovery, the Candidate Pool orchestrating all three, and
+      the Recent Track Filter are done, see Cards 33-37 above)
 - M5: Musical ranking & bridges
 - M6: Curator experience
 - M7: Weekly editorial workflow

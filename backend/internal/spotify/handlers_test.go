@@ -1005,6 +1005,34 @@ func TestInitializeOfficialPlaylistCalledTwiceCreatesOnlyOnce(t *testing.T) {
 	}
 }
 
+func TestOfficialPlaylistReturnsPersistedPlaylist(t *testing.T) {
+	svc := newTestService(t, "")
+	ctx := newTestContext()
+	if err := svc.store.SaveOfficialPlaylist(ctx, OfficialPlaylist{
+		SpotifyPlaylistID: "pl-existing", Name: "Sound Continuum — Weekly Journey",
+		URL: "https://open.spotify.com/playlist/pl-existing",
+	}); err != nil {
+		t.Fatalf("SaveOfficialPlaylist returned error: %v", err)
+	}
+
+	playlist, err := svc.OfficialPlaylist(ctx)
+	if err != nil {
+		t.Fatalf("OfficialPlaylist returned error: %v", err)
+	}
+	if playlist.SpotifyPlaylistID != "pl-existing" {
+		t.Errorf("OfficialPlaylist = %+v, want SpotifyPlaylistID pl-existing", playlist)
+	}
+}
+
+func TestOfficialPlaylistNotConfigured(t *testing.T) {
+	svc := newTestService(t, "")
+
+	_, err := svc.OfficialPlaylist(newTestContext())
+	if !errors.Is(err, ErrOfficialPlaylistNotConfigured) {
+		t.Fatalf("err = %v, want ErrOfficialPlaylistNotConfigured", err)
+	}
+}
+
 func TestInitializeOfficialPlaylistNotConnected(t *testing.T) {
 	svc := newTestService(t, "")
 

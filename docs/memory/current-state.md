@@ -449,6 +449,78 @@
   code itself needs no change; this is a live-provider quota state, not an
   implementation gap.
 
+- A Recent Track Filter now sits between Candidate Pool aggregation and
+  editorial consideration (Card #37, see [`decisions.md`](decisions.md)) —
+  added entirely inside `backend/internal/discovery`
+  (`recent_track_filter.go`), no new package. `Service.FilterRecentTracks`
+  reads the official Sound Continuum playlist's items via the existing
+  `spotify.Service.PlaylistItems` (already paginating; the filter now
+  walks every page rather than a bounded sample — a dedicated loop, not
+  Card #33's `walkPages`, since the whole playlist must be inspected, not
+  a bounded crawl), builds an in-memory Spotify-track-ID → most-recent-
+  `added_at` index (episodes/unavailable/malformed items skipped
+  individually, duplicate track IDs keep the max `added_at`), and splits
+  every `CandidatePool` candidate into `EligibleCandidates` or
+  `RecentlyUsedCandidates` by comparing each candidate's `SpotifyTrackID`
+  against that index. A track is recently used when its `added_at` is
+  `>= now - LookbackDays` (documented `>=` boundary, unit-tested exactly
+  at the edge). The lookback (`discovery.DefaultRecentTrackLookbackDays`,
+  28) is a plain `int` on `Service`, not its own config struct — a
+  single-field, single-caller config type would have been unnecessary
+  machinery — and is overridable via
+  `RECENT_TRACK_LOOKBACK_DAYS` in `cmd/server/main.go` — the only backend
+  numeric config read from an env var today, following the existing
+  `PORT`/`SQLITE_PATH` precedent rather than the discovery package's
+  constructor-only convention, since this one is a curator-tunable
+  editorial knob. `discovery.Service` gained an unexported `now func()
+  time.Time` field (defaulted to `time.Now` in `NewService`, overridden
+  directly by same-package tests) — the repo's first clock-injection
+  seam, added only because the card requires deterministic boundary
+  tests; every other `time.Now()` call in the codebase is still direct.
+  `spotify.Service` gained `OfficialPlaylist(ctx)`, a thin read-only
+  wrapper over the existing `Store.GetOfficialPlaylist` returning the new
+  `ErrOfficialPlaylistNotConfigured` sentinel when no playlist has been
+  initialized yet (distinct from a transport/API failure). No OAuth scope
+  change — `playlist-read-private` (Card #26) already covers reading the
+  official playlist's items regardless of its public/private flag, since
+  reads always go through the curator's authenticated token. No
+  `candidate.Status` change — a recently-used candidate keeps `Status:
+  discovered`; Eligible/Recently-Used is a filter-result-level split only.
+  `POST /api/candidates/pool` (`PoolHandler`) still runs
+  `DiscoverPool` unchanged (always 200, partial-failure-tolerant across
+  the three workflows) and now also calls `FilterRecentTracks`, attaching
+  the result to a new `CandidatePool.RecentTrackFilter` field — but unlike
+  `DiscoverPool`, a filter failure (official playlist not configured,
+  Spotify connection/API failure) makes the endpoint return an HTTP error
+  instead of a pool, so a temporary Spotify outage can never silently
+  bypass the repetition guardrail. 26 new unit tests (15 in
+  `recent_track_filter_test.go`, covering every case Card #37 lists —
+  empty/no-match/all-recently-used playlists, exact boundary, duplicate
+  entries, multi-page pagination, episodes/unavailable items ignored, a
+  candidate with no Spotify ID, consistency across Type/Category, Status
+  preservation, and both failure modes — plus 2 new `PoolHandler` tests
+  and 2 new `spotify.Service.OfficialPlaylist` tests) — all against fakes,
+  no real network calls.
+
+  Real Spotify verification (via Docker Compose) confirmed the official
+  playlist had been deleted outside the app (see the Card #30 idempotency
+  limitation noted in decisions.md), so a fresh one was created through
+  the existing, unmodified `InitializeOfficialPlaylist` flow before
+  testing. Against that fresh, empty, public playlist: `POST
+  /api/candidates/pool` returned 200 with `RecentTrackFilter{LookbackDays:
+  28, TotalCandidates: 0, EligibleCount: 0, RecentlyUsedCount: 0,
+  PlaylistTracksInspected: 0}` — the empty-playlist path, `RECENT_TRACK_
+  LOOKBACK_DAYS`'s default, and pagination termination all exercised for
+  real; the playlist's item count was confirmed unchanged (0 before and
+  after) via `GET /api/spotify/playlists/{id}`, confirming no write.
+  `TotalCandidates` was 0 because all three discovery workflows hit the
+  same `GET /artists/{id}/albums` 429 rate limit already documented for
+  Card #36 — a pre-existing Spotify Development Mode quota state, not a
+  Card #37 defect — so an actual candidate landing in `RecentlyUsedCandidates`
+  against real data was not confirmed live; that specific behavior is
+  covered by the fake-based unit tests instead. The official playlist was
+  not modified to manufacture a test case, per the card's own constraint.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.
