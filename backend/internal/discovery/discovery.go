@@ -323,6 +323,15 @@ artists:
 					TrackTitle:      track.Name,
 					TrackArtist:     name,
 					DiscoveryReason: discoveryReason,
+					Provenance: []candidate.DiscoveryProvenance{{
+						Method:   candidate.DiscoveryMethodClassicReferenceArtist,
+						Provider: candidate.ProvenanceProviderSpotify,
+						Seed: &candidate.SeedArtist{
+							Provider:         candidate.ProvenanceProviderSpotify,
+							ProviderArtistID: artistID,
+							Name:             name,
+						},
+					}},
 				})
 				if err != nil {
 					// Fabricated/invalid metadata never becomes a
@@ -412,6 +421,15 @@ artists:
 				TrackTitle:      track.Name,
 				TrackArtist:     name,
 				DiscoveryReason: currentDiscoveryReason,
+				Provenance: []candidate.DiscoveryProvenance{{
+					Method:   candidate.DiscoveryMethodCurrentReferenceArtist,
+					Provider: candidate.ProvenanceProviderSpotify,
+					Seed: &candidate.SeedArtist{
+						Provider:         candidate.ProvenanceProviderSpotify,
+						ProviderArtistID: artistID,
+						Name:             name,
+					},
+				}},
 			})
 			if err != nil {
 				// Fabricated/invalid metadata never becomes a
@@ -602,6 +620,7 @@ seeds:
 				}
 				seenTracks[track.ID] = true
 
+				match := sim.Match
 				c, err := candidate.NewCandidateTrack(candidate.NewCandidateTrackParams{
 					ID:              candidate.ID(track.ID),
 					SpotifyTrackID:  track.ID,
@@ -611,6 +630,19 @@ seeds:
 					TrackTitle:      track.Name,
 					TrackArtist:     name,
 					DiscoveryReason: emergingDiscoveryReason,
+					Provenance: []candidate.DiscoveryProvenance{{
+						Method:   candidate.DiscoveryMethodLastFMSimilarArtist,
+						Provider: candidate.ProvenanceProviderLastFM,
+						Seed: &candidate.SeedArtist{
+							Name: seed,
+						},
+						DiscoveredArtist: &candidate.SeedArtist{
+							Provider:         candidate.ProvenanceProviderSpotify,
+							ProviderArtistID: artistID,
+							Name:             name,
+						},
+						LastFMMatch: &match,
+					}},
 				})
 				if err != nil {
 					// Fabricated/invalid metadata never becomes a

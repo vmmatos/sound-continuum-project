@@ -568,6 +568,94 @@
   are not. No persistence, no new endpoint, no ranking/scoring, no new
   package, no new dependency.
 
+- Candidates now carry structured discovery provenance (Card #39, M4's
+  final card, see [`decisions.md`](decisions.md)) — a new
+  `candidate.DiscoveryProvenance` (`backend/internal/candidate/
+  provenance.go`, package `candidate`): `Method` (a new `DiscoveryMethod`
+  enum — `classic_reference_artist`/`current_reference_artist`/
+  `lastfm_similar_artist`/`manual`, same `type X string` + `const` +
+  `Valid()` convention as `Type`/`Category`/`Status`/`Source`), `Provider`
+  (a new `ProvenanceProvider` enum — `Spotify`/`Last.fm`/empty), `Seed`
+  and `DiscoveredArtist` (`*candidate.SeedArtist{Provider,
+  ProviderArtistID, Name}`, a stable provider ID preferred over a display
+  name where one is actually resolved), and `LastFMMatch` (Last.fm's own
+  similarity score, discovery metadata only, mirroring
+  `discovery.ArtistProvenance.Match`). `CandidateTrack` gains one new
+  field, `Provenance []DiscoveryProvenance` — additive, alongside the
+  untouched `DiscoveryReason` string and Card #38's `Metadata` field;
+  `Validate()` rejects an entry with an invalid `Method`, nothing else.
+  This is deliberately **not** the same concept as the existing `Source`
+  field: `Source` answers "which provider supplied the track" (unchanged,
+  still `SourceSpotify` only); `Provenance` answers "how did this
+  candidate enter the pipeline." An Emerging candidate can therefore carry
+  `Source: Spotify` and provenance `Provider: Last.fm` simultaneously — see
+  `decisions.md`. `DiscoverClassic`/`DiscoverCurrent`
+  (`backend/internal/discovery/discovery.go`) each attach one provenance
+  entry per candidate using the reference artist's Spotify ID already
+  resolved earlier in the same loop (`classic_reference_artist`/
+  `current_reference_artist`, `Provider: Spotify`, `Seed` = the reference
+  artist) — no extra Spotify call. `DiscoverEmerging` attaches
+  `lastfm_similar_artist` provenance (`Provider: Last.fm`, `Seed` = the
+  original Emerging reference-artist seed name — never itself resolved
+  through Spotify, so no provider ID — `DiscoveredArtist` = the Last.fm
+  result's already-resolved Spotify artist, `LastFMMatch` = Last.fm's own
+  similarity value) — reusing the same `artistID`/`sim.Match` already in
+  scope, no extra Last.fm or Spotify call either. `pool.go`'s
+  `DiscoverPool` dedup step no longer discards the losing candidate's
+  provenance when the same Spotify track is found by more than one
+  workflow: it now merges both candidates' `Provenance` via a new
+  `candidate.MergeProvenance` (dedup by method + seed/discovered-artist
+  identity) while classification (`Type`/`Category`/`Status`, decided by
+  `candidateTypePriority`) is unchanged — deduplication removes the
+  duplicate candidate, not useful provenance. `FilterRecentTracks` and
+  `EnrichCandidateMetadata` needed no code changes — both already copy
+  `CandidateTrack` by value without touching unrelated fields, so
+  `Provenance` survives automatically; this is confirmed by new tests, not
+  just by inspection. No handler changes were needed either —
+  `PoolHandler`/`ClassicHandler`/etc. already JSON-encode the whole
+  `CandidateTrack`/`CandidatePool` with no field allowlist, so `Provenance`
+  is exposed through the existing `POST /api/candidates/pool` (and
+  `/api/discovery/*`) responses automatically. No `Source` enum value was
+  added for manual candidates — a curator manually picking a real Spotify
+  track keeps `Source: Spotify`; only its provenance `Method` is `manual`,
+  with no `Seed`/`Provider` fabricated (`candidate/provenance_test.go`
+  covers this directly, since no workflow in this repo constructs a
+  manual candidate today). 20 new unit tests across `candidate` (enum
+  validation, `MergeProvenance` union/dedup/empty-input cases, manual
+  provenance with no fabricated data) and `discovery`
+  (Classic/Current/Emerging provenance field correctness including no
+  extra provider calls, Pool dedup provenance merging, Source-vs-Provider
+  distinction, and provenance preservation through `FilterRecentTracks`/
+  `EnrichCandidateMetadata`) — all against fakes, no real network calls.
+
+  Real Spotify + Last.fm verification (via `go run ./cmd/server` with
+  `dev/.env`/`dev/.secrets.env` loaded) confirmed the existing Spotify
+  connection (`tintim_22`) and real artist resolution via `Search` for all
+  three workflows (`ArtistsInspected` matched each reference/seed list's
+  size, `UnresolvedArtists` populated normally, e.g. non-Latin-script
+  Last.fm results the app can't resolve by exact name match — expected,
+  pre-existing behavior). No candidate could be constructed and no
+  provenance field could be exercised against live data this session,
+  because `GET /artists/{id}/albums` is still returning `429` for every
+  artist — the same per-app Spotify Development Mode quota state first
+  documented in Card #36 and still in effect as of this session's testing
+  (confirmed live in each workflow's `Result.Failures`, all
+  `Stage: "albums"`). This is a pre-existing live-provider quota state,
+  not a Card #39 defect; correctness of the provenance fields for real
+  data is covered by the fake-based unit tests instead, matching the
+  precedent already accepted for Cards #36/#37. Separately, `POST
+  /api/candidates/pool` itself currently 502s because the locally-recorded
+  official playlist (`4lzlrXudAc6oruI9ASksuq`) no longer exists on
+  Spotify's side (`GET /api/spotify/playlists/{id}` also 404s) — a
+  recurrence of the known Card #30/#37 idempotency limitation (the
+  official playlist was deleted outside the app again), not touched or
+  caused by this card. Every discovery/pool call made during this
+  session's verification was read-only by construction (no write endpoint
+  was invoked), so no playlist was created, modified, or published to.
+  M4 (Discovery Engine) is now feature-complete: discovery, aggregation,
+  filtering, enrichment, and provenance all exist; persistence and musical
+  bridge logic remain open for M5+.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

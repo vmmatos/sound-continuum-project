@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -285,6 +286,27 @@ func TestFilterRecentTracksConsistentAcrossTypesAndCategories(t *testing.T) {
 	}
 	if result.RecentlyUsedCount != 3 {
 		t.Errorf("result = %+v, want all 3 candidates recently used regardless of Type/Category", result)
+	}
+}
+
+func TestFilterRecentTracksPreservesProvenance(t *testing.T) {
+	f := &fakeCatalogue{
+		officialPlaylist: &spotify.OfficialPlaylist{SpotifyPlaylistID: testPlaylistID},
+	}
+	svc := newTestSvcRecentTrackFilter(f, 28)
+	c := newRecentTestCandidate(t, "track-1", candidate.TypeClassic, candidate.CategoryPast)
+	c.Provenance = []candidate.DiscoveryProvenance{{
+		Method:   candidate.DiscoveryMethodClassicReferenceArtist,
+		Provider: candidate.ProvenanceProviderSpotify,
+		Seed:     &candidate.SeedArtist{Provider: candidate.ProvenanceProviderSpotify, ProviderArtistID: "a-1", Name: "Artist track-1"},
+	}}
+
+	result, err := svc.FilterRecentTracks(context.Background(), []candidate.CandidateTrack{c})
+	if err != nil {
+		t.Fatalf("FilterRecentTracks: %v", err)
+	}
+	if len(result.EligibleCandidates) != 1 || !reflect.DeepEqual(result.EligibleCandidates[0].Provenance, c.Provenance) {
+		t.Errorf("FilterRecentTracks did not preserve Provenance: got %+v, want %+v", result.EligibleCandidates, c.Provenance)
 	}
 }
 

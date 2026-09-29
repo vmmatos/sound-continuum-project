@@ -132,9 +132,16 @@ func (s *Service) DiscoverPool(ctx context.Context) CandidatePool {
 			continue
 		}
 		duplicatesRemoved++
+		// Deduplication removes the duplicate candidate, not its
+		// provenance: the surviving classification is still decided by
+		// candidateTypePriority, but both candidates' discovery paths are
+		// kept.
+		survivor := existing
 		if candidateTypePriority[c.Type] < candidateTypePriority[existing.Type] {
-			bySpotifyID[c.SpotifyTrackID] = c
+			survivor = c
 		}
+		survivor.Provenance = candidate.MergeProvenance(existing.Provenance, c.Provenance)
+		bySpotifyID[c.SpotifyTrackID] = survivor
 	}
 
 	merged := make([]candidate.CandidateTrack, 0, len(bySpotifyID))

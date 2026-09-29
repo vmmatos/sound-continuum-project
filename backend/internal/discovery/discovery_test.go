@@ -491,6 +491,29 @@ func TestDiscoverClassicCandidateFieldsAreCorrect(t *testing.T) {
 	if c.SpotifyTrackID != "t-1" || string(c.ID) != "t-1" {
 		t.Errorf("expected candidate ID/SpotifyTrackID to be the Spotify track ID, got %+v", c)
 	}
+	if len(c.Provenance) != 1 {
+		t.Fatalf("expected exactly one provenance entry, got %+v", c.Provenance)
+	}
+	p := c.Provenance[0]
+	if p.Method != candidate.DiscoveryMethodClassicReferenceArtist {
+		t.Errorf("Provenance.Method = %q, want classic_reference_artist", p.Method)
+	}
+	if p.Provider != candidate.ProvenanceProviderSpotify {
+		t.Errorf("Provenance.Provider = %q, want Spotify", p.Provider)
+	}
+	if p.Seed == nil || p.Seed.Name != "Kraftwerk" || p.Seed.ProviderArtistID != "a-1" || p.Seed.Provider != candidate.ProvenanceProviderSpotify {
+		t.Errorf("Provenance.Seed = %+v, want the resolved Kraftwerk artist (a-1)", p.Seed)
+	}
+	if p.DiscoveredArtist != nil {
+		t.Errorf("Provenance.DiscoveredArtist = %+v, want nil for classic discovery", p.DiscoveredArtist)
+	}
+	// DiscoverClassic resolves every PastReferenceArtists entry regardless
+	// of provenance (pre-existing behavior); provenance itself reuses the
+	// artistID already resolved for that loop iteration and triggers no
+	// extra Search call.
+	if f.searchCalls != len(PastReferenceArtists) {
+		t.Errorf("Search was called %d times, want %d (one resolve per reference artist, no extra call for provenance)", f.searchCalls, len(PastReferenceArtists))
+	}
 }
 
 func TestDiscoverClassicNoPopularityOrAutoSelection(t *testing.T) {
@@ -618,6 +641,29 @@ func TestDiscoverCurrentCandidateFieldsAreCorrect(t *testing.T) {
 	}
 	if c.SpotifyTrackID != "t-1" || string(c.ID) != "t-1" {
 		t.Errorf("expected candidate ID/SpotifyTrackID to be the Spotify track ID, got %+v", c)
+	}
+	if len(c.Provenance) != 1 {
+		t.Fatalf("expected exactly one provenance entry, got %+v", c.Provenance)
+	}
+	p := c.Provenance[0]
+	if p.Method != candidate.DiscoveryMethodCurrentReferenceArtist {
+		t.Errorf("Provenance.Method = %q, want current_reference_artist", p.Method)
+	}
+	if p.Provider != candidate.ProvenanceProviderSpotify {
+		t.Errorf("Provenance.Provider = %q, want Spotify", p.Provider)
+	}
+	if p.Seed == nil || p.Seed.Name != "Sampha" || p.Seed.ProviderArtistID != "a-1" || p.Seed.Provider != candidate.ProvenanceProviderSpotify {
+		t.Errorf("Provenance.Seed = %+v, want the resolved Sampha artist (a-1)", p.Seed)
+	}
+	if p.DiscoveredArtist != nil {
+		t.Errorf("Provenance.DiscoveredArtist = %+v, want nil for current discovery", p.DiscoveredArtist)
+	}
+	// DiscoverCurrent resolves every PresentReferenceArtists entry
+	// regardless of provenance (pre-existing behavior); provenance itself
+	// reuses the artistID already resolved for that loop iteration and
+	// triggers no extra Search call.
+	if f.searchCalls != len(PresentReferenceArtists) {
+		t.Errorf("Search was called %d times, want %d (one resolve per reference artist, no extra call for provenance)", f.searchCalls, len(PresentReferenceArtists))
 	}
 }
 
@@ -1156,6 +1202,37 @@ func TestDiscoverEmergingCandidateFieldsAreCorrect(t *testing.T) {
 	}
 	if c.TrackArtist != "New Discovery" {
 		t.Errorf("expected TrackArtist to be the discovered artist, got %q", c.TrackArtist)
+	}
+	if len(c.Provenance) != 1 {
+		t.Fatalf("expected exactly one provenance entry, got %+v", c.Provenance)
+	}
+	p := c.Provenance[0]
+	if p.Method != candidate.DiscoveryMethodLastFMSimilarArtist {
+		t.Errorf("Provenance.Method = %q, want lastfm_similar_artist", p.Method)
+	}
+	if p.Provider != candidate.ProvenanceProviderLastFM {
+		t.Errorf("Provenance.Provider = %q, want Last.fm", p.Provider)
+	}
+	if p.Seed == nil || p.Seed.Name != "The Twins" {
+		t.Errorf("Provenance.Seed = %+v, want the Emerging seed \"The Twins\"", p.Seed)
+	}
+	if p.Seed != nil && p.Seed.ProviderArtistID != "" {
+		t.Errorf("Provenance.Seed.ProviderArtistID = %q, want empty (the seed itself is never resolved through Spotify)", p.Seed.ProviderArtistID)
+	}
+	if p.DiscoveredArtist == nil || p.DiscoveredArtist.Name != "New Discovery" || p.DiscoveredArtist.ProviderArtistID != "a-1" || p.DiscoveredArtist.Provider != candidate.ProvenanceProviderSpotify {
+		t.Errorf("Provenance.DiscoveredArtist = %+v, want the resolved New Discovery artist (a-1)", p.DiscoveredArtist)
+	}
+	if p.LastFMMatch == nil || *p.LastFMMatch != 0.8 {
+		t.Errorf("Provenance.LastFMMatch = %v, want 0.8", p.LastFMMatch)
+	}
+	// candidate.Source stays Spotify (the track's own provider) even though
+	// discovery provenance's Provider is Last.fm — the two are distinct
+	// concepts.
+	if c.Source != candidate.SourceSpotify {
+		t.Errorf("Source = %q, want Spotify even though provenance Provider is Last.fm", c.Source)
+	}
+	if f.searchCalls != 1 {
+		t.Errorf("Search was called %d times, want 1 (provenance must not trigger an extra resolve call)", f.searchCalls)
 	}
 }
 

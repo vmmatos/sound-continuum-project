@@ -590,15 +590,72 @@
       logic, no ranking, no generic filtering framework, no playlist
       modification
 
+## Done (Card #39 — Add Source Tracking / Discovery Provenance)
+
+- [x] `backend/internal/candidate/provenance.go` — new file:
+      `DiscoveryMethod` (`classic_reference_artist`/
+      `current_reference_artist`/`lastfm_similar_artist`/`manual`),
+      `ProvenanceProvider` (`Spotify`/`Last.fm`/empty), `SeedArtist`
+      (`Provider`, `ProviderArtistID`, `Name`), `DiscoveryProvenance`
+      (`Method`, `Provider`, `Seed`, `DiscoveredArtist`, `LastFMMatch`),
+      `MergeProvenance` — same `type X string`+`const`+`Valid()`
+      convention as `Type`/`Category`/`Status`/`Source`
+- [x] `CandidateTrack` gains `Provenance []DiscoveryProvenance` (additive,
+      alongside the untouched `DiscoveryReason` string and Card #38's
+      `Metadata`); `Validate()` rejects an invalid `Method`
+- [x] `candidate.Source` completely unchanged — still `SourceSpotify`
+      only; no `Manual`/`Last.fm` value added, since no workflow
+      constructs a candidate without Spotify identity
+- [x] `DiscoverClassic`/`DiscoverCurrent` each attach one provenance entry
+      per candidate using the reference artist's Spotify ID already
+      resolved earlier in the loop — no extra Spotify call
+- [x] `DiscoverEmerging` attaches `lastfm_similar_artist` provenance
+      (seed = the original Emerging seed name, discovered artist = the
+      already-resolved Spotify artist, `LastFMMatch` = Last.fm's own
+      similarity value) — no extra Last.fm or Spotify call
+- [x] `DiscoverPool`'s dedup step now merges both candidates' provenance
+      via `candidate.MergeProvenance` instead of discarding the losing
+      candidate's provenance; classification (`Type`/`Category`/`Status`)
+      still decided by the existing `candidateTypePriority`
+- [x] `FilterRecentTracks`/`EnrichCandidateMetadata` needed no code
+      changes — both already copy `CandidateTrack` by value, so
+      `Provenance` survives automatically (confirmed by new tests)
+- [x] `POST /api/candidates/pool` and `/api/discovery/*` expose
+      `Provenance` automatically (no handler changes — existing JSON
+      encoding has no field allowlist)
+- [x] 20 new unit tests (`candidate`: enum validation, `MergeProvenance`
+      union/dedup/empty-input, manual provenance with no fabricated data;
+      `discovery`: Classic/Current/Emerging provenance field correctness
+      + no extra provider calls, Pool dedup provenance merging,
+      Source-vs-Provider distinction, preservation through
+      `FilterRecentTracks`/`EnrichCandidateMetadata`) — all against
+      fakes, no real network calls
+- [x] `go build ./...`, `go vet ./...`, `go test ./...` verified clean
+- [~] Real Spotify + Last.fm verification: connection reuse and real
+      `Search`-based artist resolution confirmed live for all three
+      workflows; no candidate could be constructed and no provenance
+      field exercised against live data because `GET /artists/{id}/albums`
+      is still `429`-rate-limited (the same pre-existing Card #36 quota
+      state); `POST /api/candidates/pool` itself 502s because the
+      locally-recorded official playlist no longer exists on Spotify's
+      side (a recurrence of the known Card #30/#37 limitation) — neither
+      is a Card #39 defect; every call made was read-only, no playlist
+      touched. See `current-state.md` for the full account.
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+- [x] No persistence, no new endpoint, no ranking/scoring, no generic
+      provenance framework, no event sourcing, no playlist modification
+
 ## In progress
 
 - Nothing currently in progress.
 
 ## Planned
 
-- M4: Discovery engine (candidate persistence, CRUD/API — classic, current,
-      emerging discovery, the Candidate Pool orchestrating all three, and
-      the Recent Track Filter are done, see Cards 33-37 above)
+- M4: Discovery engine — feature-complete as of Card #39 (classic,
+      current, emerging discovery, the Candidate Pool, the Recent Track
+      Filter, Metadata Enrichment, and discovery provenance are all done,
+      see Cards 33-39 above); candidate persistence remains open for M5+
 - M5: Musical ranking & bridges
 - M6: Curator experience
 - M7: Weekly editorial workflow

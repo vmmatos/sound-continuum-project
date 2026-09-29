@@ -29,4 +29,8 @@ var (
 	// SpotifyTrackID is empty — a Spotify-sourced candidate must retain its
 	// external reference.
 	ErrMissingSpotifyTrackID = errors.New("candidate: spotify track id required when source is Spotify")
+
+	// ErrInvalidDiscoveryMethod is returned when a Provenance entry's
+	// Method is not one of the supported discovery methods.
+	ErrInvalidDiscoveryMethod = errors.New("candidate: unsupported discovery method")
 )
