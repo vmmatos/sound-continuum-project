@@ -484,6 +484,60 @@
       recursive/multi-hop discovery, no persistence layer, no musical
       bridge logic, no final editorial selection, no playlist modified
 
+## Done (Card 36 — Build Candidate Pool)
+
+- [x] `backend/internal/discovery/pool.go` — `CandidatePool`, `WorkflowError`,
+      `Service.DiscoverPool`, `Service.PoolHandler`, no new package
+- [x] `DiscoverPool` orchestrates the existing `DiscoverClassic`/
+      `DiscoverCurrent`/`DiscoverEmerging` unchanged, merges their
+      candidates, and deduplicates cross-workflow duplicates by Spotify
+      track ID via a documented `Classic > Current > Discovery` priority
+      rule (`candidateTypePriority`) — deterministic regardless of merge
+      order, not list-position-based
+- [x] Every candidate's `Source`/`Type`/`Category`/`Status` preserved
+      unchanged from its originating workflow; no normalization into a
+      generic category
+- [x] Deterministic, non-popularity ordering: `Type` priority, then
+      `TrackArtist`, `TrackTitle`, `SpotifyTrackID` (no release-date leg —
+      `CandidateTrack` has no release date field)
+- [x] Counts: `TotalCandidates`, `ClassicCandidates`, `CurrentCandidates`,
+      `EmergingCandidates`, `DuplicatesRemoved` — no rigid quotas, no
+      rankings
+- [x] `ClassicResult`/`CurrentResult`/`EmergingResult` embedded on
+      `CandidatePool` unmodified, so each workflow's own counts,
+      `UnresolvedArtists`, `Failures`, and (for Emerging)
+      `EmergingProvenance` stay inspectable
+- [x] Partial-failure-tolerant: `DiscoverPool` always runs all three
+      workflows and never returns a top-level error; a workflow abort
+      (Spotify connection failure, or for Emerging a missing
+      `LASTFM_API_KEY`) is recorded on `WorkflowErrors` while the other
+      two workflows' candidates are kept, never silently discarded
+- [x] `POST /api/candidates/pool` — minimal endpoint, no persistence, no
+      request body, no frontend UI; `CandidatePool` is transient (an
+      in-memory discovery-run result), matching the existing M4 pattern
+- [x] Unit tests (`backend/internal/discovery/pool_test.go`, 12 scenarios):
+      all three workflows included, merge/counts, cross-workflow dedup with
+      documented priority, per-workflow partial failure (Classic/Current),
+      Emerging per-seed failure continuing, missing Last.fm config
+      surfaced, provider errors not swallowed, deterministic ordering, no
+      editorial selection, empty results, handler HTTP round trip
+- [~] Real Spotify + Last.fm end-to-end run: OAuth reuse, real Search-based
+      artist resolution, and real Last.fm `artist.getsimilar` (genuine
+      matches) all verified live. `GET /artists/{id}/albums` hit a genuine
+      Spotify Development Mode quota (`429`, `Retry-After: ~4h30m`) after
+      this card's own testing — the partial-failure design was verified
+      correct against this real failure (non-aborting per-artist
+      `Failures`, `WorkflowErrors` empty), and the official playlist was
+      confirmed unchanged (0 items, before and after) — but an actual
+      Spotify track surviving into `CandidatePool.Candidates` was **not**
+      confirmed live this session; re-run once the quota clears (see
+      `current-state.md` for the full account). Not a code defect.
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+- [x] No persistence layer, no editorial selection, no musical bridge
+      logic, no ranking, no generic discovery framework, no playlist
+      modification
+
 ## In progress
 
 - Nothing currently in progress.
@@ -491,8 +545,8 @@
 ## Planned
 
 - M4: Discovery engine (candidate persistence, CRUD/API — classic, current,
-      and emerging discovery from the Past/Present/Emerging reference
-      artist sets are all done, see Cards 33-35 above)
+      emerging discovery, and the Candidate Pool orchestrating all three
+      are done, see Cards 33-36 above)
 - M5: Musical ranking & bridges
 - M6: Curator experience
 - M7: Weekly editorial workflow

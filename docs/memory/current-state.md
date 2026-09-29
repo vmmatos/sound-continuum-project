@@ -386,6 +386,69 @@
   deferred. M4 (Discovery Engine) is now feature-complete for its three
   planned discovery workflows.
 
+- A Candidate Pool now orchestrates all three discovery workflows (Card #36,
+  see [`decisions.md`](decisions.md)) — the first card where Sound
+  Continuum acts as one discovery pipeline rather than three isolated
+  features. Added entirely inside `backend/internal/discovery`
+  (`pool.go`), no new package: `Service.DiscoverPool` calls the existing
+  `DiscoverClassic`/`DiscoverCurrent`/`DiscoverEmerging` unchanged (no
+  discovery logic duplicated), merges their candidates, and deduplicates
+  cross-workflow duplicates by Spotify track ID via a documented, `Type`-
+  keyed priority rule (`Classic` > `Current` > `Discovery`/Emerging — see
+  decisions.md for the full reasoning) that is stable regardless of merge
+  order. `CandidatePool` carries the merged, deduplicated `Candidates`,
+  counts (`TotalCandidates`/`ClassicCandidates`/`CurrentCandidates`/
+  `EmergingCandidates`/`DuplicatesRemoved`), and each workflow's own
+  unmodified `Result` (`ClassicResult`/`CurrentResult`/`EmergingResult`),
+  so per-workflow counts, unresolved artists, failures, and Emerging's
+  provenance all stay inspectable. Every candidate keeps the
+  `Source`/`Type`/`Category`/`Status` its originating workflow assigned —
+  nothing is normalized or re-classified. Ordering is deterministic and
+  non-popularity-based (`Type` priority, then `TrackArtist`, `TrackTitle`,
+  `SpotifyTrackID` — `CandidateTrack` has no release date field, so that
+  leg of the card's suggested order was dropped). `DiscoverPool` always
+  runs all three workflows and never returns a top-level error: a workflow
+  abort (Spotify connection failure, or for Emerging a missing
+  `LASTFM_API_KEY`) is recorded on `CandidatePool.WorkflowErrors` while the
+  other two workflows' candidates are kept — a partial failure never
+  discards successful results, and a configuration failure never looks
+  like a silent empty pool. `POST /api/candidates/pool` exposes it
+  (`PoolHandler`) — no persistence (the pool is a transient, in-memory
+  discovery-run result, matching every other M4 workflow), no request
+  body, no frontend UI, no ranking, no editorial selection. 12 new unit
+  tests (`pool_test.go`) cover inclusion of all three workflows, merge/
+  counts, cross-workflow dedup and the priority rule, per-workflow partial
+  failure (Classic-only and Current-only), an Emerging per-seed failure
+  that continues the run, a missing-Last.fm-config abort, provider errors
+  surfacing their real message, deterministic ordering, no editorial
+  selection, empty results, and the HTTP handler round trip — all against
+  fakes, no real network calls.
+
+  The mandatory real end-to-end run partially succeeded and surfaced a
+  genuine, previously-undiscovered Spotify Development Mode constraint:
+  `GET /artists/{id}/albums` returned `429` with `Retry-After: ~4h30m`
+  (confirmed by inspecting the real response) for this app, evidently
+  after Card #36's own testing (several full-pool attempts against the
+  live API, alongside the cumulative testing across Cards 33-35) exhausted
+  a long-lived, per-app quota specific to that endpoint — not a per-request
+  burst limit. What *was* verified live and working: the existing Spotify
+  connection (`tintim_22`) and OAuth/token reuse, real `Search`-based
+  artist resolution, and real Last.fm `artist.getsimilar` calls (confirmed
+  genuine similarity matches, e.g. seed "Toxe" → "Rabit" at `Match: 1.0`).
+  Critically, `DiscoverPool`'s partial-failure design was verified correct
+  against this *real*, unplanned provider failure: every `ArtistAlbums`
+  429 was recorded as a non-aborting `Stage: "albums"` entry on the
+  relevant workflow's `Failures`, `WorkflowErrors` correctly stayed empty
+  (429 is not a connection/config abort condition), and the official
+  playlist's item count was confirmed unchanged (0 before and after) via
+  the live server. What could **not** be confirmed live this session,
+  because of the rate limit: an actual Spotify track surviving all the way
+  into a merged `CandidatePool.Candidates` entry. This should be re-run
+  once the rate limit clears (the response's own `Retry-After` puts that
+  at roughly 4.5 hours from the session's testing) — the orchestration
+  code itself needs no change; this is a live-provider quota state, not an
+  implementation gap.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.
