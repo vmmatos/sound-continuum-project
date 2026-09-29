@@ -65,6 +65,7 @@ func main() {
 	mux.HandleFunc("POST /api/discovery/classic", discoveryService.ClassicHandler)
 	mux.HandleFunc("POST /api/discovery/current", discoveryService.CurrentHandler)
 	mux.HandleFunc("POST /api/discovery/emerging", discoveryService.EmergingHandler)
+	mux.HandleFunc("POST /api/candidates/pool", discoveryService.PoolHandler)
 
 	addr := ":" + port
 	log.Printf("sound-continuum server listening on %s", addr)
