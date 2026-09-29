@@ -601,8 +601,12 @@
       `MergeProvenance` — same `type X string`+`const`+`Valid()`
       convention as `Type`/`Category`/`Status`/`Source`
 - [x] `CandidateTrack` gains `Provenance []DiscoveryProvenance` (additive,
-      alongside the untouched `DiscoveryReason` string and Card #38's
-      `Metadata`); `Validate()` rejects an invalid `Method`
+      alongside Card #38's `Metadata`); `Validate()` rejects an invalid
+      `Method`
+- [x] Removed the pre-existing free-text `DiscoveryReason` field (Card
+      #31) and its three per-workflow constants — fully subsumed by
+      `Provenance[].Method`, a typed enum carrying the same fact
+      structurally
 - [x] `candidate.Source` completely unchanged — still `SourceSpotify`
       only; no `Manual`/`Last.fm` value added, since no workflow
       constructs a candidate without Spotify identity

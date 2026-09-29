@@ -1223,3 +1223,32 @@ collapsing exact duplicates (same `Method` + same `Seed`/`DiscoveredArtist`
 identity, preferring a stable provider ID over name when available) to
 their first occurrence. `MergeProvenance` lives in package `candidate`,
 not `discovery`, matching every other provenance-shape decision above.
+
+---
+
+**Decision:** Remove `CandidateTrack.DiscoveryReason` (Card #31's original
+free-text field) rather than keep it alongside the new `Provenance` field.
+
+**Context:** `DiscoveryReason` was always exactly one of three fixed
+constant strings, one per discovery workflow (e.g. "Discovered from Past
+reference artist catalogue."). Card #39 introduced `Provenance[].Method`,
+a typed enum (`classic_reference_artist`/`current_reference_artist`/
+`lastfm_similar_artist`/`manual`) recording the identical fact for the
+identical set of workflows.
+
+**Reason:** Once `Method` existed, `DiscoveryReason` had no information
+`Method` didn't already carry, structurally and more usefully (a
+consumer can switch on `Method`, not string-match a sentence). No caller
+anywhere in the repo read `DiscoveryReason` for anything beyond that one
+fact. Keeping both would have been two representations of the same
+data with no independent reason to diverge — this project's own
+"prefer simple solutions" principle applies as much to a field going
+stale as to one added ahead of need.
+
+**Consequences:** `CandidateTrack`/`NewCandidateTrackParams` no longer
+have a `DiscoveryReason` field; the three `discoveryReason`/
+`currentDiscoveryReason`/`emergingDiscoveryReason` constants in
+`discovery.go` are gone. A future UI wanting a human-readable discovery
+explanation should render one from `Provenance[].Method` (and `Seed`/
+`DiscoveredArtist`/`LastFMMatch`) rather than reintroducing a parallel
+free-text field.

@@ -63,8 +63,7 @@ func TestNewCandidateTrackManualProvenanceNoFabricatedData(t *testing.T) {
 }
 
 func TestCandidateTrackNoProvenanceIsValid(t *testing.T) {
-	// Provenance is optional — not every caller sets it (matches
-	// DiscoveryReason's own optionality).
+	// Provenance is optional — not every caller sets it.
 	c, err := NewCandidateTrack(NewCandidateTrackParams{
 		ID:             "cand-1",
 		SpotifyTrackID: "spotify-track-1",

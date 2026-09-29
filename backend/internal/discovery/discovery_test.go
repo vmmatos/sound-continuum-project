@@ -485,9 +485,6 @@ func TestDiscoverClassicCandidateFieldsAreCorrect(t *testing.T) {
 	if c.Status != candidate.StatusDiscovered {
 		t.Errorf("expected Status=discovered, got %v", c.Status)
 	}
-	if c.DiscoveryReason != discoveryReason {
-		t.Errorf("expected DiscoveryReason %q, got %q", discoveryReason, c.DiscoveryReason)
-	}
 	if c.SpotifyTrackID != "t-1" || string(c.ID) != "t-1" {
 		t.Errorf("expected candidate ID/SpotifyTrackID to be the Spotify track ID, got %+v", c)
 	}
@@ -635,9 +632,6 @@ func TestDiscoverCurrentCandidateFieldsAreCorrect(t *testing.T) {
 	}
 	if c.Status != candidate.StatusDiscovered {
 		t.Errorf("expected Status=discovered, got %v", c.Status)
-	}
-	if c.DiscoveryReason != currentDiscoveryReason {
-		t.Errorf("expected DiscoveryReason %q, got %q", currentDiscoveryReason, c.DiscoveryReason)
 	}
 	if c.SpotifyTrackID != "t-1" || string(c.ID) != "t-1" {
 		t.Errorf("expected candidate ID/SpotifyTrackID to be the Spotify track ID, got %+v", c)
@@ -1193,9 +1187,6 @@ func TestDiscoverEmergingCandidateFieldsAreCorrect(t *testing.T) {
 	}
 	if c.Status != candidate.StatusDiscovered {
 		t.Errorf("expected Status=discovered, got %v", c.Status)
-	}
-	if c.DiscoveryReason != emergingDiscoveryReason {
-		t.Errorf("expected DiscoveryReason %q, got %q", emergingDiscoveryReason, c.DiscoveryReason)
 	}
 	if c.SpotifyTrackID != "t-1" || string(c.ID) != "t-1" {
 		t.Errorf("expected candidate ID/SpotifyTrackID to be the Spotify track ID, got %+v", c)

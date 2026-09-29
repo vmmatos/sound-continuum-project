@@ -105,8 +105,6 @@ type CandidateTrack struct {
 	TrackTitle  string
 	TrackArtist string
 
-	DiscoveryReason string
-
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
@@ -138,8 +136,7 @@ type NewCandidateTrackParams struct {
 	TrackTitle  string
 	TrackArtist string
 
-	DiscoveryReason string
-	Provenance      []DiscoveryProvenance
+	Provenance []DiscoveryProvenance
 }
 
 // NewCandidateTrack builds a CandidateTrack in its initial discovered
@@ -157,8 +154,7 @@ func NewCandidateTrack(p NewCandidateTrackParams) (CandidateTrack, error) {
 		TrackTitle:  p.TrackTitle,
 		TrackArtist: p.TrackArtist,
 
-		DiscoveryReason: p.DiscoveryReason,
-		Provenance:      p.Provenance,
+		Provenance: p.Provenance,
 
 		CreatedAt: now,
 		UpdatedAt: now,

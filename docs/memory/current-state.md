@@ -581,9 +581,15 @@
   name where one is actually resolved), and `LastFMMatch` (Last.fm's own
   similarity score, discovery metadata only, mirroring
   `discovery.ArtistProvenance.Match`). `CandidateTrack` gains one new
-  field, `Provenance []DiscoveryProvenance` — additive, alongside the
-  untouched `DiscoveryReason` string and Card #38's `Metadata` field;
-  `Validate()` rejects an entry with an invalid `Method`, nothing else.
+  field, `Provenance []DiscoveryProvenance` — additive alongside Card
+  #38's `Metadata` field; `Validate()` rejects an entry with an invalid
+  `Method`, nothing else. The pre-existing free-text `DiscoveryReason`
+  field (Card #31) was removed as part of this card, not kept alongside
+  `Provenance`: its three fixed per-workflow strings were fully subsumed
+  by `Provenance[].Method`, a typed enum carrying the identical fact
+  structurally, so keeping both would have been duplicated information
+  with no caller reading `DiscoveryReason` for anything `Method` doesn't
+  already answer.
   This is deliberately **not** the same concept as the existing `Source`
   field: `Source` answers "which provider supplied the track" (unchanged,
   still `SourceSpotify` only); `Provenance` answers "how did this

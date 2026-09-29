@@ -35,17 +35,6 @@ func DefaultConfig() Config {
 	return Config{MaxAlbumsPerArtist: 5, MaxTracksPerAlbum: 10, MaxTotalCandidates: 150}
 }
 
-// discoveryReason is recorded on every candidate DiscoverClassic produces.
-const discoveryReason = "Discovered from Past reference artist catalogue."
-
-// currentDiscoveryReason is recorded on every candidate DiscoverCurrent
-// produces.
-const currentDiscoveryReason = "Discovered from Present reference artist recent catalogue."
-
-// emergingDiscoveryReason is recorded on every candidate DiscoverEmerging
-// produces.
-const emergingDiscoveryReason = "Discovered via Last.fm similarity from an Emerging reference artist."
-
 // referenceArtistProvenance builds the single provenance entry
 // DiscoverClassic/DiscoverCurrent attach to every candidate: the reference
 // artist's own already-resolved Spotify ID as both Seed and the
@@ -331,15 +320,14 @@ artists:
 				seen[track.ID] = true
 
 				c, err := candidate.NewCandidateTrack(candidate.NewCandidateTrackParams{
-					ID:              candidate.ID(track.ID),
-					SpotifyTrackID:  track.ID,
-					Source:          candidate.SourceSpotify,
-					Category:        candidate.CategoryPast,
-					Type:            candidate.TypeClassic,
-					TrackTitle:      track.Name,
-					TrackArtist:     name,
-					DiscoveryReason: discoveryReason,
-					Provenance:      referenceArtistProvenance(candidate.DiscoveryMethodClassicReferenceArtist, artistID, name),
+					ID:             candidate.ID(track.ID),
+					SpotifyTrackID: track.ID,
+					Source:         candidate.SourceSpotify,
+					Category:       candidate.CategoryPast,
+					Type:           candidate.TypeClassic,
+					TrackTitle:     track.Name,
+					TrackArtist:    name,
+					Provenance:     referenceArtistProvenance(candidate.DiscoveryMethodClassicReferenceArtist, artistID, name),
 				})
 				if err != nil {
 					// Fabricated/invalid metadata never becomes a
@@ -421,15 +409,14 @@ artists:
 			seen[track.ID] = true
 
 			c, err := candidate.NewCandidateTrack(candidate.NewCandidateTrackParams{
-				ID:              candidate.ID(track.ID),
-				SpotifyTrackID:  track.ID,
-				Source:          candidate.SourceSpotify,
-				Category:        candidate.CategoryPresent,
-				Type:            candidate.TypeCurrent,
-				TrackTitle:      track.Name,
-				TrackArtist:     name,
-				DiscoveryReason: currentDiscoveryReason,
-				Provenance:      referenceArtistProvenance(candidate.DiscoveryMethodCurrentReferenceArtist, artistID, name),
+				ID:             candidate.ID(track.ID),
+				SpotifyTrackID: track.ID,
+				Source:         candidate.SourceSpotify,
+				Category:       candidate.CategoryPresent,
+				Type:           candidate.TypeCurrent,
+				TrackTitle:     track.Name,
+				TrackArtist:    name,
+				Provenance:     referenceArtistProvenance(candidate.DiscoveryMethodCurrentReferenceArtist, artistID, name),
 			})
 			if err != nil {
 				// Fabricated/invalid metadata never becomes a
@@ -622,14 +609,13 @@ seeds:
 
 				match := sim.Match
 				c, err := candidate.NewCandidateTrack(candidate.NewCandidateTrackParams{
-					ID:              candidate.ID(track.ID),
-					SpotifyTrackID:  track.ID,
-					Source:          candidate.SourceSpotify,
-					Category:        candidate.CategoryEmerging,
-					Type:            candidate.TypeDiscovery,
-					TrackTitle:      track.Name,
-					TrackArtist:     name,
-					DiscoveryReason: emergingDiscoveryReason,
+					ID:             candidate.ID(track.ID),
+					SpotifyTrackID: track.ID,
+					Source:         candidate.SourceSpotify,
+					Category:       candidate.CategoryEmerging,
+					Type:           candidate.TypeDiscovery,
+					TrackTitle:     track.Name,
+					TrackArtist:    name,
 					Provenance: []candidate.DiscoveryProvenance{{
 						Method:   candidate.DiscoveryMethodLastFMSimilarArtist,
 						Provider: candidate.ProvenanceProviderLastFM,
