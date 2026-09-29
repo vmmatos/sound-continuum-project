@@ -24,8 +24,7 @@ type EnrichmentResult struct {
 	EnrichedCandidates []candidate.CandidateTrack
 	Failures           []EnrichmentFailure
 
-	TotalCandidates int
-	EnrichedCount   int
+	EnrichedCount int
 	// SkippedCount counts candidates with no Spotify track ID to enrich
 	// from (e.g. a future Manual-source candidate) — no Spotify request is
 	// attempted for these, and no fake metadata is generated.
@@ -49,7 +48,7 @@ type EnrichmentResult struct {
 // Metadata left nil rather than a fabricated/partial value, and the run
 // continues to the next candidate.
 func (s *Service) EnrichCandidateMetadata(ctx context.Context, candidates []candidate.CandidateTrack) (EnrichmentResult, error) {
-	result := EnrichmentResult{TotalCandidates: len(candidates)}
+	var result EnrichmentResult
 
 	for _, c := range candidates {
 		if c.SpotifyTrackID == "" {
@@ -145,15 +144,11 @@ func enrichmentFailureReason(err error) string {
 
 // writeEnrichmentError maps EnrichCandidateMetadata's top-level error (a
 // Spotify connection failure — every other failure is recorded on
-// EnrichmentResult instead) to an HTTP status, matching
-// writeRecentTrackFilterError's shape for the same failure kinds.
+// EnrichmentResult instead) to an HTTP status via the shared
+// writeConnectionError.
 func writeEnrichmentError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, spotify.ErrNotConnected):
-		http.Error(w, "Spotify is not connected", http.StatusServiceUnavailable)
-	case errors.Is(err, spotify.ErrInvalidGrant):
-		http.Error(w, "Spotify authorization required", http.StatusUnauthorized)
-	default:
-		http.Error(w, "candidate metadata enrichment failed", http.StatusBadGateway)
+	if writeConnectionError(w, err) {
+		return
 	}
+	http.Error(w, "candidate metadata enrichment failed", http.StatusBadGateway)
 }

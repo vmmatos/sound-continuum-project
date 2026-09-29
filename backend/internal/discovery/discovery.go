@@ -724,6 +724,23 @@ func isConnectionError(err error) bool {
 	return errors.Is(err, spotify.ErrNotConnected) || errors.Is(err, spotify.ErrInvalidGrant)
 }
 
+// writeConnectionError writes the response for a Spotify connection failure
+// and reports whether err was one — shared by every writeXError in this
+// package (discovery.go/recent_track_filter.go/metadata_enrichment.go),
+// since a broken Spotify connection is surfaced identically everywhere a
+// caller can hit it.
+func writeConnectionError(w http.ResponseWriter, err error) bool {
+	switch {
+	case errors.Is(err, spotify.ErrNotConnected):
+		http.Error(w, "Spotify is not connected", http.StatusServiceUnavailable)
+	case errors.Is(err, spotify.ErrInvalidGrant):
+		http.Error(w, "Spotify authorization required", http.StatusUnauthorized)
+	default:
+		return false
+	}
+	return true
+}
+
 // isLastFMConfigError reports whether err means Last.fm has no API key
 // configured — the only Last.fm failure that aborts an entire
 // DiscoverEmerging run, so a missing LASTFM_API_KEY never looks like a
@@ -784,11 +801,10 @@ func (s *Service) EmergingHandler(w http.ResponseWriter, r *http.Request) {
 // equivalent of spotify's own writeSpotifyError rather than a shared
 // export.
 func writeDiscoveryError(w http.ResponseWriter, err error) {
+	if writeConnectionError(w, err) {
+		return
+	}
 	switch {
-	case errors.Is(err, spotify.ErrNotConnected):
-		http.Error(w, "Spotify is not connected", http.StatusServiceUnavailable)
-	case errors.Is(err, spotify.ErrInvalidGrant):
-		http.Error(w, "Spotify authorization required", http.StatusUnauthorized)
 	case isLastFMConfigError(err):
 		http.Error(w, "Last.fm is not configured", http.StatusServiceUnavailable)
 	default:
