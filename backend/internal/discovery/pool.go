@@ -100,16 +100,10 @@ func (s *Service) DiscoverPool(ctx context.Context) CandidatePool {
 		pool.EmergingResult = r
 	}
 
-	pool.mergeCandidates()
-	return pool
-}
-
-// mergeCandidates combines the three embedded Results' candidates into
-// Candidates, deduplicating by Spotify track ID via candidateTypePriority
-// and filling in the pool's counts. Each workflow already deduplicates
-// within its own run; this only handles the same track appearing across
-// more than one workflow.
-func (pool *CandidatePool) mergeCandidates() {
+	// Merge the three embedded Results' candidates, deduplicating by
+	// Spotify track ID via candidateTypePriority. Each workflow already
+	// deduplicates within its own run; this only handles the same track
+	// appearing across more than one workflow.
 	var all []candidate.CandidateTrack
 	all = append(all, pool.ClassicResult.Candidates...)
 	all = append(all, pool.CurrentResult.Candidates...)
@@ -160,6 +154,8 @@ func (pool *CandidatePool) mergeCandidates() {
 			pool.EmergingCandidates++
 		}
 	}
+
+	return pool
 }
 
 // PoolHandler exposes POST /api/candidates/pool. Runs DiscoverPool once per

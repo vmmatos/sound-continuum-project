@@ -161,6 +161,10 @@ func TestDiscoverPoolClassicPartialFailureKeepsCurrentAndEmerging(t *testing.T) 
 	if len(pool.WorkflowErrors) != 1 || pool.WorkflowErrors[0].Workflow != "classic" {
 		t.Fatalf("WorkflowErrors = %+v, want exactly one classic entry", pool.WorkflowErrors)
 	}
+	if pool.WorkflowErrors[0].Err != spotify.ErrNotConnected.Error() {
+		t.Errorf("WorkflowErrors[0].Err = %q, want the real underlying error message %q",
+			pool.WorkflowErrors[0].Err, spotify.ErrNotConnected.Error())
+	}
 	if pool.ClassicResult.ArtistsInspected != 0 || len(pool.ClassicResult.Candidates) != 0 {
 		t.Errorf("ClassicResult = %+v, want zero value on abort", pool.ClassicResult)
 	}
@@ -239,22 +243,6 @@ func TestDiscoverPoolMissingLastfmConfigSurfaced(t *testing.T) {
 	if len(pool.ClassicResult.Candidates) != 1 || len(pool.CurrentResult.Candidates) != 1 {
 		t.Errorf("expected Classic and Current to still succeed, got Classic=%+v Current=%+v",
 			pool.ClassicResult, pool.CurrentResult)
-	}
-}
-
-func TestDiscoverPoolProviderErrorsNotSwallowed(t *testing.T) {
-	f, lf := fullPoolFixture()
-	f.searchErr = map[string]error{"David Bowie": spotify.ErrNotConnected}
-	svc := newTestSvcPool(f, lf, testConfig(), testCurrentConfig(), testEmergingConfig())
-
-	pool := svc.DiscoverPool(context.Background())
-
-	if len(pool.WorkflowErrors) != 1 {
-		t.Fatalf("WorkflowErrors = %+v, want exactly one entry", pool.WorkflowErrors)
-	}
-	if pool.WorkflowErrors[0].Err != spotify.ErrNotConnected.Error() {
-		t.Errorf("WorkflowErrors[0].Err = %q, want the real underlying error message %q",
-			pool.WorkflowErrors[0].Err, spotify.ErrNotConnected.Error())
 	}
 }
 
