@@ -947,6 +947,10 @@ interface/package/dependency, is the smallest change that makes an exact
 **Consequences:** This is a one-off exception, not a new repo-wide
 pattern — a future card needing the same guarantee elsewhere should add
 its own local `now` field the same way, not generalize this one.
+`FilterRecentTracks` calls `s.now()` directly with no nil-guard: every
+path that constructs a `Service` reaching `FilterRecentTracks`
+(`NewService` in production, and every test helper that exercises it)
+sets `now`, so a defensive fallback would guard a case that cannot occur.
 
 ---
 
@@ -973,10 +977,12 @@ Classic/Current/Emerging discovery.
 ---
 
 **Decision:** Read `RECENT_TRACK_LOOKBACK_DAYS` directly via `os.Getenv`/
-`strconv.Atoi` in `cmd/server/main.go` (falling back to the default of 28
-on empty/invalid input) and pass it into `discovery.RecentTrackFilterConfig`,
-rather than following `discovery.Config`/`CurrentConfig`/`EmergingConfig`'s
-existing "constructor-injected, no env var" convention.
+`strconv.Atoi` in `cmd/server/main.go` (falling back to
+`discovery.DefaultRecentTrackLookbackDays`, 28, on empty/invalid input)
+and pass it into `discovery.NewService` as a plain `int`, rather than
+following `discovery.Config`/`CurrentConfig`/`EmergingConfig`'s existing
+"constructor-injected, no env var" convention — and without wrapping it
+in its own config struct, since it's a single field with a single caller.
 
 **Context:** Card #37 explicitly names `RECENT_TRACK_LOOKBACK_DAYS` as a
 configuration value and requires it be "configurable through the existing
@@ -997,9 +1003,9 @@ with no env var involved), and the one genuinely environment-tunable
 value follows the same `os.Getenv` pattern as every other env var in this
 codebase.
 
-**Consequences:** `RecentTrackFilterConfig` follows the existing
-`Default*Config()` shape exactly. An empty or unparseable
-`RECENT_TRACK_LOOKBACK_DAYS` falls back to the default silently logged as
+**Consequences:** `discovery.Service.recentTrackLookbackDays` is a plain
+unexported `int`, set once by `NewService`. An empty or unparseable
+`RECENT_TRACK_LOOKBACK_DAYS` falls back to the default, silently logged as
 a warning — matching this codebase's existing no-hard-validation style for
 `PORT`/`SQLITE_PATH`, not a new fail-fast startup check.
 

@@ -541,8 +541,8 @@
 ## Done (Card #37 — Avoid Recently Used Tracks)
 
 - [x] `backend/internal/discovery/recent_track_filter.go` — new file,
-      `Service.FilterRecentTracks`, `RecentTrackFilterConfig`,
-      `DefaultRecentTrackFilterConfig` (28-day default),
+      `Service.FilterRecentTracks`, `DefaultRecentTrackLookbackDays`
+      (28-day default, plain `int` — no single-field config struct),
       `RecentTrackFilterResult`, `RecentlyUsedCandidate`, `ReasonRecentlyUsed`
 - [x] Walks the full official playlist via `spotify.Service.PlaylistItems`
       (existing, already paginating) with a dedicated pagination loop —

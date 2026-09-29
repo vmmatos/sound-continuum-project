@@ -464,8 +464,10 @@
   `RecentlyUsedCandidates` by comparing each candidate's `SpotifyTrackID`
   against that index. A track is recently used when its `added_at` is
   `>= now - LookbackDays` (documented `>=` boundary, unit-tested exactly
-  at the edge). `RecentTrackFilterConfig{LookbackDays}` defaults to 28
-  (`DefaultRecentTrackFilterConfig`) and is overridable via
+  at the edge). The lookback (`discovery.DefaultRecentTrackLookbackDays`,
+  28) is a plain `int` on `Service`, not its own config struct — a
+  single-field, single-caller config type would have been unnecessary
+  machinery — and is overridable via
   `RECENT_TRACK_LOOKBACK_DAYS` in `cmd/server/main.go` — the only backend
   numeric config read from an env var today, following the existing
   `PORT`/`SQLITE_PATH` precedent rather than the discovery package's

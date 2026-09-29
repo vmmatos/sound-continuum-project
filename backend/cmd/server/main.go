@@ -43,13 +43,13 @@ func main() {
 
 	lastfmClient := lastfm.NewClient(os.Getenv("LASTFM_API_KEY"), os.Getenv("LASTFM_API_URL"))
 
-	recentTrackCfg := discovery.DefaultRecentTrackFilterConfig()
+	recentTrackLookbackDays := discovery.DefaultRecentTrackLookbackDays
 	if v := os.Getenv("RECENT_TRACK_LOOKBACK_DAYS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			recentTrackCfg.LookbackDays = n
+			recentTrackLookbackDays = n
 		} else {
 			log.Printf("ignoring invalid RECENT_TRACK_LOOKBACK_DAYS=%q, using default of %d days",
-				v, recentTrackCfg.LookbackDays)
+				v, recentTrackLookbackDays)
 		}
 	}
 
@@ -58,7 +58,7 @@ func main() {
 		discovery.DefaultConfig(),
 		discovery.DefaultCurrentConfig(),
 		discovery.DefaultEmergingConfig(),
-		recentTrackCfg,
+		recentTrackLookbackDays,
 	)
 
 	mux := http.NewServeMux()

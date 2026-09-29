@@ -18,12 +18,8 @@ var fixedNow = time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 
 const testPlaylistID = "official-playlist-id"
 
-func newTestSvcRecentTrackFilter(f *fakeCatalogue, cfg RecentTrackFilterConfig) *Service {
-	return &Service{spotify: f, recentTrackCfg: cfg, now: func() time.Time { return fixedNow }}
-}
-
-func testRecentTrackFilterConfig() RecentTrackFilterConfig {
-	return RecentTrackFilterConfig{LookbackDays: 28}
+func newTestSvcRecentTrackFilter(f *fakeCatalogue, lookbackDays int) *Service {
+	return &Service{spotify: f, recentTrackLookbackDays: lookbackDays, now: func() time.Time { return fixedNow }}
 }
 
 func newRecentTestCandidate(t *testing.T, id string, typ candidate.Type, cat candidate.Category) candidate.CandidateTrack {
@@ -51,7 +47,7 @@ func rfc3339(t time.Time) string { return t.Format(time.RFC3339) }
 
 func TestFilterRecentTracksEmptyPlaylist(t *testing.T) {
 	f := &fakeCatalogue{officialPlaylist: &spotify.OfficialPlaylist{SpotifyPlaylistID: testPlaylistID}}
-	svc := newTestSvcRecentTrackFilter(f, testRecentTrackFilterConfig())
+	svc := newTestSvcRecentTrackFilter(f, 28)
 	c := newRecentTestCandidate(t, "track-1", candidate.TypeClassic, candidate.CategoryPast)
 
 	result, err := svc.FilterRecentTracks(context.Background(), []candidate.CandidateTrack{c})
@@ -73,7 +69,7 @@ func TestFilterRecentTracksRecentlyUsedExcluded(t *testing.T) {
 			testPlaylistID: {trackItem("track-1", rfc3339(fixedNow.AddDate(0, 0, -5)))},
 		},
 	}
-	svc := newTestSvcRecentTrackFilter(f, testRecentTrackFilterConfig())
+	svc := newTestSvcRecentTrackFilter(f, 28)
 	c := newRecentTestCandidate(t, "track-1", candidate.TypeClassic, candidate.CategoryPast)
 
 	result, err := svc.FilterRecentTracks(context.Background(), []candidate.CandidateTrack{c})
@@ -105,7 +101,7 @@ func TestFilterRecentTracksOlderTrackStaysEligible(t *testing.T) {
 			testPlaylistID: {trackItem("track-1", rfc3339(fixedNow.AddDate(0, 0, -29)))},
 		},
 	}
-	svc := newTestSvcRecentTrackFilter(f, testRecentTrackFilterConfig())
+	svc := newTestSvcRecentTrackFilter(f, 28)
 	c := newRecentTestCandidate(t, "track-1", candidate.TypeClassic, candidate.CategoryPast)
 
 	result, err := svc.FilterRecentTracks(context.Background(), []candidate.CandidateTrack{c})
@@ -125,7 +121,7 @@ func TestFilterRecentTracksExactBoundaryIsRecentlyUsed(t *testing.T) {
 			testPlaylistID: {trackItem("track-1", rfc3339(fixedNow.AddDate(0, 0, -28)))},
 		},
 	}
-	svc := newTestSvcRecentTrackFilter(f, testRecentTrackFilterConfig())
+	svc := newTestSvcRecentTrackFilter(f, 28)
 	c := newRecentTestCandidate(t, "track-1", candidate.TypeClassic, candidate.CategoryPast)
 
 	result, err := svc.FilterRecentTracks(context.Background(), []candidate.CandidateTrack{c})
@@ -147,7 +143,7 @@ func TestFilterRecentTracksDuplicatePlaylistEntriesKeepLatest(t *testing.T) {
 			},
 		},
 	}
-	svc := newTestSvcRecentTrackFilter(f, testRecentTrackFilterConfig())
+	svc := newTestSvcRecentTrackFilter(f, 28)
 	c := newRecentTestCandidate(t, "track-1", candidate.TypeClassic, candidate.CategoryPast)
 
 	result, err := svc.FilterRecentTracks(context.Background(), []candidate.CandidateTrack{c})
@@ -179,7 +175,7 @@ func TestFilterRecentTracksPagination(t *testing.T) {
 		officialPlaylist: &spotify.OfficialPlaylist{SpotifyPlaylistID: testPlaylistID},
 		playlistItems:    map[string][]spotify.PlaylistItem{testPlaylistID: items},
 	}
-	svc := newTestSvcRecentTrackFilter(f, testRecentTrackFilterConfig())
+	svc := newTestSvcRecentTrackFilter(f, 28)
 	c := newRecentTestCandidate(t, "track-page-2", candidate.TypeClassic, candidate.CategoryPast)
 
 	result, err := svc.FilterRecentTracks(context.Background(), []candidate.CandidateTrack{c})
@@ -204,7 +200,7 @@ func TestFilterRecentTracksEpisodeItemsIgnored(t *testing.T) {
 			}},
 		},
 	}
-	svc := newTestSvcRecentTrackFilter(f, testRecentTrackFilterConfig())
+	svc := newTestSvcRecentTrackFilter(f, 28)
 	c := newRecentTestCandidate(t, "track-1", candidate.TypeClassic, candidate.CategoryPast)
 
 	result, err := svc.FilterRecentTracks(context.Background(), []candidate.CandidateTrack{c})
@@ -221,7 +217,7 @@ func TestFilterRecentTracksUnavailableItemsIgnored(t *testing.T) {
 		officialPlaylist: &spotify.OfficialPlaylist{SpotifyPlaylistID: testPlaylistID},
 		playlistItems:    map[string][]spotify.PlaylistItem{testPlaylistID: {{ItemType: "unavailable"}}},
 	}
-	svc := newTestSvcRecentTrackFilter(f, testRecentTrackFilterConfig())
+	svc := newTestSvcRecentTrackFilter(f, 28)
 	c := newRecentTestCandidate(t, "track-1", candidate.TypeClassic, candidate.CategoryPast)
 
 	result, err := svc.FilterRecentTracks(context.Background(), []candidate.CandidateTrack{c})
@@ -240,7 +236,7 @@ func TestFilterRecentTracksCandidateWithNoSpotifyIDStaysEligible(t *testing.T) {
 			testPlaylistID: {trackItem("track-1", rfc3339(fixedNow.AddDate(0, 0, -1)))},
 		},
 	}
-	svc := newTestSvcRecentTrackFilter(f, testRecentTrackFilterConfig())
+	svc := newTestSvcRecentTrackFilter(f, 28)
 	// A candidate with no Spotify track ID can never match a playlist
 	// entry. Constructed directly (not via NewCandidateTrack, which
 	// requires a non-empty SpotifyTrackID for the only Source this repo
@@ -276,7 +272,7 @@ func TestFilterRecentTracksConsistentAcrossTypesAndCategories(t *testing.T) {
 			},
 		},
 	}
-	svc := newTestSvcRecentTrackFilter(f, testRecentTrackFilterConfig())
+	svc := newTestSvcRecentTrackFilter(f, 28)
 	candidates := []candidate.CandidateTrack{
 		newRecentTestCandidate(t, "track-classic", candidate.TypeClassic, candidate.CategoryPast),
 		newRecentTestCandidate(t, "track-current", candidate.TypeCurrent, candidate.CategoryPresent),
@@ -297,7 +293,7 @@ func TestFilterRecentTracksSpotifyFailureReturnsError(t *testing.T) {
 		officialPlaylist: &spotify.OfficialPlaylist{SpotifyPlaylistID: testPlaylistID},
 		playlistItemsErr: map[string]error{testPlaylistID: spotify.ErrAPIFailure},
 	}
-	svc := newTestSvcRecentTrackFilter(f, testRecentTrackFilterConfig())
+	svc := newTestSvcRecentTrackFilter(f, 28)
 	c := newRecentTestCandidate(t, "track-1", candidate.TypeClassic, candidate.CategoryPast)
 
 	result, err := svc.FilterRecentTracks(context.Background(), []candidate.CandidateTrack{c})
@@ -308,7 +304,7 @@ func TestFilterRecentTracksSpotifyFailureReturnsError(t *testing.T) {
 
 func TestFilterRecentTracksOfficialPlaylistNotConfiguredReturnsError(t *testing.T) {
 	f := &fakeCatalogue{} // no official playlist persisted yet
-	svc := newTestSvcRecentTrackFilter(f, testRecentTrackFilterConfig())
+	svc := newTestSvcRecentTrackFilter(f, 28)
 	c := newRecentTestCandidate(t, "track-1", candidate.TypeClassic, candidate.CategoryPast)
 
 	_, err := svc.FilterRecentTracks(context.Background(), []candidate.CandidateTrack{c})
@@ -327,7 +323,7 @@ func TestFilterRecentTracksAllRecentlyUsed(t *testing.T) {
 			},
 		},
 	}
-	svc := newTestSvcRecentTrackFilter(f, testRecentTrackFilterConfig())
+	svc := newTestSvcRecentTrackFilter(f, 28)
 	candidates := []candidate.CandidateTrack{
 		newRecentTestCandidate(t, "track-1", candidate.TypeClassic, candidate.CategoryPast),
 		newRecentTestCandidate(t, "track-2", candidate.TypeCurrent, candidate.CategoryPresent),
@@ -352,7 +348,7 @@ func TestFilterRecentTracksNoMatches(t *testing.T) {
 			testPlaylistID: {trackItem("unrelated-track", rfc3339(fixedNow.AddDate(0, 0, -1)))},
 		},
 	}
-	svc := newTestSvcRecentTrackFilter(f, testRecentTrackFilterConfig())
+	svc := newTestSvcRecentTrackFilter(f, 28)
 	c := newRecentTestCandidate(t, "track-1", candidate.TypeClassic, candidate.CategoryPast)
 
 	result, err := svc.FilterRecentTracks(context.Background(), []candidate.CandidateTrack{c})

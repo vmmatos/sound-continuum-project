@@ -10,23 +10,14 @@ import (
 	"github.com/vmmatos/sound-continuum-project/internal/spotify"
 )
 
-// RecentTrackFilterConfig bounds how far back the Recent Track Filter looks
-// for editorial repetition. Constructor-injected, but — unlike Config/
-// CurrentConfig/EmergingConfig — its value is meant to come from the
-// RECENT_TRACK_LOOKBACK_DAYS environment variable at startup (see
-// cmd/server/main.go), following this repo's PORT/SQLITE_PATH precedent
-// instead of the discovery package's own no-env-var convention: this is a
-// single, curator-tunable editorial knob, not an internal crawl bound.
-type RecentTrackFilterConfig struct {
-	LookbackDays int
-}
-
-// DefaultRecentTrackFilterConfig is Card #37's documented default: a track
+// DefaultRecentTrackLookbackDays is Card #37's documented default: a track
 // is recently used if it was added to the official playlist within the
-// last 28 days.
-func DefaultRecentTrackFilterConfig() RecentTrackFilterConfig {
-	return RecentTrackFilterConfig{LookbackDays: 28}
-}
+// last 28 days. Overridable via RECENT_TRACK_LOOKBACK_DAYS (see
+// cmd/server/main.go), following this repo's PORT/SQLITE_PATH precedent —
+// unlike Config/CurrentConfig/EmergingConfig, this is a single,
+// curator-tunable editorial knob, not an internal crawl bound, so it's a
+// plain int rather than its own config struct.
+const DefaultRecentTrackLookbackDays = 28
 
 // ReasonRecentlyUsed is the only exclusion reason FilterRecentTracks
 // produces — this is a single-purpose filter, not a general rule engine.
@@ -91,15 +82,11 @@ func (s *Service) FilterRecentTracks(ctx context.Context, candidates []candidate
 		return RecentTrackFilterResult{}, err
 	}
 
-	now := s.now
-	if now == nil {
-		now = time.Now
-	}
-	cutoff := now().AddDate(0, 0, -s.recentTrackCfg.LookbackDays)
+	cutoff := s.now().AddDate(0, 0, -s.recentTrackLookbackDays)
 
 	result := RecentTrackFilterResult{
 		TotalCandidates:         len(candidates),
-		LookbackDays:            s.recentTrackCfg.LookbackDays,
+		LookbackDays:            s.recentTrackLookbackDays,
 		PlaylistTracksInspected: len(index),
 	}
 	for _, c := range candidates {

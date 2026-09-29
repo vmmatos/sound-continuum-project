@@ -165,12 +165,12 @@ type similarArtistFinder interface {
 // data via a Spotify catalogue, and (for DiscoverEmerging) a Last.fm
 // discovery signal.
 type Service struct {
-	spotify        spotifyCatalogue
-	lastfm         similarArtistFinder
-	classicCfg     Config
-	currentCfg     CurrentConfig
-	emergingCfg    EmergingConfig
-	recentTrackCfg RecentTrackFilterConfig
+	spotify                 spotifyCatalogue
+	lastfm                  similarArtistFinder
+	classicCfg              Config
+	currentCfg              CurrentConfig
+	emergingCfg             EmergingConfig
+	recentTrackLookbackDays int
 	// now is the clock FilterRecentTracks uses, overridden directly by
 	// same-package tests for deterministic boundary testing — the one
 	// place in this repo that needs a clock seam (see decisions.md).
@@ -181,15 +181,15 @@ type Service struct {
 // NewService wires a discovery Service to an existing spotify.Service and
 // lastfm.Client — no second Spotify client and no generic provider
 // abstraction is created.
-func NewService(spotifyService *spotify.Service, lastfmClient *lastfm.Client, classicCfg Config, currentCfg CurrentConfig, emergingCfg EmergingConfig, recentTrackCfg RecentTrackFilterConfig) *Service {
+func NewService(spotifyService *spotify.Service, lastfmClient *lastfm.Client, classicCfg Config, currentCfg CurrentConfig, emergingCfg EmergingConfig, recentTrackLookbackDays int) *Service {
 	return &Service{
-		spotify:        spotifyService,
-		lastfm:         lastfmClient,
-		classicCfg:     classicCfg,
-		currentCfg:     currentCfg,
-		emergingCfg:    emergingCfg,
-		recentTrackCfg: recentTrackCfg,
-		now:            time.Now,
+		spotify:                 spotifyService,
+		lastfm:                  lastfmClient,
+		classicCfg:              classicCfg,
+		currentCfg:              currentCfg,
+		emergingCfg:             emergingCfg,
+		recentTrackLookbackDays: recentTrackLookbackDays,
+		now:                     time.Now,
 	}
 }
 
