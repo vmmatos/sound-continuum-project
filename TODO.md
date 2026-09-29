@@ -650,6 +650,46 @@
 - [x] No persistence, no new endpoint, no ranking/scoring, no generic
       provenance framework, no event sourcing, no playlist modification
 
+## Done (Card #40 — Define Candidate Scoring Model)
+
+- [x] `backend/internal/scoring` — new package, M5's first card
+- [x] `scoring.Factors` — six normalized `[0,1]` values (Fit, Freshness,
+      DiscoveryBonus, Diversity, PlaylistFit, RepetitionPenalty), each
+      `*float64` (nil = not yet available); no factor algorithm
+      implemented — every value stays abstract for later M5 cards
+- [x] `scoring.Weights` + `DefaultWeights()` — five positive weights
+      summing to 1.0 (Fit 0.35, PlaylistFit 0.25, DiscoveryBonus 0.15,
+      Diversity 0.15, Freshness 0.10) plus an independent
+      `RepetitionWeight` (0.30), justified against the manifesto in
+      `docs/scoring-model.md`
+- [x] `scoring.Calculate` — deterministic combination formula: missing
+      positive factors excluded from a weight-renormalized average (never
+      substituted as 0); repetition applied as a multiplicative discount
+      (`BaseScore * (1 - penalty*weight)`), keeping `FinalScore` naturally
+      bounded in `[0,1]` with no clamping
+- [x] `scoring.CandidateScore` — exposes every factor, the weights,
+      `AvailableWeight`, and `FinalScore` independently (explainability);
+      `ModelVersion = "v1"` label, no history/persistence
+- [x] No `CandidateTrack` field changes, no ranking, no sorting, no
+      selection, no `Status` mutation, no playlist mutation, no
+      popularity-based scoring, no ML
+- [x] Not wired into `discovery`/`main.go` — no production code
+      constructs real `Factors` yet; `Calculate` is exercised only by its
+      own tests, since every per-factor algorithm is future M5 work
+- [x] 16 new unit tests (`scoring/score_test.go`): weight/factor range
+      validation, weight-sum rule + float tolerance boundary, every
+      missing-factor combination (incl. zero-available → nil
+      `FinalScore`), multiplicative repetition combination (incl. bounded-
+      at-zero), error propagation, explainability, determinism
+- [x] `go build ./...`, `go vet ./...`, `go test ./...` verified clean
+- [x] `docs/scoring-model.md` — new dedicated doc (factor definitions,
+      Fit-vs-PlaylistFit and DiscoveryBonus-vs-Freshness distinctions,
+      Repetition-Penalty-vs-Recent-Track-Filter distinction, weights
+      table + reasoning, formula + worked example, missing-factor
+      strategy, explainability, "what this is not")
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+
 ## In progress
 
 - Nothing currently in progress.
@@ -660,7 +700,9 @@
       current, emerging discovery, the Candidate Pool, the Recent Track
       Filter, Metadata Enrichment, and discovery provenance are all done,
       see Cards 33-39 above); candidate persistence remains open for M5+
-- M5: Musical ranking & bridges
+- M5: Musical ranking & bridges — Candidate Scoring Model defined (Card
+      #40); individual factor algorithms, ranking, and editorial
+      selection remain open
 - M6: Curator experience
 - M7: Weekly editorial workflow
 - M8: Feedback & evolution

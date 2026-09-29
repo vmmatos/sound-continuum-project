@@ -662,6 +662,45 @@
   filtering, enrichment, and provenance all exist; persistence and musical
   bridge logic remain open for M5+.
 
+- M5 (Musical Ranking & Bridges) begins with the Candidate Scoring Model
+  (Card #40, see [`decisions.md`](decisions.md) and the dedicated
+  [`docs/scoring-model.md`](../scoring-model.md)) — a new package,
+  `backend/internal/scoring`, defining the conceptual structure of a Sound
+  Continuum candidate score without implementing any individual factor's
+  algorithm. `scoring.Factors` holds six normalized `[0,1]` values (Fit,
+  Freshness, DiscoveryBonus, Diversity, PlaylistFit, RepetitionPenalty)
+  each as `*float64` — nil meaning "not yet available," reusing the
+  nil-means-unavailable convention already established by
+  `candidate.DiscoveryProvenance.LastFMMatch`. `scoring.Weights` (five
+  positive weights summing to 1.0, plus an independent
+  `RepetitionWeight`) is constructor-supplied via `DefaultWeights()`, not
+  scattered as inline constants — Fit 0.35, PlaylistFit 0.25,
+  DiscoveryBonus 0.15, Diversity 0.15, Freshness 0.10, RepetitionWeight
+  0.30, all justified against the manifesto in
+  `docs/scoring-model.md`. `scoring.Calculate` combines them: missing
+  positive factors are excluded from a weight-renormalized average (never
+  substituted as 0, so incomplete data never reads as a negative signal),
+  and the repetition penalty applies as a multiplicative discount
+  (`FinalScore = BaseScore * (1 - penalty*weight)`) rather than a
+  subtraction — this keeps `FinalScore` naturally bounded in `[0,1]` with
+  no clamping, since a subtractive penalty could otherwise drive an
+  already-low base score negative. `scoring.CandidateScore` exposes every
+  factor, the weights, `AvailableWeight`, and `FinalScore` as independent
+  fields — the explainability mechanism the card requires, no opaque
+  single number. `ModelVersion = "v1"` is a plain string label, no
+  history or persistence. This card does not modify `CandidateTrack`, does
+  not rank or sort a candidate pool, does not select or reject candidates,
+  and is not wired into `discovery`/`main.go` — no production code
+  constructs real factor values yet, since every per-factor algorithm is
+  future M5 work; `Calculate` is exercised only by its own unit tests.
+  16 new unit tests (`scoring/score_test.go`) cover weight/factor range
+  validation, the weight-sum rule (including its float tolerance
+  boundary), every missing-factor combination (including the "zero
+  positive factors available" edge case, which yields a nil
+  `FinalScore`), the multiplicative repetition combination (including its
+  bounded-at-zero edge case), error propagation on invalid input,
+  explainability, and determinism.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

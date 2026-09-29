@@ -1252,3 +1252,84 @@ have a `DiscoveryReason` field; the three `discoveryReason`/
 explanation should render one from `Provenance[].Method` (and `Seed`/
 `DiscoveredArtist`/`LastFMMatch`) rather than reintroducing a parallel
 free-text field.
+
+---
+
+**Decision:** Introduce `backend/internal/scoring` as a new, flat,
+feature-named package (sibling to `candidate`/`discovery`/`spotify`/
+`lastfm`) for the Candidate Scoring Model (Card #40, M5's first card),
+rather than adding scoring types to package `candidate`.
+
+**Context:** Card #40 needs a `CandidateScore` domain object and its
+combination formula, referencing a candidate only by `candidate.ID`. This
+is a much lighter dependency than `discovery`'s reason for being split
+from `candidate` (needing both `spotify` and `candidate`), so the same
+justification doesn't directly transfer.
+
+**Reason:** The real distinction isn't dependency count, it's what kind of
+concept each package owns. `candidate`'s existing `metadata.go`/
+`provenance.go` (Cards #38/#39) describe *what a candidate is* — its own
+identity and enrichment data. Scoring is not that: it's an *evaluation
+performed on* a candidate, a downstream pipeline concern analogous to
+`discovery` (which *produces* candidates), not to `metadata`/`provenance`
+(which *describe* candidates already produced). M5 is also its own named
+roadmap milestone, matching this repo's existing one-feature-named-
+package-per-concern convention. Practically, the actual per-factor
+algorithms future M5 cards will implement (Freshness needs playlist/
+edition history, Repetition Penalty needs repetition history, etc.) will
+very likely need `discovery`/`spotify`/`lastfm` — landing the model inside
+`candidate` now would force an awkward later move out of the foundational
+domain package once those dependencies appear.
+
+**Consequences:** `backend/internal/scoring/score.go` defines `Factors`,
+`Weights`, `DefaultWeights`, `ModelVersion`, `CandidateScore`, and
+`Calculate`; `errors.go` follows the existing `candidate/errors.go`
+sentinel-error pattern. `scoring` depends only on `candidate` (for
+`candidate.ID`), not on `discovery`/`spotify`/`lastfm`. `CandidateTrack`
+itself is completely unchanged — no field was added to it, per the card's
+explicit instruction to prefer a separate domain object. No wiring into
+`discovery`/`main.go` exists yet: no production code constructs real
+`Factors` values, since every per-factor algorithm is still future M5
+work; `Calculate` is exercised only by its own tests. See
+[`docs/scoring-model.md`](../scoring-model.md) for the full model.
+
+---
+
+**Decision:** Combine the repetition penalty into `scoring.Calculate` as a
+multiplicative discount (`FinalScore = BaseScore * (1 - repetitionPenalty
+* Weights.RepetitionWeight)`), not a weighted subtraction; and treat a
+missing positive factor by excluding it from a weight-renormalized
+average, not by substituting `0.0`.
+
+**Context:** Card #40 requires the final score formula to keep
+`FinalScore` naturally bounded in `[0,1]` "without awkward normalization,"
+explicitly forbidding "arbitrary clamping merely to force the range," and
+separately requires that missing/not-yet-calculated factors never read as
+an automatic negative signal.
+
+**Reason:** A subtractive penalty (`BaseScore - penalty*weight`) can drive
+an already-low `BaseScore` negative, which would need a `math.Max(0, ...)`
+clamp to stay in range — exactly the arbitrary clamping the card
+forbids. The multiplicative form is bounded by construction: since
+`BaseScore ∈ [0,1]` and `repetitionPenalty*RepetitionWeight ∈ [0,1]` (both
+enforced by `Weights.Validate()`/`Factors.Validate()`), `FinalScore` is
+always in `[0, BaseScore] ⊆ [0,1]` with no clamp anywhere. It is also more
+editorially explainable: repetition discounts a candidate's score by at
+most `RepetitionWeight` (e.g. 30%), it never makes a strong candidate look
+actively bad. Separately, computing `BaseScore` as `sum(value*weight) /
+sum(weight)` over only the *available* positive factors (rather than
+`sum(value*weight)` over all five, implicitly treating a missing one as
+contributing `0`) is what satisfies "missing data must not become a
+strong negative signal" — since M5 implements factors one card at a time,
+every positive factor is unavailable as of Card #40, so getting this rule
+right now is load-bearing for every following M5 card, not a hypothetical
+edge case.
+
+**Consequences:** `CandidateScore.AvailableWeight` exposes how much of the
+positive-factor weight was actually used, so a future caller can judge a
+given score's completeness. If zero positive factors are available,
+`FinalScore` is `nil` rather than a fabricated `0.0`. A missing
+`RepetitionPenalty` is treated as `0.0` (no discount) — silence about
+repetition history is not evidence of repetition. See
+[`docs/scoring-model.md`](../scoring-model.md) for the worked numeric
+example and the full missing-factor strategy.
