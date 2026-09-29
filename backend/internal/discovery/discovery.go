@@ -152,6 +152,10 @@ type spotifyCatalogue interface {
 	// three methods above, extended rather than duplicated.
 	PlaylistItems(ctx context.Context, playlistID string, limit, offset int) (spotify.Paging[spotify.PlaylistItem], error)
 	OfficialPlaylist(ctx context.Context) (*spotify.OfficialPlaylist, error)
+	// Track is used by EnrichCandidateMetadata (metadata_enrichment.go,
+	// Card #38) — same one-off-seam reasoning, extended rather than
+	// duplicated.
+	Track(ctx context.Context, trackID string) (spotify.Track, error)
 }
 
 // similarArtistFinder is the subset of lastfm.Client DiscoverEmerging

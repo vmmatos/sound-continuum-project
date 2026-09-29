@@ -74,6 +74,12 @@ type CandidatePool struct {
 	// filter failure must surface as an HTTP error rather than silently
 	// becoming part of this always-succeeds struct.
 	RecentTrackFilter RecentTrackFilterResult
+
+	// MetadataEnrichment reports EnrichCandidateMetadata's run over
+	// RecentTrackFilter.EligibleCandidates (Card #38) — recently-used
+	// candidates are never enriched. Populated by PoolHandler for the same
+	// reason as RecentTrackFilter above.
+	MetadataEnrichment EnrichmentResult
 }
 
 // DiscoverPool runs Classic, Current, and Emerging discovery, then merges
@@ -178,7 +184,12 @@ func (s *Service) DiscoverPool(ctx context.Context) CandidatePool {
 // recent-track-filter failure (the official playlist isn't configured, or
 // Spotify can't be reached) does return an HTTP error rather than a pool,
 // so a temporary Spotify failure can never silently bypass the repetition
-// guardrail.
+// guardrail. After filtering, PoolHandler enriches the eligible candidates
+// with Spotify metadata (Card #38) — a Spotify connection failure there
+// also returns an HTTP error, but an individual candidate's metadata
+// lookup failure does not: that candidate stays in the response unenriched
+// (Metadata nil) and recorded on MetadataEnrichment.Failures, since one
+// flaky lookup among many candidates must not take down the whole pool.
 func (s *Service) PoolHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pool := s.DiscoverPool(ctx)
@@ -190,6 +201,15 @@ func (s *Service) PoolHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pool.RecentTrackFilter = filtered
+
+	enrichment, err := s.EnrichCandidateMetadata(ctx, filtered.EligibleCandidates)
+	if err != nil {
+		log.Printf("candidate metadata enrichment failed: %v", err)
+		writeEnrichmentError(w, err)
+		return
+	}
+	pool.RecentTrackFilter.EligibleCandidates = enrichment.EnrichedCandidates
+	pool.MetadataEnrichment = enrichment
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(pool)

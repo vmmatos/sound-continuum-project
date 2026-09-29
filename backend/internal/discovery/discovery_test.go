@@ -46,6 +46,14 @@ type fakeCatalogue struct {
 	// playlist ID, in page order — same page() helper as albums/tracks.
 	playlistItems    map[string][]spotify.PlaylistItem
 	playlistItemsErr map[string]error
+
+	// trackByID/trackErr back Track, keyed by Spotify track ID. A track ID
+	// with no entry in either map returns spotify.ErrNotFound, mirroring
+	// the real Spotify API's behavior for an unknown ID rather than a
+	// silent empty success.
+	trackByID  map[string]spotify.Track
+	trackErr   map[string]error
+	trackCalls []string // Spotify track IDs Track was called with, in order
 }
 
 func (f *fakeCatalogue) Search(ctx context.Context, query, types string, limit, offset int) (spotify.SearchResult, error) {
@@ -86,6 +94,17 @@ func (f *fakeCatalogue) PlaylistItems(ctx context.Context, playlistID string, li
 		return spotify.Paging[spotify.PlaylistItem]{}, err
 	}
 	return page(f.playlistItems[playlistID], limit, offset), nil
+}
+
+func (f *fakeCatalogue) Track(ctx context.Context, trackID string) (spotify.Track, error) {
+	f.trackCalls = append(f.trackCalls, trackID)
+	if err, ok := f.trackErr[trackID]; ok {
+		return spotify.Track{}, err
+	}
+	if t, ok := f.trackByID[trackID]; ok {
+		return t, nil
+	}
+	return spotify.Track{}, spotify.ErrNotFound
 }
 
 // page slices items[offset:offset+limit], mimicking Spotify's own paging

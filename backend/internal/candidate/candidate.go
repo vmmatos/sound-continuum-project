@@ -109,6 +109,13 @@ type CandidateTrack struct {
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
+
+	// Metadata carries the enrichment Card #38 adds (title, structured
+	// artists, album, duration, explicit flag, artwork, Spotify URL). Nil
+	// until a metadata enrichment step populates it; NewCandidateTrack never
+	// sets it. See CandidateMetadata's own doc comment for why nil, never a
+	// fabricated value, is the only alternative to a real result.
+	Metadata *CandidateMetadata
 }
 
 // NewCandidateTrackParams are the inputs to NewCandidateTrack. Status is

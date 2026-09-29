@@ -23,7 +23,11 @@ of future implementation requirements.
   splitting the pool into eligible and recently-used candidates against
   the official Spotify playlist's own `added_at` history (28-day default
   lookback, `RECENT_TRACK_LOOKBACK_DAYS`-configurable) — a temporary
-  editorial guardrail, not a permanent blacklist — all exposed through
+  editorial guardrail, not a permanent blacklist. Every eligible candidate
+  is then enriched with structured Spotify metadata (title, artists,
+  album, release date + precision, duration, explicit flag, artwork,
+  Spotify URL/URI) for future ranking and UI use — no ranking or scoring
+  is implemented yet. All of this is exposed through
   `POST /api/candidates/pool`; persistence and musical bridge logic are
   still open)
 - **M5 — Musical Ranking & Bridges** — Planned
