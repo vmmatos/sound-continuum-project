@@ -1147,3 +1147,108 @@ simultaneously without an all-or-nothing endpoint.
 candidate with `Metadata == nil` (visible in `MetadataEnrichment.Failures`)
 alongside fully enriched candidates. A future UI/consumer must handle a nil
 `Metadata` on an otherwise-eligible candidate.
+
+---
+
+**Decision:** Provider source (`candidate.Source`) and discovery provenance
+(`candidate.Provenance []DiscoveryProvenance`, new in Card #39) are
+separate concepts, and `Source` is not extended to represent discovery
+mechanisms.
+
+**Context:** Card #39 (M4's final card) needs to record *how* a candidate
+entered the pipeline (which discovery method, which seed/reference artist,
+which provider was queried) without conflating it with `Source`, which has
+meant "which provider supplied the candidate track" since Card #31. Before
+this card, `DiscoverEmerging`'s Last.fm-derived discovery context
+(`Result.EmergingProvenance`) already existed but lived on the workflow's
+`Result`, not the candidate — lost by the time a candidate reached the
+Pool, filter, or enrichment stage.
+
+**Reason:** `Source` answers "which provider supplied this track" (today
+always `Spotify` — every workflow resolves candidate identity through
+Spotify even when Last.fm drove the discovery, per the Card #35 decision).
+Provenance answers a different question: "how did this candidate enter
+Sound Continuum." Overloading `Source` with discovery-mechanism values
+(e.g. `LastFmSimilarArtist`) would make a Spotify-identified,
+Last.fm-discovered candidate's `Source` ambiguous between "the track's
+provider" and "the discovery signal." Keeping them separate means an
+Emerging candidate can correctly carry `Source: Spotify` and provenance
+`Provider: Last.fm` at the same time, with neither value overwriting the
+other.
+
+**Consequences:** `backend/internal/candidate/provenance.go` adds
+`DiscoveryMethod` (`classic_reference_artist`/`current_reference_artist`/
+`lastfm_similar_artist`/`manual`), `ProvenanceProvider` (`Spotify`/
+`Last.fm`/empty), `SeedArtist` (`Provider`, `ProviderArtistID`, `Name`),
+and `DiscoveryProvenance` (`Method`, `Provider`, `Seed`,
+`DiscoveredArtist`, `LastFMMatch`) — same package as `Source`/`Type`/
+`Category`/`Status`, following their existing `type X string` + `const` +
+`Valid()` convention. `CandidateTrack.Source` itself is completely
+unchanged: still `SourceSpotify` only, no `Manual`/`Last.fm` value added.
+A curator manually adding a real Spotify track keeps `Source: Spotify`;
+only its provenance `Method` becomes `manual`, with no `Seed`/`Provider`
+fabricated — this avoids reviving the `Manual`/`Last.fm` `Source` values
+Card #31 deliberately trimmed for having zero call sites, since Card #39
+introduces no workflow that constructs a candidate without going through
+Spotify. `Result.EmergingProvenance` (Card #35) is unchanged and still
+serves its own purpose (a whole discovery run's artist-level provenance,
+independent of any specific candidate); `DiscoveryProvenance` is the
+new, per-candidate, pipeline-surviving counterpart.
+
+---
+
+**Decision:** Candidate Pool deduplication merges provenance from every
+workflow that found the same Spotify track, instead of discarding the
+losing candidate's provenance entirely.
+
+**Context:** `DiscoverPool`'s existing dedup step (Card #36) already
+decides which candidate's classification (`Type`/`Category`/`Status`)
+survives when two workflows discover the same Spotify track ID, via
+`candidateTypePriority`. Before Card #39, the losing candidate's entire
+struct — provenance included — was simply discarded.
+
+**Reason:** The card's own principle: "deduplication should remove
+duplicate candidates, not useful provenance." A track legitimately found
+via both a Classic reference artist and a Last.fm similarity hop, say, has
+two genuine discovery paths worth keeping, even though it's edited as one
+candidate. Losing the runner-up's provenance would make an editorially
+interesting fact (a track was independently surfaced by two different
+signals) invisible.
+
+**Consequences:** `pool.go`'s merge loop now computes the surviving
+candidate's classification exactly as before, but sets its `Provenance =
+candidate.MergeProvenance(existing.Provenance, c.Provenance)` — a new
+package-level function in `candidate` that unions two provenance slices,
+collapsing exact duplicates (same `Method` + same `Seed`/`DiscoveredArtist`
+identity, preferring a stable provider ID over name when available) to
+their first occurrence. `MergeProvenance` lives in package `candidate`,
+not `discovery`, matching every other provenance-shape decision above.
+
+---
+
+**Decision:** Remove `CandidateTrack.DiscoveryReason` (Card #31's original
+free-text field) rather than keep it alongside the new `Provenance` field.
+
+**Context:** `DiscoveryReason` was always exactly one of three fixed
+constant strings, one per discovery workflow (e.g. "Discovered from Past
+reference artist catalogue."). Card #39 introduced `Provenance[].Method`,
+a typed enum (`classic_reference_artist`/`current_reference_artist`/
+`lastfm_similar_artist`/`manual`) recording the identical fact for the
+identical set of workflows.
+
+**Reason:** Once `Method` existed, `DiscoveryReason` had no information
+`Method` didn't already carry, structurally and more usefully (a
+consumer can switch on `Method`, not string-match a sentence). No caller
+anywhere in the repo read `DiscoveryReason` for anything beyond that one
+fact. Keeping both would have been two representations of the same
+data with no independent reason to diverge — this project's own
+"prefer simple solutions" principle applies as much to a field going
+stale as to one added ahead of need.
+
+**Consequences:** `CandidateTrack`/`NewCandidateTrackParams` no longer
+have a `DiscoveryReason` field; the three `discoveryReason`/
+`currentDiscoveryReason`/`emergingDiscoveryReason` constants in
+`discovery.go` are gone. A future UI wanting a human-readable discovery
+explanation should render one from `Provenance[].Method` (and `Seed`/
+`DiscoveredArtist`/`LastFMMatch`) rather than reintroducing a parallel
+free-text field.

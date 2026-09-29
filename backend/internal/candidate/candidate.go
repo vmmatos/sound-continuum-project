@@ -105,8 +105,6 @@ type CandidateTrack struct {
 	TrackTitle  string
 	TrackArtist string
 
-	DiscoveryReason string
-
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
@@ -116,6 +114,13 @@ type CandidateTrack struct {
 	// sets it. See CandidateMetadata's own doc comment for why nil, never a
 	// fabricated value, is the only alternative to a real result.
 	Metadata *CandidateMetadata
+
+	// Provenance records how this candidate entered the discovery pipeline
+	// (Card #39) — distinct from Source, which records which provider
+	// supplied the track. A candidate can carry more than one entry when
+	// multiple discovery workflows independently found the same track; see
+	// MergeProvenance. Empty until a discovery workflow sets it.
+	Provenance []DiscoveryProvenance
 }
 
 // NewCandidateTrackParams are the inputs to NewCandidateTrack. Status is
@@ -131,7 +136,7 @@ type NewCandidateTrackParams struct {
 	TrackTitle  string
 	TrackArtist string
 
-	DiscoveryReason string
+	Provenance []DiscoveryProvenance
 }
 
 // NewCandidateTrack builds a CandidateTrack in its initial discovered
@@ -149,7 +154,7 @@ func NewCandidateTrack(p NewCandidateTrackParams) (CandidateTrack, error) {
 		TrackTitle:  p.TrackTitle,
 		TrackArtist: p.TrackArtist,
 
-		DiscoveryReason: p.DiscoveryReason,
+		Provenance: p.Provenance,
 
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -182,6 +187,11 @@ func (c CandidateTrack) Validate() error {
 	}
 	if c.Source == SourceSpotify && c.SpotifyTrackID == "" {
 		return ErrMissingSpotifyTrackID
+	}
+	for _, p := range c.Provenance {
+		if !p.Method.Valid() {
+			return ErrInvalidDiscoveryMethod
+		}
 	}
 	return nil
 }

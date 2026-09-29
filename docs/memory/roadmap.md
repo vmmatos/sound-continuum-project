@@ -10,26 +10,30 @@ of future implementation requirements.
   items with track/episode/unavailable discrimination, single-track
   retrieval, single-artist retrieval, search — are implemented; playlist
   creation/management and Sound Continuum playlist discovery still open)
-- **M4 — Discovery Engine** — In progress (the `CandidateTrack` domain
-  model is defined; all three planned discovery workflows are implemented:
-  classic music discovery from the Past reference artist set, current
-  music discovery from the Present reference artist set, and emerging
-  artist discovery via a single Last.fm `artist.getsimilar` hop from the
-  Emerging reference artist set, resolved through Spotify — all producing
-  candidate pools, not a ranking — with `POST /api/discovery/classic`,
-  `POST /api/discovery/current`, and `POST /api/discovery/emerging`. A
-  Candidate Pool orchestrates all three into one merged, deduplicated
-  result, and a Recent Track Filter now sits immediately after it,
-  splitting the pool into eligible and recently-used candidates against
-  the official Spotify playlist's own `added_at` history (28-day default
-  lookback, `RECENT_TRACK_LOOKBACK_DAYS`-configurable) — a temporary
-  editorial guardrail, not a permanent blacklist. Every eligible candidate
-  is then enriched with structured Spotify metadata (title, artists,
-  album, release date + precision, duration, explicit flag, artwork,
-  Spotify URL/URI) for future ranking and UI use — no ranking or scoring
-  is implemented yet. All of this is exposed through
-  `POST /api/candidates/pool`; persistence and musical bridge logic are
-  still open)
+- **M4 — Discovery Engine** — Feature-complete (the `CandidateTrack`
+  domain model is defined; all three planned discovery workflows are
+  implemented: classic music discovery from the Past reference artist
+  set, current music discovery from the Present reference artist set, and
+  emerging artist discovery via a single Last.fm `artist.getsimilar` hop
+  from the Emerging reference artist set, resolved through Spotify — all
+  producing candidate pools, not a ranking — with
+  `POST /api/discovery/classic`, `POST /api/discovery/current`, and
+  `POST /api/discovery/emerging`. A Candidate Pool orchestrates all three
+  into one merged, deduplicated result, and a Recent Track Filter sits
+  immediately after it, splitting the pool into eligible and
+  recently-used candidates against the official Spotify playlist's own
+  `added_at` history (28-day default lookback,
+  `RECENT_TRACK_LOOKBACK_DAYS`-configurable) — a temporary editorial
+  guardrail, not a permanent blacklist. Every eligible candidate is then
+  enriched with structured Spotify metadata (title, artists, album,
+  release date + precision, duration, explicit flag, artwork, Spotify
+  URL/URI) and carries structured discovery provenance (which discovery
+  method, which seed/reference artist, which provider — distinct from the
+  provider-oriented `Source` field) that survives pool deduplication,
+  filtering, and enrichment — no ranking or scoring is implemented
+  anywhere yet. All of this is exposed through `POST
+  /api/candidates/pool`; persistence and musical bridge logic are open
+  for M5+)
 - **M5 — Musical Ranking & Bridges** — Planned
 - **M6 — Curator Experience** — Planned
 - **M7 — Weekly Editorial Workflow** — Planned

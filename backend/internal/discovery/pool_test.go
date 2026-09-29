@@ -154,6 +154,43 @@ func TestDiscoverPoolDeduplicatesBySpotifyTrackID(t *testing.T) {
 	if pool.Candidates[0].Type != candidate.TypeClassic {
 		t.Errorf("surviving candidate Type = %q, want Classic (Classic beats Current on priority)", pool.Candidates[0].Type)
 	}
+	// Deduplication removes the duplicate candidate, not its provenance:
+	// the surviving candidate must carry both workflows' discovery paths.
+	prov := pool.Candidates[0].Provenance
+	if len(prov) != 2 {
+		t.Fatalf("expected merged provenance from both workflows, got %+v", prov)
+	}
+	methods := map[candidate.DiscoveryMethod]bool{}
+	for _, p := range prov {
+		methods[p.Method] = true
+	}
+	if !methods[candidate.DiscoveryMethodClassicReferenceArtist] || !methods[candidate.DiscoveryMethodCurrentReferenceArtist] {
+		t.Errorf("expected both classic_reference_artist and current_reference_artist provenance, got %+v", prov)
+	}
+}
+
+// TestDiscoverPoolEmergingCandidateHasDistinctSourceAndProvenanceProvider
+// confirms Card #39's core distinction survives the Pool: an Emerging
+// candidate's Source (the track's provider) stays Spotify even though its
+// discovery provenance's Provider is Last.fm (the discovery signal).
+func TestDiscoverPoolEmergingCandidateHasDistinctSourceAndProvenanceProvider(t *testing.T) {
+	pool := fullPoolSvc().DiscoverPool(context.Background())
+
+	var emerging *candidate.CandidateTrack
+	for i := range pool.Candidates {
+		if pool.Candidates[i].SpotifyTrackID == "track-emerging-1" {
+			emerging = &pool.Candidates[i]
+		}
+	}
+	if emerging == nil {
+		t.Fatalf("expected emerging candidate in pool, got %+v", pool.Candidates)
+	}
+	if emerging.Source != candidate.SourceSpotify {
+		t.Errorf("Source = %q, want Spotify", emerging.Source)
+	}
+	if len(emerging.Provenance) != 1 || emerging.Provenance[0].Provider != candidate.ProvenanceProviderLastFM {
+		t.Errorf("expected provenance Provider=Last.fm alongside Source=Spotify, got %+v", emerging.Provenance)
+	}
 }
 
 func TestDiscoverPoolClassicPartialFailureKeepsCurrentAndEmerging(t *testing.T) {

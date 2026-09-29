@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/vmmatos/sound-continuum-project/internal/candidate"
@@ -273,6 +274,28 @@ func TestEnrichCandidateMetadataPreservesClassification(t *testing.T) {
 	if enriched.Type != c.Type || enriched.Category != c.Category || enriched.Status != c.Status {
 		t.Errorf("classification changed: got Type=%q Category=%q Status=%q, want Type=%q Category=%q Status=%q",
 			enriched.Type, enriched.Category, enriched.Status, c.Type, c.Category, c.Status)
+	}
+}
+
+func TestEnrichCandidateMetadataPreservesProvenance(t *testing.T) {
+	f := &fakeCatalogue{trackByID: map[string]spotify.Track{
+		"track-1": {ID: "track-1", Name: "Song"},
+	}}
+	svc := newTestSvcMetadata(f)
+	c := candidateFor(t, "track-1")
+	c.Provenance = []candidate.DiscoveryProvenance{{
+		Method:   candidate.DiscoveryMethodClassicReferenceArtist,
+		Provider: candidate.ProvenanceProviderSpotify,
+		Seed:     &candidate.SeedArtist{Provider: candidate.ProvenanceProviderSpotify, ProviderArtistID: "a-1", Name: "original artist"},
+	}}
+
+	result, err := svc.EnrichCandidateMetadata(context.Background(), []candidate.CandidateTrack{c})
+	if err != nil {
+		t.Fatalf("EnrichCandidateMetadata returned error: %v", err)
+	}
+	enriched := result.EnrichedCandidates[0]
+	if !reflect.DeepEqual(enriched.Provenance, c.Provenance) {
+		t.Errorf("EnrichCandidateMetadata did not preserve Provenance: got %+v, want %+v", enriched.Provenance, c.Provenance)
 	}
 }
 
