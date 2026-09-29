@@ -36,16 +36,6 @@ const (
 	ProvenanceProviderLastFM  ProvenanceProvider = "Last.fm"
 )
 
-// Valid reports whether p is empty or one of the supported providers.
-func (p ProvenanceProvider) Valid() bool {
-	switch p {
-	case "", ProvenanceProviderSpotify, ProvenanceProviderLastFM:
-		return true
-	default:
-		return false
-	}
-}
-
 // SeedArtist identifies an artist or entity involved in discovery, with a
 // stable provider identifier where the discovery workflow already has one —
 // never fabricated. Provider/ProviderArtistID stay empty when no such ID

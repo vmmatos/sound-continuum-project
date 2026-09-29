@@ -46,6 +46,22 @@ const currentDiscoveryReason = "Discovered from Present reference artist recent 
 // produces.
 const emergingDiscoveryReason = "Discovered via Last.fm similarity from an Emerging reference artist."
 
+// referenceArtistProvenance builds the single provenance entry
+// DiscoverClassic/DiscoverCurrent attach to every candidate: the reference
+// artist's own already-resolved Spotify ID as both Seed and the
+// step's Provider — the two workflows differ only in Method.
+func referenceArtistProvenance(method candidate.DiscoveryMethod, artistID, name string) []candidate.DiscoveryProvenance {
+	return []candidate.DiscoveryProvenance{{
+		Method:   method,
+		Provider: candidate.ProvenanceProviderSpotify,
+		Seed: &candidate.SeedArtist{
+			Provider:         candidate.ProvenanceProviderSpotify,
+			ProviderArtistID: artistID,
+			Name:             name,
+		},
+	}}
+}
+
 // recentCatalogueParams bounds one recentTracksForArtist call. Embedded in
 // both CurrentConfig and EmergingConfig, which share this exact bound set,
 // so a caller passes its config's embedded value straight through instead
@@ -323,15 +339,7 @@ artists:
 					TrackTitle:      track.Name,
 					TrackArtist:     name,
 					DiscoveryReason: discoveryReason,
-					Provenance: []candidate.DiscoveryProvenance{{
-						Method:   candidate.DiscoveryMethodClassicReferenceArtist,
-						Provider: candidate.ProvenanceProviderSpotify,
-						Seed: &candidate.SeedArtist{
-							Provider:         candidate.ProvenanceProviderSpotify,
-							ProviderArtistID: artistID,
-							Name:             name,
-						},
-					}},
+					Provenance:      referenceArtistProvenance(candidate.DiscoveryMethodClassicReferenceArtist, artistID, name),
 				})
 				if err != nil {
 					// Fabricated/invalid metadata never becomes a
@@ -421,15 +429,7 @@ artists:
 				TrackTitle:      track.Name,
 				TrackArtist:     name,
 				DiscoveryReason: currentDiscoveryReason,
-				Provenance: []candidate.DiscoveryProvenance{{
-					Method:   candidate.DiscoveryMethodCurrentReferenceArtist,
-					Provider: candidate.ProvenanceProviderSpotify,
-					Seed: &candidate.SeedArtist{
-						Provider:         candidate.ProvenanceProviderSpotify,
-						ProviderArtistID: artistID,
-						Name:             name,
-					},
-				}},
+				Provenance:      referenceArtistProvenance(candidate.DiscoveryMethodCurrentReferenceArtist, artistID, name),
 			})
 			if err != nil {
 				// Fabricated/invalid metadata never becomes a

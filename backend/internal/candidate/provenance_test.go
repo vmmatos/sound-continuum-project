@@ -25,17 +25,6 @@ func TestDiscoveryMethodValid(t *testing.T) {
 	}
 }
 
-func TestProvenanceProviderValid(t *testing.T) {
-	for _, p := range []ProvenanceProvider{"", ProvenanceProviderSpotify, ProvenanceProviderLastFM} {
-		if !p.Valid() {
-			t.Errorf("ProvenanceProvider(%q).Valid() = false, want true", p)
-		}
-	}
-	if (ProvenanceProvider("Youtube")).Valid() {
-		t.Error("ProvenanceProvider(\"Youtube\").Valid() = true, want false")
-	}
-}
-
 func TestCandidateTrackValidateInvalidDiscoveryMethod(t *testing.T) {
 	c := CandidateTrack{
 		ID:             "cand-1",
