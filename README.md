@@ -56,11 +56,9 @@ backend/              Go application (net/http, no framework)
   Dockerfile            backend container image
   Makefile              run/test/build commands
 
-frontend/              Vue 3 + Vite + TypeScript + Pinia application
+frontend/              Vue 3 + Vite + TypeScript application
   src/views/            page-level views
   src/services/         HTTP calls to the backend
-  src/router/            Vue Router configuration
-  src/stores/            Pinia shared application state
   src/components/        reusable UI components
   src/types/             shared TypeScript types
   src/assets/            static assets imported by the app (these three: created when first needed)

@@ -77,7 +77,7 @@ func TestNewCandidateTrackSpotifySourceCarriesSpotifyTrackID(t *testing.T) {
 		ID:             "cand-1",
 		SpotifyTrackID: "spotify-track-1",
 		Source:         SourceSpotify,
-		Category:       CategoryNewRelease,
+		Category:       CategoryPresent,
 		Type:           TypeCurrent,
 	})
 	if err != nil {
@@ -135,7 +135,7 @@ func TestNewCandidateTrackTypeAndCategoryAreIndependent(t *testing.T) {
 	}{
 		{TypeDiscovery, CategoryPast},
 		{TypeDiscovery, CategoryEmerging},
-		{TypeCurrent, CategoryNewRelease},
+		{TypeCurrent, CategoryPresent},
 		{TypeClassic, CategoryPast},
 	}
 	for _, tc := range cases {

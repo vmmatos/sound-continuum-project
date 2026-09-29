@@ -856,3 +856,50 @@ bootstrap, with no code exercising it.
 "Configure Pinia" decision is superseded by this one. If a future card
 introduces real shared frontend state, reinstate the dependency and the
 `stores/` convention then, not before.
+
+---
+
+**Decision:** Remove Vue Router (`frontend/package.json` dependency,
+`frontend/src/router/index.ts`, the `.use(router)` bootstrap in `main.ts`)
+until a second route is needed; `App.vue` renders `HomeView` directly.
+
+**Context:** Card 16 installed Vue Router for a single `/` route. As of
+this cleanup, no second route, no `RouterLink`, and no navigation logic of
+any kind exists anywhere in the frontend — every card since has added
+content to the same `HomeView.vue`.
+
+**Reason:** A router wired for exactly one route carries no behavior a
+plain component render doesn't already provide — the same
+wired-but-unearning-its-keep pattern as the Pinia removal above. Rendering
+`<HomeView />` directly from `App.vue` is strictly simpler and removes a
+dependency with zero routing decisions to make yet.
+
+**Consequences:** `frontend/src/router/` no longer exists.
+`frontend/src/App.vue` imports and renders `HomeView` directly instead of
+`<RouterView />`. `frontend/src/main.ts` no longer imports or installs a
+router. If a future card introduces a second page, reinstate Vue Router
+then, not before.
+
+---
+
+**Decision:** Remove `candidate.CategoryNewRelease`.
+
+**Context:** Card 31 introduced it "kept ahead of use deliberately." As of
+this cleanup — Cards 32-36 (Classic, Current, Emerging discovery, and the
+Candidate Pool orchestrating them) — no code has ever constructed a
+candidate with this category; the only references were its own
+declaration and two test fixtures.
+
+**Reason:** Card 31's own reasoning for trimming `candidate.go` down to
+what workflows actually use (dropping unused `Source`/`Status` values and
+editorial-note fields — see that entry above) applies equally here: an
+enum value with zero call sites across five subsequent discovery cards is
+no longer "ahead of use," it's unused. Superseding that one clause of the
+Card 31 decision, not the rest of it.
+
+**Consequences:** `Category` now has three values (`Past`, `Present`,
+`Emerging`). The two test cases that referenced `CategoryNewRelease`
+(`candidate_test.go`) were repointed at `CategoryPresent` — they were
+exercising Spotify-track-ID/Type-independence behavior, not this specific
+category. If a future editorial workflow needs a "new release" distinction,
+add the constant back then, with a real caller.

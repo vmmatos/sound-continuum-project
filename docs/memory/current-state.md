@@ -13,15 +13,18 @@
   (`cmd/`, `internal/`, `go.mod`, `Makefile`, `Dockerfile`), physically
   separated from `frontend/` (Card 20).
 - Vue 3 + Vite + TypeScript frontend exists at `frontend/`: a minimal
-  application shell (`views/HomeView.vue`) proving the build/dev pipeline
-  works, a `services/` boundary (`services/health.ts`) calling the
-  backend's `GET /health` non-blockingly, and a single `/` route via Vue
-  Router. No state-management library is installed — Pinia (Card 17) was
-  removed after sitting unused with zero stores; reinstate it if a future
-  card introduces real shared application state (see `decisions.md`).
-  Frontend/backend separation is physical: `frontend/` vs. everything else
-  at repo root; the frontend talks to the backend only over HTTP, via
-  `VITE_API_BASE_URL`.
+  application shell (`App.vue` renders `views/HomeView.vue` directly)
+  proving the build/dev pipeline works, and a `services/` boundary
+  (`services/health.ts`) calling the backend's `GET /health`
+  non-blockingly. No state-management library is installed — Pinia (Card
+  17) was removed after sitting unused with zero stores; reinstate it if a
+  future card introduces real shared application state (see
+  `decisions.md`). No routing library either — Vue Router was removed
+  after sitting on exactly one route (`/`) since Card 16 with no
+  navigation anywhere in the app; reinstate it if a future card introduces
+  a second route. Frontend/backend separation is physical: `frontend/` vs.
+  everything else at repo root; the frontend talks to the backend only
+  over HTTP, via `VITE_API_BASE_URL`.
 - Docker Compose dev environment exists (Card 18): root `docker-compose.yml`
   defines `backend` (`backend/Dockerfile`, port 8080) and `frontend`
   (`frontend/Dockerfile`, Vite dev server, port 5173), started together via
@@ -48,7 +51,8 @@
   `services/`, `router/`, `stores/`, plus `components/`, `types/`,
   `assets/` reserved by convention). The structure is intentionally
   minimal — new directories are introduced only when actual code requires
-  that responsibility, not speculatively.
+  that responsibility, not speculatively. (`router/` no longer exists —
+  removed alongside Vue Router, see above.)
 - Root `README.md` established as the project's full entry point (Card 21):
   what/why, philosophy (musical bridges), a link to the manifesto, current
   MVP scope (linking `CLAUDE.md` and `decisions.md` — no dedicated scope

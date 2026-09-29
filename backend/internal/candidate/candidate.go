@@ -30,17 +30,16 @@ func (s Source) Valid() bool {
 type Category string
 
 const (
-	CategoryPast       Category = "Past"
-	CategoryPresent    Category = "Present"
-	CategoryEmerging   Category = "Emerging"
-	CategoryNewRelease Category = "New Release"
+	CategoryPast     Category = "Past"
+	CategoryPresent  Category = "Present"
+	CategoryEmerging Category = "Emerging"
 )
 
-// Valid reports whether c is one of the four supported editorial
+// Valid reports whether c is one of the three supported editorial
 // categories.
 func (c Category) Valid() bool {
 	switch c {
-	case CategoryPast, CategoryPresent, CategoryEmerging, CategoryNewRelease:
+	case CategoryPast, CategoryPresent, CategoryEmerging:
 		return true
 	default:
 		return false
