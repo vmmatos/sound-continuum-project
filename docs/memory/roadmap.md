@@ -18,9 +18,14 @@ of future implementation requirements.
   Emerging reference artist set, resolved through Spotify — all producing
   candidate pools, not a ranking — with `POST /api/discovery/classic`,
   `POST /api/discovery/current`, and `POST /api/discovery/emerging`. A
-  Candidate Pool now orchestrates all three into one merged, deduplicated
-  result (`POST /api/candidates/pool`) — the boundary between discovery and
-  editorial curation; persistence and musical bridge logic are still open)
+  Candidate Pool orchestrates all three into one merged, deduplicated
+  result, and a Recent Track Filter now sits immediately after it,
+  splitting the pool into eligible and recently-used candidates against
+  the official Spotify playlist's own `added_at` history (28-day default
+  lookback, `RECENT_TRACK_LOOKBACK_DAYS`-configurable) — a temporary
+  editorial guardrail, not a permanent blacklist — all exposed through
+  `POST /api/candidates/pool`; persistence and musical bridge logic are
+  still open)
 - **M5 — Musical Ranking & Bridges** — Planned
 - **M6 — Curator Experience** — Planned
 - **M7 — Weekly Editorial Workflow** — Planned

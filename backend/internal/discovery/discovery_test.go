@@ -34,6 +34,18 @@ type fakeCatalogue struct {
 	tracksErr map[string]error // albumID -> error
 
 	searchCalls int
+
+	// officialPlaylist/officialPlaylistErr back OfficialPlaylist. A nil
+	// officialPlaylist with no error mirrors spotify.Service's own
+	// contract: not-yet-configured is ErrOfficialPlaylistNotConfigured,
+	// never a silent (nil, nil).
+	officialPlaylist    *spotify.OfficialPlaylist
+	officialPlaylistErr error
+
+	// playlistItems/playlistItemsErr back PlaylistItems, keyed by
+	// playlist ID, in page order — same page() helper as albums/tracks.
+	playlistItems    map[string][]spotify.PlaylistItem
+	playlistItemsErr map[string]error
 }
 
 func (f *fakeCatalogue) Search(ctx context.Context, query, types string, limit, offset int) (spotify.SearchResult, error) {
@@ -57,6 +69,23 @@ func (f *fakeCatalogue) AlbumTracks(ctx context.Context, albumID string, limit, 
 		return spotify.Paging[spotify.Track]{}, err
 	}
 	return page(f.tracks[albumID], limit, offset), nil
+}
+
+func (f *fakeCatalogue) OfficialPlaylist(ctx context.Context) (*spotify.OfficialPlaylist, error) {
+	if f.officialPlaylistErr != nil {
+		return nil, f.officialPlaylistErr
+	}
+	if f.officialPlaylist == nil {
+		return nil, spotify.ErrOfficialPlaylistNotConfigured
+	}
+	return f.officialPlaylist, nil
+}
+
+func (f *fakeCatalogue) PlaylistItems(ctx context.Context, playlistID string, limit, offset int) (spotify.Paging[spotify.PlaylistItem], error) {
+	if err, ok := f.playlistItemsErr[playlistID]; ok {
+		return spotify.Paging[spotify.PlaylistItem]{}, err
+	}
+	return page(f.playlistItems[playlistID], limit, offset), nil
 }
 
 // page slices items[offset:offset+limit], mimicking Spotify's own paging

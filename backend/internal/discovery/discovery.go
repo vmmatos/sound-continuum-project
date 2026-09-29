@@ -147,6 +147,11 @@ type spotifyCatalogue interface {
 	Search(ctx context.Context, query, types string, limit, offset int) (spotify.SearchResult, error)
 	ArtistAlbums(ctx context.Context, artistID string, limit, offset int) (spotify.Paging[spotify.Album], error)
 	AlbumTracks(ctx context.Context, albumID string, limit, offset int) (spotify.Paging[spotify.Track], error)
+	// PlaylistItems and OfficialPlaylist are used by FilterRecentTracks
+	// (recent_track_filter.go) — the same one-off-seam reasoning as the
+	// three methods above, extended rather than duplicated.
+	PlaylistItems(ctx context.Context, playlistID string, limit, offset int) (spotify.Paging[spotify.PlaylistItem], error)
+	OfficialPlaylist(ctx context.Context) (*spotify.OfficialPlaylist, error)
 }
 
 // similarArtistFinder is the subset of lastfm.Client DiscoverEmerging
@@ -160,23 +165,31 @@ type similarArtistFinder interface {
 // data via a Spotify catalogue, and (for DiscoverEmerging) a Last.fm
 // discovery signal.
 type Service struct {
-	spotify     spotifyCatalogue
-	lastfm      similarArtistFinder
-	classicCfg  Config
-	currentCfg  CurrentConfig
-	emergingCfg EmergingConfig
+	spotify        spotifyCatalogue
+	lastfm         similarArtistFinder
+	classicCfg     Config
+	currentCfg     CurrentConfig
+	emergingCfg    EmergingConfig
+	recentTrackCfg RecentTrackFilterConfig
+	// now is the clock FilterRecentTracks uses, overridden directly by
+	// same-package tests for deterministic boundary testing — the one
+	// place in this repo that needs a clock seam (see decisions.md).
+	// Defaults to time.Now via NewService.
+	now func() time.Time
 }
 
 // NewService wires a discovery Service to an existing spotify.Service and
 // lastfm.Client — no second Spotify client and no generic provider
 // abstraction is created.
-func NewService(spotifyService *spotify.Service, lastfmClient *lastfm.Client, classicCfg Config, currentCfg CurrentConfig, emergingCfg EmergingConfig) *Service {
+func NewService(spotifyService *spotify.Service, lastfmClient *lastfm.Client, classicCfg Config, currentCfg CurrentConfig, emergingCfg EmergingConfig, recentTrackCfg RecentTrackFilterConfig) *Service {
 	return &Service{
-		spotify:     spotifyService,
-		lastfm:      lastfmClient,
-		classicCfg:  classicCfg,
-		currentCfg:  currentCfg,
-		emergingCfg: emergingCfg,
+		spotify:        spotifyService,
+		lastfm:         lastfmClient,
+		classicCfg:     classicCfg,
+		currentCfg:     currentCfg,
+		emergingCfg:    emergingCfg,
+		recentTrackCfg: recentTrackCfg,
+		now:            time.Now,
 	}
 }
 

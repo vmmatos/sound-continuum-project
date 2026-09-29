@@ -38,6 +38,13 @@ var (
 	// ErrEmptyAlbumID is returned by Client.AlbumTracks without making a
 	// request — avoids generating a malformed "/v1/albums//tracks" path.
 	ErrEmptyAlbumID = errors.New("spotify: album id must not be empty")
+
+	// ErrOfficialPlaylistNotConfigured is returned by Service.OfficialPlaylist
+	// when the official Sound Continuum playlist hasn't been created yet
+	// (see InitializeOfficialPlaylist). Distinct from a transport/API
+	// failure — this is a configuration state, not an error talking to
+	// Spotify.
+	ErrOfficialPlaylistNotConfigured = errors.New("spotify: official playlist not configured")
 )
 
 // APIError carries the HTTP status code, Spotify's own error message (safe

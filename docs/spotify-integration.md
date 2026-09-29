@@ -760,6 +760,13 @@ POST /api/spotify/playlist    initialize (or return) the official playlist
 New this card. First write endpoint and first non-GET route in the
 project. All prior endpoints unchanged.
 
+`Service.OfficialPlaylist(ctx) (*OfficialPlaylist, error)` (Card #37) is a
+separate, read-only accessor added later — no HTTP endpoint of its own,
+thin wrapper over `Store.GetOfficialPlaylist`, used by
+`internal/discovery`'s Recent Track Filter to look up the playlist ID
+without ever creating it. Returns `ErrOfficialPlaylistNotConfigured` if no
+playlist has been initialized yet.
+
 ### Idempotency
 
 `Service.InitializeOfficialPlaylist` checks the local `official_playlist`

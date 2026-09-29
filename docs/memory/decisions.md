@@ -903,3 +903,177 @@ Card 31 decision, not the rest of it.
 exercising Spotify-track-ID/Type-independence behavior, not this specific
 category. If a future editorial workflow needs a "new release" distinction,
 add the constant back then, with a real caller.
+
+---
+
+**Decision:** Add the Recent Track Filter (Card #37) to the existing
+`backend/internal/discovery` package (`recent_track_filter.go`), not a new
+package.
+
+**Context:** Card #37 needs to split `CandidatePool` candidates into
+eligible/recently-used by comparing them against the official Spotify
+playlist's `added_at` history. It depends on both `spotify` (playlist
+items) and `candidate` (the type it filters).
+
+**Reason:** Same reasoning already recorded for `pool.go` — `discovery` is
+the one package that legitimately depends on both `spotify` and
+`candidate`, and the filter sits directly after `DiscoverPool` in the same
+pipeline. A new package would only duplicate that dependency edge.
+
+**Consequences:** `discovery.Service.FilterRecentTracks` is a new public
+method alongside `DiscoverPool`; `CandidatePool` gained one field,
+`RecentTrackFilter RecentTrackFilterResult`.
+
+---
+
+**Decision:** Give `discovery.Service` a single unexported clock seam
+(`now func() time.Time`, defaulted to `time.Now` in `NewService`,
+overridden directly by same-package tests) for `FilterRecentTracks` only.
+
+**Context:** Card #37 explicitly requires that recency-boundary behavior
+be tested deterministically, without depending on the real system clock.
+Every other `time.Now()` call in this codebase (recency filtering in
+`DiscoverCurrent`/`DiscoverEmerging`, token expiry in `spotify`, SQLite
+timestamps) is direct, uninjected, and existing tests tolerate real
+wall-clock time via relative fixtures (`daysAgo`) — there was no
+clock-injection precedent anywhere in the repo before this card.
+
+**Reason:** The card's own requirement overrides the repo's existing
+convention for this one feature; a repo-wide clock abstraction would be
+solving a problem no other feature has. One unexported field, no clock
+interface/package/dependency, is the smallest change that makes an exact
+`>=`-boundary test possible.
+
+**Consequences:** This is a one-off exception, not a new repo-wide
+pattern — a future card needing the same guarantee elsewhere should add
+its own local `now` field the same way, not generalize this one.
+
+---
+
+**Decision:** `FilterRecentTracks` walks the entire official playlist with
+a dedicated pagination loop, not Card #33's `walkPages[T any]`.
+
+**Context:** `walkPages` bounds a crawl at a caller-supplied `maxItems` —
+correct for discovery's bounded catalogue crawls, but Card #37 explicitly
+requires inspecting every playlist item, however many there are, since a
+missed page could hide a recently-used track and defeat the guardrail.
+
+**Reason:** Reusing `walkPages` would mean picking an arbitrary
+`maxItems` cap, which is exactly the "assume the first N items are
+enough" behavior the card forbids. A small loop that pages by
+`offset`/`Paging.Total` until exhausted is simpler than forcing an
+unbounded call through a bounded-by-design helper.
+
+**Consequences:** `recentTrackIndex` (private to `recent_track_filter.go`)
+requests 50 items per page (Spotify's current documented max for this
+endpoint) and stops when a page returns 0 items or `offset >=
+Paging.Total`. `walkPages` itself is unchanged and still used by
+Classic/Current/Emerging discovery.
+
+---
+
+**Decision:** Read `RECENT_TRACK_LOOKBACK_DAYS` directly via `os.Getenv`/
+`strconv.Atoi` in `cmd/server/main.go` (falling back to the default of 28
+on empty/invalid input) and pass it into `discovery.RecentTrackFilterConfig`,
+rather than following `discovery.Config`/`CurrentConfig`/`EmergingConfig`'s
+existing "constructor-injected, no env var" convention.
+
+**Context:** Card #37 explicitly names `RECENT_TRACK_LOOKBACK_DAYS` as a
+configuration value and requires it be "configurable through the existing
+project configuration mechanism." This repo actually has two: every other
+`discovery` bound is a constructor-injected `Config` struct with no env
+var (documented reasoning: "no env-var-driven-limit convention, and tests
+need small numbers"); every top-level runtime setting (`PORT`,
+`SQLITE_PATH`, `SPOTIFY_CLIENT_ID`, `LASTFM_API_KEY`) is a plain
+`os.Getenv` read in `main.go`.
+
+**Reason:** The lookback window is a curator-tunable editorial policy
+value (like `PORT` is an environment-tunable runtime value), not an
+internal crawl bound sized for test convenience (like
+`MaxAlbumsPerArtist`). Reading it once in `main.go` and passing it through
+the constructor satisfies both conventions at once: the config struct
+stays constructor-injected (so tests keep passing small, explicit values
+with no env var involved), and the one genuinely environment-tunable
+value follows the same `os.Getenv` pattern as every other env var in this
+codebase.
+
+**Consequences:** `RecentTrackFilterConfig` follows the existing
+`Default*Config()` shape exactly. An empty or unparseable
+`RECENT_TRACK_LOOKBACK_DAYS` falls back to the default silently logged as
+a warning — matching this codebase's existing no-hard-validation style for
+`PORT`/`SQLITE_PATH`, not a new fail-fast startup check.
+
+---
+
+**Decision:** Add `spotify.Service.OfficialPlaylist(ctx) (*OfficialPlaylist,
+error)`, a thin read-only wrapper over the existing
+`Store.GetOfficialPlaylist`, returning the new sentinel
+`ErrOfficialPlaylistNotConfigured` when no playlist has been persisted yet.
+
+**Context:** Card #37 needs the official playlist's Spotify ID without
+ever creating one. The only existing access paths were
+`Store.GetOfficialPlaylist` (unexported `store` field, inaccessible
+outside package `spotify`) and `Service.InitializeOfficialPlaylist`
+(create-or-return, which would give a read-only filter operation the
+ability to accidentally create the playlist and makes "not configured yet"
+indistinguishable from "just created").
+
+**Reason:** A read-only accessor that never calls Spotify and never
+writes is the smallest new surface that unblocks `FilterRecentTracks`
+without overloading `InitializeOfficialPlaylist`'s different (creation)
+contract. Returning a sentinel error rather than `(nil, nil)` for "not
+found" matches every other Service method's error-based contract in this
+package and lets `PoolHandler` map it to a clear "not initialized" error
+distinct from a Spotify transport/API failure.
+
+**Consequences:** `discovery.spotifyCatalogue` interface gained
+`OfficialPlaylist(ctx) (*spotify.OfficialPlaylist, error)` alongside a new
+`PlaylistItems` method (both already satisfied structurally by
+`*spotify.Service`, extending the existing one-off test seam rather than
+creating a new abstraction). No scope change: the official playlist is
+always read through the curator's authenticated token, and
+`playlist-read-private` (Card #26) already covers it regardless of the
+playlist's public/private flag.
+
+---
+
+**Decision:** A recently-used candidate keeps `Status: discovered` — no
+new `candidate.Status` value, no candidate field mutation of any kind.
+
+**Context:** Card #37 explicitly requires that filtering never becomes an
+editorial rejection and that every other `CandidateTrack` field
+(`Type`/`Category`/`Status`/`Source`/title/artist/Spotify ID) stays
+untouched.
+
+**Reason:** Eligible vs. Recently Used is a property of one filtering
+operation's output, not a durable state of the candidate itself — a
+`RecentlyUsedCandidate` wrapper (`Candidate`, `LastUsedAt`, `Reason`) on
+`RecentTrackFilterResult` carries that distinction instead, exactly
+mirroring the `discovery.Failure`/`WorkflowError` pattern already used
+elsewhere in this package for non-domain, operation-scoped facts.
+
+**Consequences:** `backend/internal/candidate` is completely unchanged by
+this card. If a future card introduces an editorial-review workflow with
+real status transitions, it can still add new `Status` values then,
+independent of this filter.
+
+---
+
+**Known limitation (found during Card #37 live verification, not fixed by
+this card):** `Service.InitializeOfficialPlaylist`'s idempotency (Card #30)
+only holds within a single SQLite database file. This project has two
+separate SQLite files by design — `backend/sound-continuum.db` for host
+`make backend-run` (Card 19) and `/data/sound-continuum.db` inside Docker
+Compose (Card 18) — each with its own independent, empty `official_playlist`
+table on first use. Initializing the official playlist once via each path
+creates two real, separate playlists on Spotify, since Card #30's design
+deliberately checks only the local row, never Spotify itself (no
+name/ID search — see that decision above). Confirmed live: the curator
+had done exactly this, ending up with two "Sound Continuum — Weekly
+Journey" playlists on the real account, both since deleted.
+
+**Reason not fixed now:** A real fix (e.g. a Spotify-side existence check
+as a backstop) is an architectural change to Card #30's playlist-identity
+design, out of scope for Card #37 ("implement ONLY Card #37" — see
+CLAUDE.md). Logged here per the curator's explicit choice, for a future
+card to address.

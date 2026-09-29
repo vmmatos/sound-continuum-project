@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"sort"
 
@@ -66,6 +67,13 @@ type CandidatePool struct {
 	EmergingResult Result
 
 	WorkflowErrors []WorkflowError
+
+	// RecentTrackFilter splits Candidates into editorially eligible and
+	// recently-used (Card #37) — see FilterRecentTracks. Populated by
+	// PoolHandler; DiscoverPool itself does not run the filter, since a
+	// filter failure must surface as an HTTP error rather than silently
+	// becoming part of this always-succeeds struct.
+	RecentTrackFilter RecentTrackFilterResult
 }
 
 // DiscoverPool runs Classic, Current, and Emerging discovery, then merges
@@ -159,13 +167,30 @@ func (s *Service) DiscoverPool(ctx context.Context) CandidatePool {
 }
 
 // PoolHandler exposes POST /api/candidates/pool. Runs DiscoverPool once per
-// call — no persistence, no request body, no query parameters. Always
-// responds 200 with the resulting CandidatePool, since a single failed
-// workflow (see WorkflowErrors) never invalidates the other two's
-// candidates. It never modifies the official Spotify playlist and never
-// selects a candidate — the pool is pre-editorial.
+// call, then FilterRecentTracks (Card #37) to split the merged candidates
+// into eligible and recently-used against the official Spotify playlist.
+// No persistence, no request body, no query parameters. It never modifies
+// the official Spotify playlist and never selects a candidate — the pool
+// is pre-editorial.
+//
+// A single failed discovery workflow (see WorkflowErrors) never
+// invalidates the other two's candidates and still responds 200 — but a
+// recent-track-filter failure (the official playlist isn't configured, or
+// Spotify can't be reached) does return an HTTP error rather than a pool,
+// so a temporary Spotify failure can never silently bypass the repetition
+// guardrail.
 func (s *Service) PoolHandler(w http.ResponseWriter, r *http.Request) {
-	pool := s.DiscoverPool(r.Context())
+	ctx := r.Context()
+	pool := s.DiscoverPool(ctx)
+
+	filtered, err := s.FilterRecentTracks(ctx, pool.Candidates)
+	if err != nil {
+		log.Printf("recent track filtering failed: %v", err)
+		writeRecentTrackFilterError(w, err)
+		return
+	}
+	pool.RecentTrackFilter = filtered
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(pool)
 }
