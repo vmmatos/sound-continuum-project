@@ -3,6 +3,7 @@ package scoring
 import (
 	"errors"
 	"math"
+	"reflect"
 	"testing"
 )
 
@@ -333,9 +334,7 @@ func TestCandidateScoreExposesEveryFactor(t *testing.T) {
 	if got.Weights != w {
 		t.Errorf("Weights = %+v, want %+v", got.Weights, w)
 	}
-	if *got.Factors.Fit != *f.Fit || *got.Factors.Freshness != *f.Freshness ||
-		*got.Factors.DiscoveryBonus != *f.DiscoveryBonus || *got.Factors.Diversity != *f.Diversity ||
-		*got.Factors.PlaylistFit != *f.PlaylistFit || *got.Factors.RepetitionPenalty != *f.RepetitionPenalty {
+	if !reflect.DeepEqual(got.Factors, f) {
 		t.Errorf("Factors = %+v, want values matching input %+v", got.Factors, f)
 	}
 	if got.FinalScore == nil {
