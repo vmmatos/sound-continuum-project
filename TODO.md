@@ -20,6 +20,8 @@
 - [x] `services/health.ts` — non-blocking `GET /health` check
 - [x] `VITE_API_BASE_URL` env-based backend URL configuration
 - [x] Frontend section in root `README.md`
+- **Superseded (Vue Router line)** — the app never grew a second route;
+      removed via the over-engineering audit cleanup below.
 
 ## Done (Card 17 — Configure Pinia)
 
@@ -39,6 +41,21 @@
 - [x] `frontend/src/stores/` (empty `.gitkeep` placeholder) removed
 - [x] `npm run build` (type-check + Vite build) verified clean
 - [x] Project memory updated (`current-state.md`, `decisions.md`)
+
+## Done (Remove unused vue-router dependency and dead CategoryNewRelease enum)
+
+- [x] `frontend/package.json`/`package-lock.json` — `vue-router` removed
+- [x] `frontend/src/router/` (single-route config) removed
+- [x] `frontend/src/App.vue` renders `HomeView` directly instead of
+      `<RouterView />`; `frontend/src/main.ts` no longer installs a router
+- [x] `npm run build` (type-check + Vite build) verified clean
+- [x] `backend/internal/candidate` — `CategoryNewRelease` removed (zero
+      production call sites since Card 31); two test fixtures repointed at
+      `CategoryPresent`
+- [x] `go build ./...`, `go vet ./...`, `go test ./...` verified clean
+- [x] Project memory updated (`current-state.md`, `decisions.md`)
+- [x] Root `README.md` project structure section corrected (also dropped a
+      stale Pinia/`stores/` mention left over from that earlier removal)
 
 ## Done (Card 18 — Configure Docker Compose)
 
