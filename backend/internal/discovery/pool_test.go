@@ -331,6 +331,58 @@ func TestPoolHandlerReturns200WithJSON(t *testing.T) {
 	}
 }
 
+func TestPoolHandlerEnrichesEligibleNotRecentlyUsed(t *testing.T) {
+	f, lf := fullPoolFixture()
+	// track-classic-1 was added to the official playlist just now, so it's
+	// recently used and must not be enriched. track-current-1/
+	// track-emerging-1 stay eligible and get real metadata.
+	f.playlistItems = map[string][]spotify.PlaylistItem{
+		"official-playlist-id": {
+			{ItemType: "track", AddedAt: time.Now().Format(time.RFC3339), Track: &spotify.Track{ID: "track-classic-1"}},
+		},
+	}
+	f.trackByID = map[string]spotify.Track{
+		"track-current-1":  {ID: "track-current-1", Name: "Song Cur"},
+		"track-emerging-1": {ID: "track-emerging-1", Name: "Song E"},
+	}
+	svc := newTestSvcPool(f, lf, testConfig(), testCurrentConfig(), testEmergingConfig())
+	svc.recentTrackLookbackDays = DefaultRecentTrackLookbackDays
+
+	rec := httptest.NewRecorder()
+	svc.PoolHandler(rec, httptest.NewRequest(http.MethodPost, "/api/candidates/pool", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var pool CandidatePool
+	if err := json.Unmarshal(rec.Body.Bytes(), &pool); err != nil {
+		t.Fatalf("response body did not decode as CandidatePool: %v", err)
+	}
+
+	if len(pool.RecentTrackFilter.RecentlyUsedCandidates) != 1 ||
+		pool.RecentTrackFilter.RecentlyUsedCandidates[0].Candidate.SpotifyTrackID != "track-classic-1" {
+		t.Fatalf("RecentlyUsedCandidates = %+v, want exactly track-classic-1", pool.RecentTrackFilter.RecentlyUsedCandidates)
+	}
+
+	if len(pool.RecentTrackFilter.EligibleCandidates) != 2 {
+		t.Fatalf("EligibleCandidates = %+v, want 2", pool.RecentTrackFilter.EligibleCandidates)
+	}
+	for _, c := range pool.RecentTrackFilter.EligibleCandidates {
+		if c.Metadata == nil || c.Metadata.Title == "" {
+			t.Errorf("eligible candidate %s was not enriched: %+v", c.SpotifyTrackID, c)
+		}
+	}
+
+	for _, id := range f.trackCalls {
+		if id == "track-classic-1" {
+			t.Error("recently-used candidate track-classic-1 must not be enriched (no Track call expected)")
+		}
+	}
+	if pool.MetadataEnrichment.EnrichedCount != 2 {
+		t.Errorf("MetadataEnrichment.EnrichedCount = %d, want 2", pool.MetadataEnrichment.EnrichedCount)
+	}
+}
+
 func TestPoolHandlerReturnsErrorWhenOfficialPlaylistNotConfigured(t *testing.T) {
 	f, lf := fullPoolFixture()
 	f.officialPlaylist = nil // not initialized yet

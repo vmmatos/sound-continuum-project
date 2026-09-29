@@ -1083,3 +1083,67 @@ as a backstop) is an architectural change to Card #30's playlist-identity
 design, out of scope for Card #37 ("implement ONLY Card #37" — see
 CLAUDE.md). Logged here per the curator's explicit choice, for a future
 card to address.
+
+---
+
+**Decision:** Add `candidate.CandidateMetadata` (`Title`, `Artists`,
+`Album`, `DurationMS`, `Explicit`, `SpotifyURL`, `SpotifyURI`) as a new,
+nested, additive field (`CandidateTrack.Metadata *CandidateMetadata`) in
+package `candidate`, and do the Spotify→metadata mapping/enrichment
+(`mapSpotifyTrack`, `Service.EnrichCandidateMetadata`) inside package
+`discovery`, not `candidate` or `spotify`.
+
+**Context:** Card #38 needs each eligible candidate to carry structured
+Spotify metadata for future ranking/UI/curation, while keeping Sound
+Continuum's domain model independent of Spotify's response shape (the same
+principle `candidate.go`'s own package doc has stated since Card 31).
+
+**Reason:** The metadata *shape* (title/artists/album/etc.) is Sound
+Continuum's own editorial concept, so it belongs in `candidate`, next to
+`CandidateTrack`. The *mapping* from a Spotify response into that shape is
+provider-specific and belongs where the provider dependency already lives —
+`discovery` is the one package with a decided, precedented reason to depend
+on both `spotify` and `candidate` (see the Card #37 `recent_track_filter.go`
+decision above); putting the mapping in `candidate` would pull `spotify`
+into a domain package, and putting it in `spotify` would pull `candidate`
+into a provider package. `Metadata` is a pointer, not an embedded value, so
+nil unambiguously means "not enriched" — never confusable with "enriched
+with all-empty fields."
+
+**Consequences:** `backend/internal/candidate/metadata.go` is a new file,
+same package, no new package. `backend/internal/discovery/
+metadata_enrichment.go` adds `Track` to the existing `spotifyCatalogue` seam
+(already satisfied by `*spotify.Service`'s Card #28 `Track` method — zero
+changes to package `spotify`). `CandidatePool.MetadataEnrichment` and
+`PoolHandler`'s post-`FilterRecentTracks` enrichment step follow the exact
+composition pattern Card #37 established for `RecentTrackFilter`.
+
+---
+
+**Decision:** A per-candidate Spotify metadata lookup failure (not found,
+rate limited, unauthorized, malformed response, generic API failure) keeps
+that candidate in the response with `Metadata` left nil and the failure
+recorded on `EnrichmentResult.Failures`; only a connection-level failure
+(`ErrNotConnected`/`ErrInvalidGrant`) aborts the whole
+`EnrichCandidateMetadata` call and makes `PoolHandler` return an HTTP error.
+
+**Context:** Card #38 requires that a metadata failure "must not silently
+produce an apparently valid candidate" and must not be "silently swallowed,"
+without mandating that the whole endpoint fail. Up to ~150 eligible
+candidates could need a Spotify `Track` lookup in one `PoolHandler` call.
+
+**Reason:** This mirrors the exact convention Classic/Current/Emerging
+discovery already established: a genuine Spotify outage (connection-level)
+aborts, while an individual item's failure (Card #36 confirmed this live
+with real `ArtistAlbums` 429s) is recorded on a `Failures` list and the run
+continues — never treated as a whole-run abort condition. Applying a
+stricter, all-or-nothing rule only to metadata enrichment, when every other
+per-item Spotify failure in this codebase is tolerated, would be an
+inconsistent, un-argued exception. A nil `Metadata` plus a visible
+`Failures` entry satisfies "don't fake it" and "don't hide it"
+simultaneously without an all-or-nothing endpoint.
+
+**Consequences:** `PoolHandler`'s response can contain an eligible
+candidate with `Metadata == nil` (visible in `MetadataEnrichment.Failures`)
+alongside fully enriched candidates. A future UI/consumer must handle a nil
+`Metadata` on an otherwise-eligible candidate.

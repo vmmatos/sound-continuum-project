@@ -146,11 +146,10 @@ func (s *Service) recentTrackIndex(ctx context.Context, playlistID string) (map[
 // status, mirroring writeDiscoveryError/writeSpotifyError. A playlist-
 // retrieval failure must never look like a successful empty pool.
 func writeRecentTrackFilterError(w http.ResponseWriter, err error) {
+	if writeConnectionError(w, err) {
+		return
+	}
 	switch {
-	case errors.Is(err, spotify.ErrNotConnected):
-		http.Error(w, "Spotify is not connected", http.StatusServiceUnavailable)
-	case errors.Is(err, spotify.ErrInvalidGrant):
-		http.Error(w, "Spotify authorization required", http.StatusUnauthorized)
 	case errors.Is(err, spotify.ErrOfficialPlaylistNotConfigured):
 		http.Error(w, "Sound Continuum playlist is not initialized", http.StatusServiceUnavailable)
 	default:

@@ -521,6 +521,53 @@
   covered by the fake-based unit tests instead. The official playlist was
   not modified to manufacture a test case, per the card's own constraint.
 
+- Candidates now carry structured Spotify metadata (Card #38, see
+  [`decisions.md`](decisions.md)) — a new `candidate.CandidateMetadata`
+  (`backend/internal/candidate/metadata.go`, package `candidate`): `Title`,
+  `Artists []CandidateArtist` (`SpotifyArtistID`/`Name`/`SpotifyURL` each,
+  never collapsed to a string), `Album CandidateAlbum`
+  (`SpotifyAlbumID`/`Name`/`AlbumType`/`ReleaseDate`/
+  `ReleaseDatePrecision`/`Artwork []CandidateImage`/`SpotifyURL`),
+  `DurationMS`, `Explicit`, `SpotifyURL`, `SpotifyURI`. `CandidateTrack`
+  gains one new field, `Metadata *CandidateMetadata` — nil until enriched,
+  never populated with fabricated/placeholder values; every other existing
+  field (`ID`/`SpotifyTrackID`/`Source`/`Category`/`Type`/`Status`/
+  `TrackTitle`/`TrackArtist`) is unchanged. `ReleaseDate`/
+  `ReleaseDatePrecision` preserve exactly what Spotify reports (a
+  year-only release date stays year-only) — precision is never invented.
+  Enrichment itself (`backend/internal/discovery/metadata_enrichment.go`,
+  `Service.EnrichCandidateMetadata` + `mapSpotifyTrack`) runs inside
+  `discovery`, not `candidate` or `spotify` — same reasoning already
+  recorded for `pool.go`/`recent_track_filter.go`: `discovery` is the one
+  package that legitimately depends on both. It calls the existing Card #28
+  `spotify.Service.Track` (added to the `spotifyCatalogue` seam, no new
+  Spotify client/auth/endpoint) once per eligible candidate — sequentially,
+  no worker pool — and maps the response's already-embedded `Artists` list
+  directly, with no separate `GET /artists/{id}` call. No popularity,
+  followers, or genres are mapped — deprecated Spotify fields, not ranking
+  signals this card introduces. `PoolHandler`
+  (`backend/internal/discovery/pool.go`) now runs
+  `EnrichCandidateMetadata` over `RecentTrackFilter.EligibleCandidates`
+  only, after the Card #37 filter — recently-used candidates are never
+  enriched. `CandidatePool` gained one field, `MetadataEnrichment
+  EnrichmentResult`. A candidate with no Spotify track ID (no Manual/
+  Last.fm `candidate.Source` value exists yet — see decisions.md) is passed
+  through unmodified and counted on `EnrichmentResult.SkippedCount`, no
+  Spotify request attempted. A Spotify connection failure
+  (`ErrNotConnected`/`ErrInvalidGrant`) aborts the whole
+  `EnrichCandidateMetadata` call and `PoolHandler` returns an HTTP error,
+  matching Card #37's own precedent; any other per-candidate failure
+  (not found, rate limited, unauthorized, malformed response, generic API
+  failure) is recorded on `EnrichmentResult.Failures` with that candidate
+  kept unenriched (`Metadata` stays nil) and the run continues — the
+  endpoint still returns 200, matching the existing Classic/Current/
+  Emerging per-item-failure-continues convention. 20 new unit tests
+  (`metadata_enrichment_test.go`) cover every mapping/precision/failure
+  case the card lists, plus one new `PoolHandler` integration test
+  confirming eligible candidates are enriched and recently-used candidates
+  are not. No persistence, no new endpoint, no ranking/scoring, no new
+  package, no new dependency.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.
