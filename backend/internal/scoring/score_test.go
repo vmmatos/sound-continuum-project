@@ -2,6 +2,7 @@ package scoring
 
 import (
 	"errors"
+	"math"
 	"testing"
 )
 
@@ -60,6 +61,14 @@ func TestWeightsSumInvalid(t *testing.T) {
 	}
 }
 
+func TestWeightsNaNRejected(t *testing.T) {
+	w := DefaultWeights()
+	w.Fit = math.NaN()
+	if err := w.Validate(); !errors.Is(err, ErrWeightOutOfRange) {
+		t.Errorf("NaN weight: err = %v, want ErrWeightOutOfRange", err)
+	}
+}
+
 func TestWeightsSumToleranceBoundary(t *testing.T) {
 	within := Weights{
 		Fit: 0.35 + 1e-10, Freshness: 0.10, DiscoveryBonus: 0.15,
@@ -108,6 +117,14 @@ func TestFactorsOutOfRange(t *testing.T) {
 				t.Errorf("%s=%v (boundary): err = %v, want nil", name, v, err)
 			}
 		}
+	}
+}
+
+func TestFactorsNaNRejected(t *testing.T) {
+	nan := math.NaN()
+	f := Factors{Fit: &nan}
+	if err := f.Validate(); !errors.Is(err, ErrFactorOutOfRange) {
+		t.Errorf("NaN factor: err = %v, want ErrFactorOutOfRange", err)
 	}
 }
 
@@ -240,7 +257,38 @@ func TestCalculateRepetitionMidRangeIsExact(t *testing.T) {
 	}
 }
 
+func TestCalculatePresentFactorWithZeroWeightYieldsNilScore(t *testing.T) {
+	// A weight of 0 means the curator has explicitly excluded that factor
+	// from the score. If it's the only factor present, no factor actually
+	// contributes weight, so FinalScore stays nil — same as if nothing
+	// were known at all — rather than div-by-zero or a misleading 0.0.
+	w := DefaultWeights()
+	w.Fit, w.Freshness, w.DiscoveryBonus, w.Diversity, w.PlaylistFit = 0, 0.4, 0.2, 0.2, 0.2
+	fitOnly := Factors{Fit: float64Ptr(0.9)}
+
+	got, err := Calculate("cand-1", fitOnly, w)
+	if err != nil {
+		t.Fatalf("Calculate() err = %v, want nil", err)
+	}
+	if got.FinalScore != nil {
+		t.Errorf("FinalScore = %v, want nil (only present factor has weight 0)", *got.FinalScore)
+	}
+	if got.AvailableWeight != 0 {
+		t.Errorf("AvailableWeight = %v, want 0", got.AvailableWeight)
+	}
+}
+
 // --- Calculate: error propagation ---
+
+func TestCalculateEmptyCandidateIDReturnsZeroValue(t *testing.T) {
+	got, err := Calculate("", fullFactors(), DefaultWeights())
+	if !errors.Is(err, ErrEmptyCandidateID) {
+		t.Fatalf("err = %v, want ErrEmptyCandidateID", err)
+	}
+	if got != (CandidateScore{}) {
+		t.Errorf("CandidateScore = %+v, want zero value", got)
+	}
+}
 
 func TestCalculateInvalidWeightsReturnsZeroValue(t *testing.T) {
 	w := DefaultWeights()

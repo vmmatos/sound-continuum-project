@@ -24,7 +24,11 @@
 // CandidateScore. See Calculate.
 package scoring
 
-import "github.com/vmmatos/sound-continuum-project/internal/candidate"
+import (
+	"math"
+
+	"github.com/vmmatos/sound-continuum-project/internal/candidate"
+)
 
 // ModelVersion identifies this scoring model definition — its factor set,
 // combination formula, and default weights. Bump it whenever any of those
@@ -49,14 +53,15 @@ type Factors struct {
 	RepetitionPenalty *float64 // 0 = no repetition concern, 1 = strongest
 }
 
-// Validate checks that every non-nil factor value lies in [0,1]. A nil
-// value is always valid — "not yet available" is never an error.
+// Validate checks that every non-nil factor value lies in [0,1] and is not
+// NaN. A nil value is always valid — "not yet available" is never an
+// error.
 func (f Factors) Validate() error {
 	for _, v := range []*float64{
 		f.Fit, f.Freshness, f.DiscoveryBonus, f.Diversity,
 		f.PlaylistFit, f.RepetitionPenalty,
 	} {
-		if v != nil && (*v < 0 || *v > 1) {
+		if v != nil && (math.IsNaN(*v) || *v < 0 || *v > 1) {
 			return ErrFactorOutOfRange
 		}
 	}
@@ -119,15 +124,15 @@ func DefaultWeights() Weights {
 	}
 }
 
-// Validate checks that every weight lies in [0,1] and that the five
-// positive factor weights (Fit, Freshness, DiscoveryBonus, Diversity,
-// PlaylistFit) sum to 1.0 within weightSumTolerance.
+// Validate checks that every weight lies in [0,1] (and is not NaN) and
+// that the five positive factor weights (Fit, Freshness, DiscoveryBonus,
+// Diversity, PlaylistFit) sum to 1.0 within weightSumTolerance.
 func (w Weights) Validate() error {
 	for _, v := range []float64{
 		w.Fit, w.Freshness, w.DiscoveryBonus, w.Diversity,
 		w.PlaylistFit, w.RepetitionWeight,
 	} {
-		if v < 0 || v > 1 {
+		if math.IsNaN(v) || v < 0 || v > 1 {
 			return ErrWeightOutOfRange
 		}
 	}
@@ -157,32 +162,37 @@ type CandidateScore struct {
 	Weights      Weights
 	Factors      Factors
 
-	// FinalScore is nil only when zero positive factors are available —
-	// there is nothing yet to report, and nil is preferred over a
-	// fabricated 0.0 that would misleadingly look like "weakest possible
-	// candidate."
+	// FinalScore is nil only when AvailableWeight is 0 — no present
+	// factor contributes any weight to the score — and there is nothing
+	// yet to report; nil is preferred over a fabricated 0.0 that would
+	// misleadingly look like "weakest possible candidate."
 	FinalScore *float64
 
-	// AvailableWeight is the sum of positive-factor weights actually used
-	// to compute FinalScore (see Calculate) — 1.0 when every positive
-	// factor is present, lower while some are still unimplemented. It
-	// lets a caller judge how complete a given FinalScore currently is;
-	// it is not itself part of the score.
+	// AvailableWeight is the sum of the weights of positive factors that
+	// are both present and actually contribute to FinalScore (see
+	// Calculate) — 1.0 when every positive factor is present under
+	// DefaultWeights, lower while some are still unimplemented. A present
+	// factor whose own weight is 0 contributes nothing and is not counted
+	// here, since a Weights.Validate-satisfying weight of 0 means the
+	// curator has already excluded that factor from the score entirely.
+	// AvailableWeight lets a caller judge how complete a given FinalScore
+	// currently is; it is not itself part of the score.
 	AvailableWeight float64
 }
 
 // Calculate computes a CandidateScore for one candidate's Factors under
-// the given Weights. w and f are validated first; an invalid input
-// returns the matching sentinel error and a zero-value CandidateScore,
-// with no partial computation performed.
+// the given Weights. id, w, and f are validated first — an empty id or an
+// invalid w/f returns the matching sentinel error and a zero-value
+// CandidateScore, with no partial computation performed.
 //
 // Missing factors (nil in Factors) are treated as "not yet known," never
 // as zero: the five positive factors are combined as a weight-
 // renormalized average over only the factors that are actually present —
 // sum(value*weight) / sum(weight) across the available ones — so an
 // unimplemented factor is excluded rather than silently dragging the
-// score down as if it scored 0. If every positive factor is missing,
-// FinalScore is nil.
+// score down as if it scored 0. If no present factor contributes any
+// weight (every positive factor is missing, or every present factor's
+// own weight is 0), FinalScore is nil.
 //
 // RepetitionPenalty is combined multiplicatively, not subtracted:
 // FinalScore = BaseScore * (1 - repetitionPenalty*Weights.RepetitionWeight).
@@ -193,6 +203,9 @@ type CandidateScore struct {
 // penalty could drive an already-low BaseScore negative, forcing exactly
 // the kind of arbitrary clamping this model avoids by construction.
 func Calculate(id candidate.ID, f Factors, w Weights) (CandidateScore, error) {
+	if id == "" {
+		return CandidateScore{}, ErrEmptyCandidateID
+	}
 	if err := w.Validate(); err != nil {
 		return CandidateScore{}, err
 	}

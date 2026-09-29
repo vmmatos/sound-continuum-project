@@ -191,9 +191,11 @@ it had scored the worst possible value. `CandidateScore.AvailableWeight`
 exposes how much of the positive-factor weight was actually used, so a
 consumer can judge how complete a given score currently is.
 
-If **every** positive factor is missing, `FinalScore` is `nil` — there is
-nothing yet to report, never a fabricated `0.0` that would misleadingly
-look like "weakest possible candidate."
+If **no present factor contributes any weight** — every positive factor is
+missing, or (an edge case only reachable with a non-default `Weights`) the
+only present factors carry a curator-assigned weight of `0` — `FinalScore`
+is `nil` — there is nothing yet to report, never a fabricated `0.0` that
+would misleadingly look like "weakest possible candidate."
 
 A missing `RepetitionPenalty` is treated as `0.0` (no discount): silence
 about repetition history is not evidence of repetition.
