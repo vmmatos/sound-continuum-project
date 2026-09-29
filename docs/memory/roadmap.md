@@ -17,8 +17,10 @@ of future implementation requirements.
   artist discovery via a single Last.fm `artist.getsimilar` hop from the
   Emerging reference artist set, resolved through Spotify — all producing
   candidate pools, not a ranking — with `POST /api/discovery/classic`,
-  `POST /api/discovery/current`, and `POST /api/discovery/emerging`;
-  persistence and musical bridge logic are still open)
+  `POST /api/discovery/current`, and `POST /api/discovery/emerging`. A
+  Candidate Pool now orchestrates all three into one merged, deduplicated
+  result (`POST /api/candidates/pool`) — the boundary between discovery and
+  editorial curation; persistence and musical bridge logic are still open)
 - **M5 — Musical Ranking & Bridges** — Planned
 - **M6 — Curator Experience** — Planned
 - **M7 — Weekly Editorial Workflow** — Planned

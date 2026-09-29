@@ -856,3 +856,92 @@ bootstrap, with no code exercising it.
 "Configure Pinia" decision is superseded by this one. If a future card
 introduces real shared frontend state, reinstate the dependency and the
 `stores/` convention then, not before.
+
+---
+
+**Decision:** Add Candidate Pool orchestration (`DiscoverPool`/`PoolHandler`/
+`CandidatePool`) to the existing `backend/internal/discovery` package
+(`pool.go`), rather than a new package.
+
+**Context:** Card #36 needs to run Classic, Current, and Emerging discovery
+together and merge their output. `discovery.Service` already privately
+holds every dependency an orchestrator needs (`spotifyCatalogue`/
+`similarArtistFinder` seams, all three configs), but those fields are
+unexported.
+
+**Reason:** A separate package cannot construct or extend a
+`discovery.Service` without a new exported hook or a second interface
+wrapping it — machinery this card doesn't need. Adding one file to the
+package that already owns every dependency is the smallest change; it also
+matches this repo's established pattern (Cards 33-35) of extending
+`discovery` in place rather than layering `discovery/classic`,
+`discovery/current`, `discovery/emerging` subpackages.
+
+**Consequences:** `CandidatePool`/`WorkflowError`/`DiscoverPool`/
+`PoolHandler` live in `backend/internal/discovery/pool.go`, calling the
+existing `DiscoverClassic`/`DiscoverCurrent`/`DiscoverEmerging` methods
+unchanged — no discovery logic is duplicated. `POST /api/candidates/pool`
+is wired into `cmd/server/main.go` alongside the three existing discovery
+routes, reusing the same `discoveryService` instance — no new wiring, no
+new dependency.
+
+---
+
+**Decision:** When the same Spotify track ID is discovered by more than one
+workflow, `CandidatePool` keeps the classification from the higher-priority
+workflow — `Classic` (0) > `Current` (1) > `Discovery`/Emerging (2) — fixed
+by `Type`, not by which `Result` was merged first.
+
+**Context:** `CandidateTrack` carries exactly one `Type`/`Category` pair
+(Card 32's decision); it cannot represent a track discovered by more than
+one workflow. Card #36 requires a deterministic, documented rule rather than
+an incidental one based on list/merge ordering.
+
+**Reason:** Classic and Current resolve a track directly from its own
+reference artist's catalogue — a first-party classification. Emerging
+surfaces a track indirectly, through a one-hop Last.fm similarity match onto
+a *different* artist, and `DiscoverCurrent`'s own recent-catalogue scan
+already covers the same surface Emerging's `recentTracksForArtist` call
+also walks — so a track independently confirmed by Classic or Current is
+kept over the same track's Emerging classification. Between Classic and
+Current, Classic (the narrower historical catalogue) wins. The rule is
+keyed by `Type` via a fixed priority map (`candidateTypePriority` in
+`pool.go`), so it produces the same winner regardless of which order the
+three `Discover*` calls run in — satisfying Card #36's requirement that the
+choice not be an artifact of list ordering.
+
+**Consequences:** `CandidatePool.DuplicatesRemoved` counts only
+cross-workflow duplicates collapsed at the pool level (each workflow's own
+internal per-run dedup, `Result.DuplicatesSkipped`, is unaffected and stays
+on the embedded `ClassicResult`/`CurrentResult`/`EmergingResult`). If a
+fourth discovery workflow is ever added, it must be given an explicit
+priority in `candidateTypePriority`, not left to default ordering.
+
+---
+
+**Decision:** `DiscoverPool` always runs all three workflows and never
+returns a top-level error; a workflow abort (Spotify connection failure, or
+for Emerging a Last.fm configuration failure) is recorded on
+`CandidatePool.WorkflowErrors` instead.
+
+**Context:** Up to three independent workflows can each fail differently in
+one Candidate Pool run (e.g. Classic and Current succeed while Emerging
+aborts on a missing `LASTFM_API_KEY`). Card #36 requires that a partial
+failure not discard the successful portions, and that a configuration
+failure never look like a silent empty result.
+
+**Reason:** Picking one HTTP status for `PoolHandler` to represent up to
+three independent outcomes would either hide which workflow failed or force
+an arbitrary priority among unrelated failure kinds. Always returning 200
+with a fully populated `CandidatePool` — successful workflows' candidates
+merged in, failed workflows explicit on `WorkflowErrors` with their real
+error text — reports every outcome without inventing a combined status
+code. This mirrors the per-item `Failures` pattern each individual
+`Discover*` `Result` already uses, one level up.
+
+**Consequences:** `PoolHandler` has no error path and no `writeDiscoveryError`
+call, unlike `ClassicHandler`/`CurrentHandler`/`EmergingHandler`, which still
+map their single workflow's abort to 503/401. A client must inspect
+`WorkflowErrors` to detect a failed workflow — `TotalCandidates == 0` alone
+does not distinguish "nothing was resolved" (Card #36's empty-results case)
+from "a workflow aborted."
