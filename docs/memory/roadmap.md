@@ -34,7 +34,10 @@ of future implementation requirements.
   anywhere yet. All of this is exposed through `POST
   /api/candidates/pool`; persistence and musical bridge logic are open
   for M5+)
-- **M5 — Musical Ranking & Bridges** — Planned
+- **M5 — Musical Ranking & Bridges** — In progress (the Candidate Scoring
+  Model is defined: six factors, initial weights, and the combination
+  formula — see [`docs/scoring-model.md`](../scoring-model.md); no factor
+  algorithm, ranking, or automatic selection is implemented yet)
 - **M6 — Curator Experience** — Planned
 - **M7 — Weekly Editorial Workflow** — Planned
 - **M8 — Feedback & Evolution** — Planned
