@@ -690,6 +690,47 @@
 - [x] Project memory updated (`current-state.md`, `decisions.md`,
       `roadmap.md`)
 
+## Done (Card #41 — Define Musical Fit)
+
+- [x] `backend/internal/musicaldna` — new package: `Profile` (Mood,
+      Energy, Texture, CulturalInfluence, each optional), `ProjectDNA`
+      (stable, project-wide, empty by default per the manifesto/M1
+      mapping in `decisions.md`), `WeeklyDirection` (`EditionID` +
+      `Profile` + `Notes`, `NewWeeklyDirection`-constructed) — one
+      dimension vocabulary reused for candidate/project/weekly roles, no
+      competing representation
+- [x] `scoring.CalculateFit` — compares a candidate's `Profile` against
+      both `ProjectDNA.Profile` and `WeeklyDirection.Profile`,
+      case-insensitive trimmed exact match per dimension, renormalized
+      over available dimensions and then over available components
+      (`FitWeights`: WeeklyWeight 0.75 / ProjectWeight 0.25, Mood 0.35 /
+      Energy 0.25 / Texture 0.25 / CulturalInfluence 0.15); `Fit` is
+      `nil`, never `0.0`, when nothing is comparable
+- [x] `scoring.FitResult.Dimensions` — 8 entries (4 dimensions × 2
+      components) for explainability regardless of whether `Value` is set
+- [x] No confidence score, no editorial-override mechanism — both
+      documented as deliberate omissions (`Factors.Fit` already a plain
+      settable `*float64`)
+- [x] Candidate `Profile` is a `CalculateFit` argument only — no
+      `CandidateTrack` field added, no persistence introduced
+- [x] `CalculateFit` takes no `candidate.CandidateTrack` — independent of
+      `CandidateType`/`Category`/release date/discovery provenance/
+      playlist sequence by construction, verified by explicit tests
+- [x] 21 new tests (`musicaldna/weekly_direction_test.go`,
+      `scoring/fit_test.go`, `scoring/fit_integration_test.go`):
+      strong/weak fit, partial and fully missing data, weight validation,
+      determinism, classification/freshness/provenance independence,
+      explainability, score integration, and one no-network integration
+      test through `CandidateScore`
+- [x] `go build ./...`, `go vet ./...`, `go test ./...` verified clean
+- [x] `scoring.Factors`, `scoring.Weights`, `scoring.Calculate`, and
+      `candidate.CandidateTrack` unchanged; no ranking, no selection, no
+      `Status` mutation, no playlist mutation
+- [x] `docs/scoring-model.md` — Fit section replaced with the full model;
+      Freshness/Discovery Bonus distinctions from Fit added
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+
 ## In progress
 
 - Nothing currently in progress.
@@ -701,8 +742,9 @@
       Filter, Metadata Enrichment, and discovery provenance are all done,
       see Cards 33-39 above); candidate persistence remains open for M5+
 - M5: Musical ranking & bridges — Candidate Scoring Model defined (Card
-      #40); individual factor algorithms, ranking, and editorial
-      selection remain open
+      #40); Fit factor implemented (Card #41); Freshness, Discovery
+      Bonus, Diversity, Repetition Penalty, Playlist Fit, ranking, and
+      editorial selection remain open
 - M6: Curator experience
 - M7: Weekly editorial workflow
 - M8: Feedback & evolution

@@ -36,8 +36,11 @@ of future implementation requirements.
   for M5+)
 - **M5 — Musical Ranking & Bridges** — In progress (the Candidate Scoring
   Model is defined: six factors, initial weights, and the combination
-  formula — see [`docs/scoring-model.md`](../scoring-model.md); no factor
-  algorithm, ranking, or automatic selection is implemented yet)
+  formula; the Fit factor's algorithm is implemented (Card #41,
+  `musicaldna` package + `scoring.CalculateFit`) — see
+  [`docs/scoring-model.md`](../scoring-model.md); Freshness, Discovery
+  Bonus, Diversity, Repetition Penalty, Playlist Fit, ranking, and
+  automatic selection remain open)
 - **M6 — Curator Experience** — Planned
 - **M7 — Weekly Editorial Workflow** — Planned
 - **M8 — Feedback & Evolution** — Planned
