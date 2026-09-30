@@ -778,8 +778,7 @@ func (s *Service) ClassicHandler(w http.ResponseWriter, r *http.Request) {
 		writeDiscoveryError(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	writeJSON(w, result)
 }
 
 // CurrentHandler exposes POST /api/discovery/current. Runs DiscoverCurrent
@@ -793,8 +792,7 @@ func (s *Service) CurrentHandler(w http.ResponseWriter, r *http.Request) {
 		writeDiscoveryError(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	writeJSON(w, result)
 }
 
 // EmergingHandler exposes POST /api/discovery/emerging. Runs
@@ -808,8 +806,15 @@ func (s *Service) EmergingHandler(w http.ResponseWriter, r *http.Request) {
 		writeDiscoveryError(w, err)
 		return
 	}
+	writeJSON(w, result)
+}
+
+// writeJSON writes v as the JSON response body with the correct
+// Content-Type header — every handler response in this package (including
+// pool.go's PoolHandler) goes through this one call.
+func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	json.NewEncoder(w).Encode(v)
 }
 
 // writeDiscoveryError maps a discovery run's top-level error to an HTTP

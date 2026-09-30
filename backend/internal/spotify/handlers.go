@@ -11,6 +11,14 @@ import (
 	"time"
 )
 
+// writeJSON writes v as the JSON response body with the correct
+// Content-Type header — every handler response in this package goes
+// through this one call.
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
+}
+
 // expiryLeeway treats a token as due for refresh slightly before it
 // actually expires, so a request doesn't race Spotify's clock.
 const expiryLeeway = 30 * time.Second
@@ -157,8 +165,7 @@ func (s *Service) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Spotify status check failed: %v", err)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(statusResponse{Status: status, DisplayName: displayName})
+	writeJSON(w, statusResponse{Status: status, DisplayName: displayName})
 }
 
 // EnsureValidToken returns the curator's current connection status,
@@ -429,8 +436,7 @@ func (s *Service) InitializePlaylistHandler(w http.ResponseWriter, r *http.Reque
 		writeSpotifyError(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(officialPlaylistResponse{
+	writeJSON(w, officialPlaylistResponse{
 		SpotifyPlaylistID: official.SpotifyPlaylistID,
 		Name:              official.Name,
 		URL:               official.URL,
@@ -445,8 +451,7 @@ func (s *Service) MeHandler(w http.ResponseWriter, r *http.Request) {
 		writeSpotifyError(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(profile)
+	writeJSON(w, profile)
 }
 
 // PlaylistsHandler exposes GET /api/spotify/playlists?limit=&offset=.
@@ -457,8 +462,7 @@ func (s *Service) PlaylistsHandler(w http.ResponseWriter, r *http.Request) {
 		writeSpotifyError(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(page)
+	writeJSON(w, page)
 }
 
 // PlaylistHandler exposes GET /api/spotify/playlists/{id}.
@@ -469,8 +473,7 @@ func (s *Service) PlaylistHandler(w http.ResponseWriter, r *http.Request) {
 		writeSpotifyError(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(playlist)
+	writeJSON(w, playlist)
 }
 
 // PlaylistItemsHandler exposes
@@ -482,8 +485,7 @@ func (s *Service) PlaylistItemsHandler(w http.ResponseWriter, r *http.Request) {
 		writeSpotifyError(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(page)
+	writeJSON(w, page)
 }
 
 // SearchHandler exposes GET /api/spotify/search?q=&type=&limit=&offset=.
@@ -499,8 +501,7 @@ func (s *Service) SearchHandler(w http.ResponseWriter, r *http.Request) {
 		writeSpotifyError(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	writeJSON(w, result)
 }
 
 // TrackHandler exposes GET /api/spotify/tracks/{id}.
@@ -515,8 +516,7 @@ func (s *Service) TrackHandler(w http.ResponseWriter, r *http.Request) {
 		writeSpotifyError(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(track)
+	writeJSON(w, track)
 }
 
 // ArtistHandler exposes GET /api/spotify/artists/{id}.
@@ -531,8 +531,7 @@ func (s *Service) ArtistHandler(w http.ResponseWriter, r *http.Request) {
 		writeSpotifyError(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(artist)
+	writeJSON(w, artist)
 }
 
 // queryInt parses a query parameter as an int, returning 0 if it's absent
