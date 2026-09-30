@@ -84,9 +84,6 @@ func TestFitIntegrationCandidatePoolToCandidateScore(t *testing.T) {
 	if fit.Value == nil {
 		t.Fatal("Fit.Value = nil, want a computed value (Mood and Energy are available and match)")
 	}
-	if *fit.Value < 0 || *fit.Value > 1 {
-		t.Fatalf("Fit.Value = %v, want within [0,1]", *fit.Value)
-	}
 	// Mood and Energy match, Texture mismatches: partial, not saturated.
 	if *fit.Value <= 0 || *fit.Value >= 1 {
 		t.Fatalf("Fit.Value = %v, want a partial score reflecting the Texture mismatch", *fit.Value)

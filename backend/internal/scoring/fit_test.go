@@ -5,7 +5,6 @@ import (
 	"math"
 	"testing"
 
-	"github.com/vmmatos/sound-continuum-project/internal/candidate"
 	"github.com/vmmatos/sound-continuum-project/internal/musicaldna"
 )
 
@@ -210,92 +209,42 @@ func TestCalculateFitIsDeterministic(t *testing.T) {
 }
 
 // --- CalculateFit: independence from other factors' inputs ---
+//
+// CalculateFit takes only musicaldna.Profile/ProjectDNA/WeeklyDirection —
+// never a candidate.CandidateTrack — so CandidateType, Category, release
+// date, and discovery provenance cannot affect Fit by construction. Each
+// test below stands in for two candidates identical except for the named
+// dimension: since that dimension is never an input, the same
+// Profile/WeeklyDirection must still produce the same Fit.
 
-func newFixtureCandidate(t *testing.T, typ candidate.Type, cat candidate.Category, releaseDate string, prov []candidate.DiscoveryProvenance) candidate.CandidateTrack {
+func assertFitUnaffectedBy(t *testing.T, dimension string) {
 	t.Helper()
-	c, err := candidate.NewCandidateTrack(candidate.NewCandidateTrackParams{
-		ID:             candidate.ID("cand-1"),
-		SpotifyTrackID: "spotify-track-1",
-		Source:         candidate.SourceSpotify,
-		Category:       cat,
-		Type:           typ,
-		TrackTitle:     "Some Title",
-		TrackArtist:    "Some Artist",
-		Provenance:     prov,
-	})
-	if err != nil {
-		t.Fatalf("NewCandidateTrack() err = %v, want nil", err)
-	}
-	c.Metadata = &candidate.CandidateMetadata{
-		Album: candidate.CandidateAlbum{ReleaseDate: releaseDate, ReleaseDatePrecision: "day"},
-	}
-	return c
-}
+	profile := fullProfile()
+	direction := mustWeeklyDirection(t, fullProfile())
 
-// fitFor derives the Fit-relevant inputs for a fixture candidate.
-// CalculateFit never sees the candidate.CandidateTrack itself — only the
-// editorially-supplied Profile — so this helper only exists to prove that
-// varying CandidateTrack fields that are NOT part of Profile leaves Fit
-// unchanged.
-func fitFor(t *testing.T, c candidate.CandidateTrack, profile musicaldna.Profile, direction musicaldna.WeeklyDirection) float64 {
-	t.Helper()
-	got, err := CalculateFit(profile, musicaldna.DefaultProjectDNA(), direction, DefaultFitWeights())
+	a, err := CalculateFit(profile, musicaldna.DefaultProjectDNA(), direction, DefaultFitWeights())
 	if err != nil {
 		t.Fatalf("CalculateFit() err = %v, want nil", err)
 	}
-	if got.Value == nil {
-		t.Fatal("Value = nil, want a computed value")
+	b, err := CalculateFit(profile, musicaldna.DefaultProjectDNA(), direction, DefaultFitWeights())
+	if err != nil {
+		t.Fatalf("CalculateFit() err = %v, want nil", err)
 	}
-	return *got.Value
+	if *a.Value != *b.Value {
+		t.Errorf("Fit differs by %s alone: %v vs %v", dimension, *a.Value, *b.Value)
+	}
 }
 
 func TestCalculateFitIndependentOfCandidateClassification(t *testing.T) {
-	profile := fullProfile()
-	direction := mustWeeklyDirection(t, fullProfile())
-
-	a := newFixtureCandidate(t, candidate.TypeDiscovery, candidate.CategoryEmerging, "2026-01-01", nil)
-	b := newFixtureCandidate(t, candidate.TypeClassic, candidate.CategoryPast, "2026-01-01", nil)
-
-	fitA := fitFor(t, a, profile, direction)
-	fitB := fitFor(t, b, profile, direction)
-	if fitA != fitB {
-		t.Errorf("Fit differs by Type/Category alone: %v vs %v", fitA, fitB)
-	}
+	assertFitUnaffectedBy(t, "Type/Category")
 }
 
 func TestCalculateFitIndependentOfReleaseDate(t *testing.T) {
-	profile := fullProfile()
-	direction := mustWeeklyDirection(t, fullProfile())
-
-	a := newFixtureCandidate(t, candidate.TypeCurrent, candidate.CategoryPresent, "2026-09-01", nil)
-	b := newFixtureCandidate(t, candidate.TypeCurrent, candidate.CategoryPresent, "1975-03-14", nil)
-
-	fitA := fitFor(t, a, profile, direction)
-	fitB := fitFor(t, b, profile, direction)
-	if fitA != fitB {
-		t.Errorf("Fit differs by release date alone: %v vs %v", fitA, fitB)
-	}
+	assertFitUnaffectedBy(t, "release date")
 }
 
 func TestCalculateFitIndependentOfProvenance(t *testing.T) {
-	profile := fullProfile()
-	direction := mustWeeklyDirection(t, fullProfile())
-
-	manual := []candidate.DiscoveryProvenance{{Method: candidate.DiscoveryMethodManual}}
-	viaLastFM := []candidate.DiscoveryProvenance{{
-		Method:   candidate.DiscoveryMethodLastFMSimilarArtist,
-		Provider: candidate.ProvenanceProviderLastFM,
-		Seed:     &candidate.SeedArtist{Name: "Seed Artist"},
-	}}
-
-	a := newFixtureCandidate(t, candidate.TypeDiscovery, candidate.CategoryEmerging, "2026-01-01", manual)
-	b := newFixtureCandidate(t, candidate.TypeDiscovery, candidate.CategoryEmerging, "2026-01-01", viaLastFM)
-
-	fitA := fitFor(t, a, profile, direction)
-	fitB := fitFor(t, b, profile, direction)
-	if fitA != fitB {
-		t.Errorf("Fit differs by provenance alone: %v vs %v", fitA, fitB)
-	}
+	assertFitUnaffectedBy(t, "discovery provenance")
 }
 
 // --- Explainability ---

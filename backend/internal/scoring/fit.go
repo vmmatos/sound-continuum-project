@@ -147,9 +147,7 @@ func CalculateFit(candidateProfile musicaldna.Profile, project musicaldna.Projec
 	projectValue, projectDims := compareProfiles(FitComponentProjectDNA, candidateProfile, project.Profile, weights)
 	weeklyValue, weeklyDims := compareProfiles(FitComponentWeeklyDirection, candidateProfile, direction.Profile, weights)
 
-	dims := make([]FitDimensionResult, 0, len(projectDims)+len(weeklyDims))
-	dims = append(dims, projectDims...)
-	dims = append(dims, weeklyDims...)
+	dims := append(projectDims, weeklyDims...)
 
 	components := []struct {
 		value  *float64
