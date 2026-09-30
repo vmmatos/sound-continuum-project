@@ -1438,3 +1438,120 @@ sequence by construction, not by convention — see
 change to `candidate.CandidateTrack`, `scoring.Factors`, `scoring.Weights`,
 or `scoring.Calculate`. See [`docs/scoring-model.md`](../scoring-model.md)
 for the full Fit model.
+
+---
+
+**Decision:** Implement the Freshness factor (Card #42) as a half-life
+recovery curve, `Freshness(t) = 1 − 0.5^(t / HalfLifeDays)` with a default
+60-day half-life, rather than a linear ramp or stepped buckets.
+
+**Context:** Card #42 requires Freshness to measure time since a
+candidate's most recent appearance in the official playlist, give a
+gradient beyond the 28-day Recent Track Filter's hard boundary (Card #37),
+and have no discontinuity at that boundary — explicitly ruling out "0 if
+recently used else 1."
+
+**Reason — half-life over the alternatives:** A linear ramp needs an
+arbitrary saturation horizon (at what day does it reach 1.0?) with no
+natural justification, and clamps discontinuously once reached. Stepped
+buckets reintroduce exactly the kind of sharp jump the card forbids at
+whichever bucket edge sits nearest 28 days. A half-life decay is
+continuous and monotonic everywhere by construction, asymptotic (never
+exactly reaching `1.0` for a used track, which keeps it visibly distinct
+from a genuinely never-used candidate's exact `1.0`), and has exactly one
+tunable constant — the simplest model satisfying the card's "avoid
+arbitrary complexity" instruction.
+
+**Reason — 60-day half-life:** The 28-day filter window is a hard
+eligibility cutoff, not a freshness saturation point — the card explicitly
+warns against assuming the filter's 28 days should become "the entire
+Freshness model." Doubling it to 60 days keeps Freshness's horizon
+anchored to a value the codebase already treats as editorially meaningful,
+while giving 29–35-day-old candidates (just past the filter) a visibly
+low Freshness (~0.28–0.33) and 120–180-day-old candidates a visibly high
+one (~0.78–0.88), a clear gradient without inventing an unrelated
+constant. At the boundary itself, 27/28/29 days apart differ by only
+~0.017 — no discontinuity. See
+[`docs/scoring-model.md`](../scoring-model.md) for the full value table.
+
+**Reason — asymmetric handling of "never used" vs. "used long ago":**
+`lastUsedAt == nil` (never appeared in the playlist) returns exactly
+`1.0`; any used candidate, however old, approaches but never reaches
+`1.0`. This preserves a real, if narrow, distinction the card requires:
+"never used" and "used a very long time ago" are different facts about a
+candidate, even though both should score high.
+
+**Reason — clock-skew clamping:** If `now` is somehow before
+`lastUsedAt`, `t` is clamped to `0` rather than producing a negative
+duration or erroring. This is defensive handling for a condition the
+model's own guarantees don't need to distinguish (any `t ≤ 0` means "just
+used"), not a new failure mode requiring its own error path.
+
+**Consequences:** `backend/internal/scoring/freshness.go` adds
+`FreshnessConfig`, `DefaultFreshnessConfig`/`DefaultFreshnessHalfLifeDays`
+(60), `FreshnessResult`, and `CalculateFreshness(lastUsedAt *time.Time,
+now time.Time, config FreshnessConfig) (FreshnessResult, error)`. `now` and
+`lastUsedAt` are both explicit parameters — never read from the system
+clock inside the function — so Freshness is deterministic for a given
+candidate/history/evaluation time, the same discipline Card #41 already
+established for `CalculateFit`'s inputs.
+
+---
+
+**Decision:** Export `discovery.Service.PlaylistTrackHistory` as a thin
+wrapper around Card #37's existing `recentTrackIndex`, and have
+`scoring.CalculateFreshness` accept a plain `map[string]time.Time` via a
+small `scoring.FreshnessLastUsedAt` lookup function, rather than having
+`scoring` import `discovery` or building a second playlist-history
+retrieval mechanism.
+
+**Context:** Card #42 explicitly forbids a second playlist-history
+mechanism — Freshness must reuse Card #37's retrieval, pagination, and
+episode/duplicate-handling logic exactly. That logic
+(`discovery.Service.recentTrackIndex`) was unexported and private to
+`discovery.Service`, called only from `FilterRecentTracks`.
+
+**Reason — export from `discovery`, don't duplicate into `scoring`:**
+`discovery` already owns the only code that talks to
+`spotify.Service.OfficialPlaylist`/`PlaylistItems` and walks pagination in
+full. Exporting `PlaylistTrackHistory` (`OfficialPlaylist` lookup +
+`recentTrackIndex`) as one new method, and refactoring
+`FilterRecentTracks` to call it instead of duplicating the two calls
+inline, collapses the codebase back down to exactly one retrieval
+mechanism instead of introducing a second. This was a small, in-place
+refactor of Card #37's own file, not a rewrite — `FilterRecentTracks`'s
+behavior and its existing tests are unchanged.
+
+**Reason — `scoring.CalculateFreshness` stays pure, `scoring` never
+imports `discovery`:** `CalculateFit` (Card #41) established the pattern
+that a scoring factor's calculator is a pure function over plain values,
+with no I/O and no knowledge of where its inputs came from — kept
+independent and trivially testable without mocks. Having `scoring` import
+`discovery` (or vice versa) to fetch playlist history directly would
+couple a pure calculation package to a retrieval/orchestration package for
+no benefit; the two packages have no import relationship today and this
+card doesn't need to create one. Instead, `PlaylistTrackHistory` returns a
+plain `map[string]time.Time` (Spotify track ID → most recent `added_at`),
+and `scoring.FreshnessLastUsedAt(history, spotifyTrackID)` — living in
+`scoring`, operating only on that plain map — bridges the two without
+either package needing to know about the other's types. Nothing wires
+`CalculateFit` into production code yet either, so Freshness is
+consistent in staying an equally unwired, pure library function until a
+future ranking/orchestration card connects them.
+
+**Reason — the reuse proof lives in `discovery`, not `scoring`:** A Go
+test file's package can import anything its non-test code doesn't, so
+`backend/internal/discovery/freshness_integration_test.go` (package
+`discovery`, test-only) imports `scoring` to exercise the true end-to-end
+path — real `PlaylistTrackHistory` output flowing into
+`FreshnessLastUsedAt` and `CalculateFreshness` — without creating a
+non-test import cycle or requiring `scoring` to depend on `discovery`.
+
+**Consequences:** `backend/internal/discovery/recent_track_filter.go`
+gains `PlaylistTrackHistory(ctx) (map[string]time.Time, error)`;
+`FilterRecentTracks` now calls it instead of the inline
+`OfficialPlaylist`+`recentTrackIndex` pair. `backend/internal/
+scoring/freshness.go` gains `FreshnessLastUsedAt`. `scoring` still imports
+only `candidate`/`musicaldna`; `discovery` still imports only
+`spotify`/`candidate` in its non-test code — no new production import
+edges either direction.

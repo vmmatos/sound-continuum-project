@@ -44,9 +44,9 @@ one is a penalty.
 None of the five positive factors' actual calculation algorithms are
 implemented by this card — `scoring.Factors` only holds already-calculated
 (or not-yet-calculated) values. Later M5 cards implement one factor at a
-time. **Fit's algorithm is implemented as of Card #41** — see below;
-Freshness, Discovery Bonus, Diversity, Repetition Penalty, and Playlist Fit
-remain future cards.
+time. **Fit's algorithm is implemented as of Card #41, and Freshness's as
+of Card #42** — see below; Discovery Bonus, Diversity, Repetition Penalty,
+and Playlist Fit remain future cards.
 
 ### Fit (Card #41, `backend/internal/scoring/fit.go`)
 
@@ -163,18 +163,117 @@ Fit's domain). See Card #41's tests in
 `backend/internal/scoring/fit_test.go` for explicit regression coverage of
 each independence claim.
 
-### Freshness
+### Freshness (Card #42, `backend/internal/scoring/freshness.go`)
 
-How timely or recently relevant a candidate is — distinct from
-`candidate.Type`/`Category`, which are editorial classification, not a
-scoring signal. A `Past` candidate can still have meaningful freshness if
-it's being rediscovered; a `New Release` candidate does not automatically
-score `Freshness = 1.0` just because it's new.
+Freshness answers one question: **"How long has it been since this
+candidate last appeared in the official Sound Continuum playlist?"** It is
+**playlist-history freshness, not release-date freshness** — a 1985 track
+that has never appeared in Sound Continuum has `Freshness = 1.0`, and a
+track released yesterday that was already used recently has low Freshness.
+`scoring.CalculateFreshness` does not accept a release date, popularity
+figure, `CandidateType`, `Category`, or discovery provenance as input, so
+none of them can affect Freshness by construction — see
+`backend/internal/scoring/freshness_test.go`'s independence test.
 
-Distinct from **Fit**: Fit never reads release date, and Freshness never
-reads musical character — a very fresh candidate can have poor Fit, and a
-perfectly-fitting candidate can be old. `scoring.CalculateFit` takes no
-release-date input, by construction (see Card #41 tests).
+**Distinct from Fit.** Fit never reads playlist history, and Freshness
+never reads musical character — a very fresh candidate can have poor Fit,
+and a perfectly-fitting candidate can be stale. `CalculateFit` takes no
+playlist-history input, and `CalculateFreshness` takes no
+`musicaldna.Profile` input, by construction.
+
+**Distinct from the Recent Track Filter (Card #37).** `discovery.
+FilterRecentTracks` is a **hard eligibility rule**: "was this track used
+within the last `RecentTrackLookbackDays` (28) days? If so, exclude it
+before scoring." Freshness is a **soft scoring gradient** for candidates
+that already passed that filter: "of the tracks that *are* eligible, how
+long has it actually been?" A track excluded by the filter never reaches
+Freshness at all in the normal pipeline; Freshness exists to distinguish,
+among eligible tracks, a 35-day-old appearance from a 180-day-old one —
+the filter alone cannot do that, since both are simply "not recent."
+
+**Distinct from Repetition Penalty** (future card): Repetition Penalty is
+a scoring *penalty* about broader repetition patterns (e.g. the same
+artist or musical territory recurring); Freshness is a *positive* factor
+about one specific track's own playlist-appearance recency. The two are
+independent signals, not two implementations of the same idea.
+
+**Identity and source of truth.** Freshness uses Spotify track ID as the
+identity key and reuses Card #37's playlist-history retrieval — there is
+exactly one mechanism that walks the official playlist
+(`discovery.Service.PlaylistTrackHistory`, which both `FilterRecentTracks`
+and Freshness's wiring build on; see `docs/memory/decisions.md`'s Card #42
+entry for why this is exported rather than duplicated). If the same track
+appears multiple times in the playlist, the most recent valid `added_at`
+is used. Episodes and unavailable/null items are ignored, identically to
+Card #37. `scoring.CalculateFreshness` itself never calls Spotify — it is
+a pure function; a small glue function, `scoring.FreshnessLastUsedAt(
+history map[string]time.Time, spotifyTrackID string) *time.Time`, looks up
+one candidate's most recent appearance from the history map
+`PlaylistTrackHistory` returns.
+
+**Never-used candidates.** A candidate whose Spotify track ID has never
+appeared in the official playlist gets the maximum Freshness, exactly
+`1.0` — regardless of how old the underlying track is.
+
+**The curve.** For a used candidate, Freshness follows a half-life
+recovery curve:
+
+```
+Freshness(t) = 1 − 0.5^(t / HalfLifeDays)
+```
+
+where `t` is the number of days since the track's most recent appearance
+(`now − lastUsedAt`, both explicit inputs — `now` is always supplied by
+the caller, never read from the system clock inside the function, so
+Freshness is deterministic for a given candidate/history/evaluation time).
+Default `HalfLifeDays = 60` (`scoring.DefaultFreshnessHalfLifeDays`, in
+`scoring.FreshnessConfig`):
+
+| Days since last use | Freshness |
+|---|---|
+| 0 | 0.00 |
+| 28 (the #37 filter boundary) | 0.28 |
+| 35 | 0.33 |
+| 60 (one half-life) | 0.50 |
+| 180 | 0.88 |
+| 730 (2 years) | 0.9998 |
+
+This curve is continuous and monotonically increasing in `t` — more time
+since last use never produces a *lower* Freshness — and is deliberately
+asymptotic: a used candidate's Freshness approaches but never reaches
+exactly `1.0`, keeping it visibly distinct from a genuinely never-used
+candidate's exact `1.0`. Critically, it has **no discontinuity at the
+28-day Recent Track Filter boundary**: 27, 28, and 29 days apart differ by
+only a few hundredths, not a jump from near-zero to maximum — Freshness is
+a gradient *beyond* the hard filter, not a re-implementation of it.
+
+Half-life was chosen over a linear ramp (which needs an arbitrary
+saturation horizon with no natural justification) and over stepped buckets
+(which would reintroduce exactly the discontinuity the card forbids) as
+the simplest curve with one explainable constant. 60 days — roughly double
+the 28-day filter window — was chosen so a track just outside the filter
+window (29–35 days) reads as clearly low-but-not-zero, while a track
+several months old (120–180 days) reads as clearly high, giving the
+gradient real spread without an oversized configuration surface. See
+`docs/memory/decisions.md`'s Card #42 entry for the full reasoning.
+
+**Clock skew.** If `lastUsedAt` is somehow after `now`, `t` is clamped to
+`0` rather than producing a negative duration or an error — defensive
+handling, not a new failure mode.
+
+**Missing/unavailable history.** If the official playlist cannot be
+retrieved (not configured, authentication failure, API error, network
+error), `PlaylistTrackHistory`/`FreshnessLastUsedAt` never fabricate an
+empty result — the error propagates, exactly as Card #37 requires, so a
+temporary Spotify outage can never silently read as "every candidate is
+maximally fresh." A **successfully retrieved but genuinely empty**
+official playlist is different: every candidate is legitimately
+never-used, so Freshness is `1.0` for all of them.
+
+**Explainability.** `scoring.FreshnessResult` carries `Value`,
+`LastUsedAt` (nil for never-used), and `TimeSinceLastUse`, so a low or
+maximal Freshness is always traceable to a concrete last-appearance time
+rather than an opaque number.
 
 ### Discovery Bonus
 
@@ -319,11 +418,11 @@ would misleadingly look like "weakest possible candidate."
 A missing `RepetitionPenalty` is treated as `0.0` (no discount): silence
 about repetition history is not evidence of repetition.
 
-Since M5 implements factors one card at a time, Fit is the only positive
-factor with an implemented algorithm as of Card #41 — `scoring.Calculate`
-handles all six factors, but Freshness, Discovery Bonus, Diversity,
-Repetition Penalty, and Playlist Fit have no production code path
-constructing real values yet.
+Since M5 implements factors one card at a time, Fit and Freshness are the
+only positive factors with an implemented algorithm as of Card #42 —
+`scoring.Calculate` handles all six factors, but Discovery Bonus,
+Diversity, Repetition Penalty, and Playlist Fit have no production code
+path constructing real values yet.
 
 ## Explainability
 

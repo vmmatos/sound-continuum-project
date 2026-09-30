@@ -731,6 +731,55 @@
 - [x] Project memory updated (`current-state.md`, `decisions.md`,
       `roadmap.md`)
 
+## Done (Card #42 — Define Freshness)
+
+- [x] `scoring.CalculateFreshness(lastUsedAt *time.Time, now time.Time,
+      config FreshnessConfig) (FreshnessResult, error)` — half-life
+      recovery curve, `Freshness(t) = 1 − 0.5^(t / HalfLifeDays)`, default
+      `HalfLifeDays` 60 (`DefaultFreshnessConfig`); continuous,
+      monotonically increasing, asymptotic toward but never reaching
+      `1.0` for a used candidate, no discontinuity at the 28-day Recent
+      Track Filter boundary
+- [x] Never-used candidates (`lastUsedAt == nil`) get exactly `Freshness
+      = 1.0`; `now`/`lastUsedAt` are explicit parameters, never read from
+      the system clock, so Freshness is deterministic
+- [x] `discovery.Service.PlaylistTrackHistory` — new exported method
+      wrapping Card #37's existing `recentTrackIndex`; `FilterRecentTracks`
+      refactored to call it — one playlist-history retrieval mechanism,
+      not two
+- [x] `scoring.FreshnessLastUsedAt(history map[string]time.Time,
+      spotifyTrackID string) *time.Time` — bridges `PlaylistTrackHistory`'s
+      plain map to a per-candidate lookup without `scoring` importing
+      `discovery`, keeping `CalculateFreshness` I/O-free
+- [x] Duplicate playlist entries use the most recent valid `added_at`;
+      episodes/unavailable items ignored — both inherited unchanged from
+      Card #37's retrieval
+- [x] Missing/unavailable playlist history surfaces as an error, never a
+      false `Freshness = 1.0`; a successfully-retrieved empty playlist
+      legitimately yields `1.0` for every candidate
+- [x] `CalculateFreshness` takes no `candidate.CandidateTrack` —
+      independent of `CandidateType`/`Category`/release date/discovery
+      provenance by construction, verified by explicit tests
+- [x] `scoring.FreshnessResult` (`Value`, `LastUsedAt`,
+      `TimeSinceLastUse`) for explainability
+- [x] 28 new tests across `scoring/freshness_test.go`,
+      `scoring/freshness_integration_test.go`,
+      `discovery/recent_track_filter_test.go`, and
+      `discovery/freshness_integration_test.go`: never-used, gradient
+      ordering, boundary behavior around the 28-day window, normalization,
+      monotonicity, determinism, independence, invalid config, clock-skew
+      clamping, duplicate entries, empty playlist, retrieval failure, and
+      the full discovery-history-to-`CandidateScore` reuse path
+- [x] `go build ./...`, `go vet ./...`, `go test ./...` verified clean
+- [x] `scoring.Factors`, `scoring.Weights` (Freshness weight unchanged at
+      0.10), `scoring.Calculate`, `candidate.CandidateTrack`, and
+      `scoring.CalculateFit` unchanged; no ranking, no selection, no
+      `Status` mutation, no playlist mutation, no persistence
+- [x] `docs/scoring-model.md` — Freshness section replaced with the full
+      model (curve, config, reuse mechanism, explainability)
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+
 ## In progress
 
 - Nothing currently in progress.
@@ -742,9 +791,9 @@
       Filter, Metadata Enrichment, and discovery provenance are all done,
       see Cards 33-39 above); candidate persistence remains open for M5+
 - M5: Musical ranking & bridges — Candidate Scoring Model defined (Card
-      #40); Fit factor implemented (Card #41); Freshness, Discovery
-      Bonus, Diversity, Repetition Penalty, Playlist Fit, ranking, and
-      editorial selection remain open
+      #40); Fit factor implemented (Card #41); Freshness factor
+      implemented (Card #42); Discovery Bonus, Diversity, Repetition
+      Penalty, Playlist Fit, ranking, and editorial selection remain open
 - M6: Curator experience
 - M7: Weekly editorial workflow
 - M8: Feedback & evolution

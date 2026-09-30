@@ -17,4 +17,8 @@ var (
 	// ErrFitDimensionWeightSumInvalid is returned when FitWeights'
 	// Mood, Energy, Texture, and CulturalInfluence do not sum to 1.0.
 	ErrFitDimensionWeightSumInvalid = errors.New("scoring: fit mood, energy, texture, and cultural influence weights must sum to 1.0")
+
+	// ErrFreshnessHalfLifeOutOfRange is returned when FreshnessConfig's
+	// HalfLifeDays is not a positive number.
+	ErrFreshnessHalfLifeOutOfRange = errors.New("scoring: freshness half-life days must be a positive number")
 )
