@@ -747,6 +747,44 @@
   and [`decisions.md`](decisions.md) for the manifesto-to-`ProjectDNA`
   mapping.
 
+- M5 continues with Card #42 (Define Freshness):
+  `backend/internal/scoring/freshness.go` implements the Freshness factor —
+  how long since a candidate's Spotify track ID last appeared in the
+  official Sound Continuum playlist, distinct from release date. Never-used
+  candidates get exactly `1.0`; used candidates follow a half-life recovery
+  curve, `Freshness(t) = 1 − 0.5^(t / HalfLifeDays)` with a default
+  60-day half-life (`scoring.DefaultFreshnessConfig`) — continuous,
+  monotonically increasing, asymptotic toward but never reaching `1.0`, and
+  with no discontinuity across the 28-day Recent Track Filter boundary
+  (Card #37). `CalculateFreshness(lastUsedAt *time.Time, now time.Time,
+  config FreshnessConfig)` never reads the system clock or calls Spotify —
+  `now` and `lastUsedAt` are both explicit inputs, so results are
+  deterministic. Playlist-history retrieval is reused, not duplicated:
+  `discovery.Service.PlaylistTrackHistory` (a newly exported wrapper around
+  Card #37's existing `recentTrackIndex` pagination walk) is the one
+  mechanism both `FilterRecentTracks` and Freshness's wiring depend on;
+  `scoring.FreshnessLastUsedAt(history map[string]time.Time,
+  spotifyTrackID string)` looks up one candidate's most recent appearance
+  from that history without `scoring` importing `discovery`, keeping
+  `CalculateFreshness` I/O-free. A retrieval failure (auth/API/network
+  error) still propagates as an error, never as a false `Freshness = 1.0`;
+  a successfully-retrieved empty playlist legitimately yields `1.0` for
+  everyone. `CalculateFreshness` takes no `candidate.CandidateTrack`, so it
+  cannot see (and cannot be affected by) `CandidateType`, `Category`,
+  release date, or discovery provenance. 28 new tests across
+  `scoring/freshness_test.go`, `scoring/freshness_integration_test.go`,
+  `discovery/recent_track_filter_test.go`, and
+  `discovery/freshness_integration_test.go` cover the curve's gradient and
+  boundary behavior, normalization, monotonicity, determinism,
+  independence, duplicate-entry/empty-playlist/retrieval-failure handling,
+  and the full discovery-history-to-scoring reuse path. `scoring.Factors`,
+  `scoring.Weights` (Freshness weight unchanged at 0.10), and
+  `discovery.FilterRecentTracks`'s own behavior are unchanged; no ranking,
+  selection, or playlist mutation. See
+  [`docs/scoring-model.md`](../scoring-model.md) for the full Freshness
+  model and [`decisions.md`](decisions.md) for the curve-choice and
+  history-reuse reasoning.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

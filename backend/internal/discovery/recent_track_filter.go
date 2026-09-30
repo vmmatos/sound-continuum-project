@@ -72,12 +72,7 @@ const playlistItemsPageSize = 50
 // with no Spotify track ID (e.g. a future non-Spotify source) can never
 // match the playlist and always stays eligible.
 func (s *Service) FilterRecentTracks(ctx context.Context, candidates []candidate.CandidateTrack) (RecentTrackFilterResult, error) {
-	playlist, err := s.spotify.OfficialPlaylist(ctx)
-	if err != nil {
-		return RecentTrackFilterResult{}, err
-	}
-
-	index, err := s.recentTrackIndex(ctx, playlist.SpotifyPlaylistID)
+	index, err := s.PlaylistTrackHistory(ctx)
 	if err != nil {
 		return RecentTrackFilterResult{}, err
 	}
@@ -104,6 +99,27 @@ func (s *Service) FilterRecentTracks(ctx context.Context, candidates []candidate
 	result.EligibleCount = len(result.EligibleCandidates)
 	result.RecentlyUsedCount = len(result.RecentlyUsedCandidates)
 	return result, nil
+}
+
+// PlaylistTrackHistory returns the official Sound Continuum playlist's
+// full track-appearance history: every distinct Spotify track ID found in
+// it, mapped to its most recent added_at. This is the single source of
+// playlist-history retrieval in the codebase — FilterRecentTracks (the
+// 28-day hard eligibility cutoff, Card #37) and any factor needing
+// playlist-history recency as a softer signal (e.g. scoring.Freshness,
+// Card #42) both build on this one method rather than each retrieving and
+// paginating the playlist independently.
+//
+// Returns an error — never an empty map — if the official playlist isn't
+// configured yet or its items can't be retrieved, so a Spotify outage or
+// missing playlist can never be mistaken for "nothing has ever been
+// played."
+func (s *Service) PlaylistTrackHistory(ctx context.Context) (map[string]time.Time, error) {
+	playlist, err := s.spotify.OfficialPlaylist(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.recentTrackIndex(ctx, playlist.SpotifyPlaylistID)
 }
 
 // recentTrackIndex walks every item of the official playlist (following

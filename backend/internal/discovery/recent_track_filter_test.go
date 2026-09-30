@@ -363,6 +363,83 @@ func TestFilterRecentTracksAllRecentlyUsed(t *testing.T) {
 	}
 }
 
+// --- PlaylistTrackHistory ---
+//
+// These test the exported method directly — FilterRecentTracks' own tests
+// above already exercise it indirectly, so this focuses on the reuse
+// surface a future factor (e.g. scoring.Freshness, Card #42) depends on.
+
+func TestPlaylistTrackHistoryDuplicateTrackKeepsLatest(t *testing.T) {
+	f := &fakeCatalogue{
+		officialPlaylist: &spotify.OfficialPlaylist{SpotifyPlaylistID: testPlaylistID},
+		playlistItems: map[string][]spotify.PlaylistItem{
+			testPlaylistID: {
+				trackItem("track-1", rfc3339(fixedNow.AddDate(0, 0, -180))),
+				trackItem("track-1", rfc3339(fixedNow.AddDate(0, 0, -40))),
+			},
+		},
+	}
+	svc := newTestSvcRecentTrackFilter(f, 28)
+
+	history, err := svc.PlaylistTrackHistory(context.Background())
+	if err != nil {
+		t.Fatalf("PlaylistTrackHistory: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("history = %+v, want 1 distinct track", history)
+	}
+	if want := fixedNow.AddDate(0, 0, -40); !history["track-1"].Equal(want) {
+		t.Errorf("history[track-1] = %v, want %v (the newer occurrence)", history["track-1"], want)
+	}
+}
+
+func TestPlaylistTrackHistoryEpisodesAndNullItemsIgnored(t *testing.T) {
+	f := &fakeCatalogue{
+		officialPlaylist: &spotify.OfficialPlaylist{SpotifyPlaylistID: testPlaylistID},
+		playlistItems: map[string][]spotify.PlaylistItem{
+			testPlaylistID: {
+				{AddedAt: rfc3339(fixedNow.AddDate(0, 0, -1)), ItemType: "episode", Episode: &spotify.Episode{ID: "ep-1"}},
+				{ItemType: "unavailable"},
+				trackItem("track-1", rfc3339(fixedNow.AddDate(0, 0, -1))),
+			},
+		},
+	}
+	svc := newTestSvcRecentTrackFilter(f, 28)
+
+	history, err := svc.PlaylistTrackHistory(context.Background())
+	if err != nil {
+		t.Fatalf("PlaylistTrackHistory: %v", err)
+	}
+	if len(history) != 1 {
+		t.Errorf("history = %+v, want only the one track item, episodes/unavailable ignored", history)
+	}
+}
+
+func TestPlaylistTrackHistoryRetrievalFailureReturnsError(t *testing.T) {
+	t.Run("official playlist not configured", func(t *testing.T) {
+		f := &fakeCatalogue{}
+		svc := newTestSvcRecentTrackFilter(f, 28)
+
+		_, err := svc.PlaylistTrackHistory(context.Background())
+		if !errors.Is(err, spotify.ErrOfficialPlaylistNotConfigured) {
+			t.Fatalf("err = %v, want ErrOfficialPlaylistNotConfigured", err)
+		}
+	})
+
+	t.Run("playlist items retrieval fails", func(t *testing.T) {
+		f := &fakeCatalogue{
+			officialPlaylist: &spotify.OfficialPlaylist{SpotifyPlaylistID: testPlaylistID},
+			playlistItemsErr: map[string]error{testPlaylistID: spotify.ErrAPIFailure},
+		}
+		svc := newTestSvcRecentTrackFilter(f, 28)
+
+		_, err := svc.PlaylistTrackHistory(context.Background())
+		if !errors.Is(err, spotify.ErrAPIFailure) {
+			t.Fatalf("err = %v, want ErrAPIFailure", err)
+		}
+	})
+}
+
 func TestFilterRecentTracksNoMatches(t *testing.T) {
 	f := &fakeCatalogue{
 		officialPlaylist: &spotify.OfficialPlaylist{SpotifyPlaylistID: testPlaylistID},
