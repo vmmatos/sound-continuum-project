@@ -2,7 +2,6 @@ package discovery
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"sort"
@@ -218,6 +217,5 @@ func (s *Service) PoolHandler(w http.ResponseWriter, r *http.Request) {
 	pool.RecentTrackFilter.EligibleCandidates = enrichment.EnrichedCandidates
 	pool.MetadataEnrichment = enrichment
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(pool)
+	writeJSON(w, pool)
 }
