@@ -780,6 +780,48 @@
 - [x] Project memory updated (`current-state.md`, `decisions.md`,
       `roadmap.md`)
 
+## Done (Card #43 — Define Discovery Bonus)
+
+- [x] `scoring.CalculateDiscoveryBonus(category candidate.Category,
+      editorialDiscoveryValue *float64) (DiscoveryBonusResult, error)` — v1
+      formula: `DiscoveryBonus = editorialDiscoveryValue`, only when
+      `category == candidate.CategoryEmerging` (necessary, never
+      sufficient) and a value was explicitly supplied
+- [x] `DiscoveryBonusResult{Value, Category, Eligible, Supplied}` — `Value`
+      is `nil` for a non-Emerging candidate or an eligible-but-unassessed
+      one; an explicit `0.0` assessment is preserved exactly, never
+      collapsed into `nil`
+- [x] No `DiscoveryBonusWeights`/config struct — v1 has no configurable
+      knob (identity formula), unlike `FitWeights`/`FreshnessConfig`
+- [x] `CalculateDiscoveryBonus` takes no `candidate.CandidateTrack`,
+      `CandidateType`, `candidate.DiscoveryProvenance`, Last.fm
+      similarity/match value, Spotify popularity/followers (not present in
+      this project's Spotify model at all), release date, Fit, Freshness,
+      Diversity, PlaylistFit, or RepetitionPenalty — none are formula
+      inputs, by construction; a candidate's real provenance stays
+      available on `CandidateTrack.Provenance` for explanation, never fed
+      into the calculation
+- [x] `ErrDiscoveryBonusValueOutOfRange` added to `scoring/errors.go`;
+      out-of-range/NaN editorial values rejected before any computation
+- [x] 22 new tests across `scoring/discovery_bonus_test.go` (eligibility,
+      supply, explicit-zero-vs-nil, category boundary, validation,
+      determinism, 8 independence regression guards) and
+      `scoring/discovery_bonus_integration_test.go` (full candidate →
+      `CandidateScore` path, non-Emerging-stays-nil, default-weight
+      preservation, missing-factor renormalization)
+- [x] `go build ./...`, `go vet ./...`, `go test ./...` verified clean
+- [x] `scoring.Factors`/`scoring.Weights` (DiscoveryBonus weight unchanged
+      at 0.15)/`scoring.Calculate`, `candidate.CandidateTrack`,
+      `scoring.CalculateFit`, `scoring.CalculateFreshness`, and
+      `discovery.pool.go` all unchanged; no ranking, no selection, no
+      `Status` mutation, no playlist mutation, no persistence, no HTTP/API
+      wiring (matches Fit/Freshness's current unwired state)
+- [x] `docs/scoring-model.md` — Discovery Bonus section replaced with the
+      full model; corrected a stale pre-Card-#43 claim that Discovery
+      Bonus reads discovery provenance
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+
 ## In progress
 
 - Nothing currently in progress.
@@ -791,9 +833,9 @@
       Filter, Metadata Enrichment, and discovery provenance are all done,
       see Cards 33-39 above); candidate persistence remains open for M5+
 - M5: Musical ranking & bridges — Candidate Scoring Model defined (Card
-      #40); Fit factor implemented (Card #41); Freshness factor
-      implemented (Card #42); Discovery Bonus, Diversity, Repetition
-      Penalty, Playlist Fit, ranking, and editorial selection remain open
+      #40); Fit (Card #41), Freshness (Card #42), and Discovery Bonus
+      (Card #43) factors implemented; Diversity, Repetition Penalty,
+      Playlist Fit, ranking, and editorial selection remain open
 - M6: Curator experience
 - M7: Weekly editorial workflow
 - M8: Feedback & evolution

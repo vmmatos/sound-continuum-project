@@ -44,9 +44,9 @@ one is a penalty.
 None of the five positive factors' actual calculation algorithms are
 implemented by this card — `scoring.Factors` only holds already-calculated
 (or not-yet-calculated) values. Later M5 cards implement one factor at a
-time. **Fit's algorithm is implemented as of Card #41, and Freshness's as
-of Card #42** — see below; Discovery Bonus, Diversity, Repetition Penalty,
-and Playlist Fit remain future cards.
+time. **Fit's algorithm is implemented as of Card #41, Freshness's as of
+Card #42, and Discovery Bonus's as of Card #43** — see below; Diversity,
+Repetition Penalty, and Playlist Fit remain future cards.
 
 ### Fit (Card #41, `backend/internal/scoring/fit.go`)
 
@@ -158,8 +158,9 @@ never an opaque number.
 `musicaldna.Profile`/`ProjectDNA`/`WeeklyDirection` values — never a
 `candidate.CandidateTrack` — so it cannot see, and cannot be affected by,
 `CandidateType`, `Category`, release date (Freshness's domain), discovery
-provenance (Discovery Bonus's domain), or playlist sequence (Playlist
-Fit's domain). See Card #41's tests in
+provenance, or playlist sequence (Playlist Fit's domain) — as of Card #43,
+Discovery Bonus does not read discovery provenance either; see that
+section below. See Card #41's tests in
 `backend/internal/scoring/fit_test.go` for explicit regression coverage of
 each independence claim.
 
@@ -275,18 +276,97 @@ never-used, so Freshness is `1.0` for all of them.
 maximal Freshness is always traceable to a concrete last-appearance time
 rather than an opaque number.
 
-### Discovery Bonus
+### Discovery Bonus (Card #43, `backend/internal/scoring/discovery_bonus.go`)
 
-The editorial value of surfacing something less obvious to the audience —
-*useful* discovery potential, not simply low popularity. "Unknown" does
-not automatically mean "valuable," and `Category: Emerging` does not
+Discovery Bonus answers one question: **"Is this candidate genuinely worth
+surfacing as a discovery?"** — never "how unknown is this artist?" The
+editorial value of surfacing something less obvious to the audience is
+*useful* discovery potential, not simply low popularity. "Unknown" does not
+automatically mean "valuable," and `Category: Emerging` does not
 automatically mean a high score. Obscurity is never rewarded for its own
-sake, per the manifesto's "discovery without forced obscurity" principle.
+sake, per the manifesto's "discovery without forced obscurity" principle
+(M1) — an emerging artist matters because of musical/editorial value, not
+simply because it is unknown.
 
-Distinct from **Fit**: Discovery Bonus reads discovery provenance (how a
-candidate was found); Fit never does. A candidate discovered through an
-unusual path can still have strong or weak Fit independently — provenance
-is not itself a Fit input (see Card #41 tests).
+**Eligibility, not automatic value.** `candidate.CategoryEmerging` is the
+only eligibility gate — the existing editorial classification, not a new
+"EmergingArtist" flag, and independent of `CandidateType` (a `Discovery`-
+type candidate is not necessarily `Emerging`, and vice versa; see Card #32).
+Eligibility is **necessary but never sufficient**: `Category: Emerging`
+alone never produces a bonus. There is no `if Category == Emerging:
+DiscoveryBonus = fixed value` shortcut anywhere in this implementation.
+
+**Explicit editorial input, not an automatic derivation.** A genuine
+discovery assessment requires a human editorial judgment, represented as an
+explicit `editorialDiscoveryValue *float64` in `[0,1]`, supplied by the
+caller — never derived from Category, CandidateType, discovery provenance,
+Last.fm similarity, release date, or any other signal already covered by a
+different factor. v1's formula is deliberately trivial:
+
+```
+DiscoveryBonus = editorialDiscoveryValue   (when eligible and supplied)
+```
+
+No curve, no popularity inversion, no obscurity score, no multi-source
+confidence model — Card #43 defines the editorial *signal*, not a
+music-intelligence system.
+
+**Missing vs. explicit zero.** `scoring.DiscoveryBonusResult.Value` is `nil`
+whenever the candidate is not eligible, *or* is eligible but no editorial
+value has yet been supplied — an unassessed Emerging candidate must never
+silently read as "bad discovery" (`DiscoveryBonus = 0.0`). An **explicit**
+editorial assessment of `0.0` ("this candidate has no meaningful discovery
+value") is different and is preserved exactly as `0.0`, not collapsed into
+`nil`. `DiscoveryBonusResult.Eligible`/`Supplied` make each of the three
+states — not eligible, eligible-but-unassessed, eligible-and-scored —
+independently inspectable for explanation.
+
+**Distinct from Fit.** Fit asks whether a candidate belongs to Sound
+Continuum's musical identity and direction; Discovery Bonus asks whether
+surfacing an Emerging candidate specifically has editorial discovery value.
+`scoring.CalculateDiscoveryBonus` takes no `musicaldna.Profile`/
+`ProjectDNA`/`WeeklyDirection`, and `CalculateFit` takes no
+`candidate.Category` or editorial discovery value — the two factors cannot
+influence each other by construction. A high-Fit candidate can have no
+Discovery Bonus (not Emerging, or unassessed); a low-Fit candidate can still
+carry a high Discovery Bonus.
+
+**Discovery provenance is context, never a formula input.** Corrected from
+an earlier draft of this document: Discovery Bonus does **not** read
+`candidate.DiscoveryProvenance`, and in particular never reads Last.fm's own
+similarity/match value (`DiscoveryProvenance.LastFMMatch`) — that field is
+explicitly documented, in `candidate/provenance.go`, as discovery metadata
+only, never a ranking signal, and this project has held that line since
+Card #39. `scoring.CalculateDiscoveryBonus` accepts only a `candidate.
+Category` and the editorial value — provenance is never a parameter, so it
+structurally cannot leak into the score. A candidate's real
+`CandidateTrack.Provenance` remains available to a caller/UI to display
+*alongside* the resulting `DiscoveryBonusResult`, for explanation — the two
+are shown together, never combined into one number.
+
+**No popularity, no other-factor dependency.** Discovery Bonus never reads
+Spotify popularity/followers (not present in this project's Spotify model
+at all — removed for Development Mode, see `spotify/types.go`), streaming
+or listener counts, chart position, release date, Fit, Freshness, Diversity,
+Playlist Fit, or Repetition Penalty. A relatively unknown artist can receive
+`DiscoveryBonus = 0` with no demonstrated editorial value; a relatively
+well-known artist can receive `DiscoveryBonus = 1` if the candidate is
+genuinely valuable as a discovery in context. Popularity is never a proxy
+for either case.
+
+**Validation.** `editorialDiscoveryValue`, if supplied, must be a
+non-`NaN` number in `[0,1]`; otherwise `CalculateDiscoveryBonus` returns a
+zero-value `DiscoveryBonusResult` and `ErrDiscoveryBonusValueOutOfRange`,
+with no partial computation — the same convention `CalculateFit`/
+`CalculateFreshness` already use.
+
+**Integration and weight.** `scoring.CalculateDiscoveryBonus`'s
+`Value *float64` threads into `Factors.DiscoveryBonus` exactly as Fit and
+Freshness thread into `Factors.Fit`/`Factors.Freshness` — `score.go` needed
+no changes. The existing `Weights.DiscoveryBonus = 0.15` (set in Card #40's
+`DefaultWeights()`) is unchanged; `Calculate`'s existing missing-factor
+renormalization already treats an unavailable Discovery Bonus as absent
+from the weighted average, never as `0`, with no code change required.
 
 ### Diversity
 

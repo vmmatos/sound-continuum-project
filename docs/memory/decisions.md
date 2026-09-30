@@ -1555,3 +1555,92 @@ scoring/freshness.go` gains `FreshnessLastUsedAt`. `scoring` still imports
 only `candidate`/`musicaldna`; `discovery` still imports only
 `spotify`/`candidate` in its non-test code — no new production import
 edges either direction.
+
+---
+
+**Decision:** `scoring.CalculateDiscoveryBonus(category candidate.Category,
+editorialDiscoveryValue *float64) (DiscoveryBonusResult, error)` takes an
+explicit editorial discovery value as a plain function parameter, never a
+`candidate.CandidateTrack` field, and never derives it from discovery
+provenance, Last.fm similarity, `CandidateType`, or popularity.
+
+**Context:** Card #43 defines the Discovery Bonus factor: it must reward
+`CategoryEmerging` candidates only when there is genuine, editorially
+demonstrated discovery value — never simply because a candidate is unknown,
+was found via Last.fm, or has a high Last.fm similarity score. The card is
+explicit that no automatic signal exists (or should exist) for "how
+valuable is this discovery" — that judgment is inherently human.
+
+**Reason — parameter, not a `CandidateTrack` field:** This mirrors Card
+#41's `musicaldna.Profile` decision exactly: no automatic signal exists
+today for a candidate's genuine discovery value, so it can currently only
+come from explicit editorial assessment. `CalculateDiscoveryBonus` takes it
+as a plain argument rather than adding a field to `candidate.CandidateTrack`
+— that struct stays completely unchanged by this card, consistent with the
+project's standing discipline of not adding scoring-only state to the
+domain model ahead of a real caller (see the Card #38 `CandidateMetadata`
+precedent for the *opposite* case — Spotify-sourced metadata genuinely
+belongs on `CandidateTrack` because it's a fact about the track, not an
+editorial judgment call made per scoring run).
+
+**Reason — discovery provenance and Last.fm similarity are excluded from
+the formula:** `candidate.DiscoveryProvenance.LastFMMatch` has been
+documented since Card #39 as "discovery metadata only... never a ranking
+signal." Reading it into Discovery Bonus would directly contradict that
+existing architectural boundary and would conflate "how this candidate was
+found" with "how valuable it is to surface" — two different questions. A
+candidate discovered through an unusual or unremarkable path can still have
+strong or weak discovery value independently; provenance remains available
+on `CandidateTrack.Provenance` for a caller to display *alongside* a
+`DiscoveryBonusResult`, never combined into the calculation itself.
+
+**Reason — `CategoryEmerging` is necessary but not sufficient:** The
+manifesto's "discovery without forced obscurity" principle (M1) means an
+emerging/unknown artist is not automatically valuable — obscurity itself is
+never a positive signal. Gating on `category == candidate.CategoryEmerging`
+alone, with no explicit value supplied, would silently reward the wrong
+thing (`if Category == Emerging: DiscoveryBonus = 1.0`, the exact shortcut
+the card forbids). Reusing `candidate.CategoryEmerging` — the existing
+editorial classification, not a new "EmergingArtist" flag — for eligibility
+keeps this factor consistent with the rest of the scoring model's use of
+`Category`, and keeps it independent of `CandidateType` by construction: a
+`Discovery`-type candidate is not necessarily `Emerging`, and this function
+never even accepts `CandidateType` as input.
+
+**Reason — missing vs. explicit zero must stay distinguishable:** Per the
+scoring model's existing missing-factor convention (Card #40), an
+unavailable positive factor must never read as a negative signal. This
+matters more for Discovery Bonus than any other factor: if "no editorial
+assessment yet" silently became `0.0`, every newly-discovered Emerging
+candidate would default to "worthless" until a human got around to
+assessing it — the opposite of the intended behavior. `DiscoveryBonusResult`
+exposes `Eligible`/`Supplied` independently of `Value` so "not eligible,"
+"eligible but unassessed," and "eligible and scored" are all distinguishable
+states, and an explicit `EditorialDiscoveryValue = 0.0` ("assessed as no
+discovery value") is preserved exactly, never collapsed into the same `nil`
+that represents "not yet assessed."
+
+**Reason — no weights/config struct:** Unlike `FitWeights` (multiple
+dimension weights) or `FreshnessConfig` (a half-life constant), v1's
+formula is the identity function on the supplied value — there is no
+editorial knob to name. Adding a struct with no configurable field would be
+speculative machinery ahead of a real v2 need (e.g. a future curve or
+multi-signal blend), which Card #43 explicitly defers ("the first version
+should intentionally be this simple").
+
+**Reason — Spotify popularity/followers exclusion is structural, not
+tested:** These fields were already removed from this project's Spotify
+model entirely for Development Mode (Card #29's decision above) — there is
+no field anywhere in the codebase that could leak into Discovery Bonus even
+by mistake, so no synthetic test fixture was built to "prove" the
+exclusion.
+
+**Consequences:** `backend/internal/scoring/discovery_bonus.go` adds
+`DiscoveryBonusResult` and `CalculateDiscoveryBonus`; `errors.go` gains
+`ErrDiscoveryBonusValueOutOfRange`. `score.go` needed zero changes — `
+Factors.DiscoveryBonus`, `Weights.DiscoveryBonus = 0.15`, and `Calculate`'s
+renormalization already handled it generically since Card #40. Like
+`CalculateFit`/`CalculateFreshness`, `CalculateDiscoveryBonus` is not wired
+into `pool.go`/`main.go`/any handler — it remains a pure, tested library
+function until a future ranking/orchestration card connects it, consistent
+with M5's "implement one factor at a time" precedent.

@@ -21,4 +21,9 @@ var (
 	// ErrFreshnessHalfLifeOutOfRange is returned when FreshnessConfig's
 	// HalfLifeDays is not a positive number.
 	ErrFreshnessHalfLifeOutOfRange = errors.New("scoring: freshness half-life days must be a positive number")
+
+	// ErrDiscoveryBonusValueOutOfRange is returned when
+	// CalculateDiscoveryBonus is given a non-nil editorial discovery value
+	// outside [0,1].
+	ErrDiscoveryBonusValueOutOfRange = errors.New("scoring: editorial discovery value must be in [0,1]")
 )
