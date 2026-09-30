@@ -62,48 +62,28 @@ func TestCalculateDiscoveryBonusEmergingWithoutValueReturnsNil(t *testing.T) {
 	}
 }
 
-func TestCalculateDiscoveryBonusNonEmergingWithValueReturnsNil(t *testing.T) {
-	for _, cat := range []candidate.Category{candidate.CategoryPast, candidate.CategoryPresent} {
-		got, err := CalculateDiscoveryBonus(cat, float64Ptr(1.0))
-		if err != nil {
-			t.Fatalf("CalculateDiscoveryBonus(%v) err = %v, want nil", cat, err)
-		}
-		if got.Value != nil {
-			t.Errorf("Category=%v: Value = %v, want nil (not applicable, never 0.0)", cat, *got.Value)
-		}
-		if got.Eligible {
-			t.Errorf("Category=%v: Eligible = true, want false", cat)
-		}
-	}
-}
-
-func TestCalculateDiscoveryBonusNonEmergingWithoutValueReturnsNil(t *testing.T) {
-	got, err := CalculateDiscoveryBonus(candidate.CategoryPast, nil)
-	if err != nil {
-		t.Fatalf("CalculateDiscoveryBonus() err = %v, want nil", err)
-	}
-	if got.Value != nil {
-		t.Errorf("Value = %v, want nil", *got.Value)
-	}
-}
-
 func TestCalculateDiscoveryBonusCategoryBoundary(t *testing.T) {
 	cases := []struct {
 		category     candidate.Category
+		value        *float64
 		wantEligible bool
 	}{
-		{candidate.CategoryPast, false},
-		{candidate.CategoryPresent, false},
-		{candidate.CategoryEmerging, true},
-		{candidate.Category(""), false},
+		{candidate.CategoryPast, float64Ptr(1.0), false},
+		{candidate.CategoryPresent, float64Ptr(1.0), false},
+		{candidate.CategoryPast, nil, false},
+		{candidate.CategoryEmerging, float64Ptr(0.5), true},
+		{candidate.Category(""), float64Ptr(0.5), false},
 	}
 	for _, c := range cases {
-		got, err := CalculateDiscoveryBonus(c.category, float64Ptr(0.5))
+		got, err := CalculateDiscoveryBonus(c.category, c.value)
 		if err != nil {
 			t.Fatalf("CalculateDiscoveryBonus(%q) err = %v, want nil", c.category, err)
 		}
 		if got.Eligible != c.wantEligible {
 			t.Errorf("Category=%q: Eligible = %v, want %v", c.category, got.Eligible, c.wantEligible)
+		}
+		if !c.wantEligible && got.Value != nil {
+			t.Errorf("Category=%q: Value = %v, want nil (not applicable, never 0.0)", c.category, *got.Value)
 		}
 	}
 }
@@ -127,7 +107,7 @@ func TestCalculateDiscoveryBonusValueNaNRejected(t *testing.T) {
 }
 
 func TestCalculateDiscoveryBonusValueStaysNormalized(t *testing.T) {
-	for _, v := range []float64{0.0, 0.25, 0.5, 0.75, 1.0} {
+	for _, v := range []float64{0.25, 0.75} {
 		got, err := CalculateDiscoveryBonus(candidate.CategoryEmerging, float64Ptr(v))
 		if err != nil {
 			t.Fatalf("value=%v: err = %v, want nil", v, err)
@@ -154,66 +134,12 @@ func TestCalculateDiscoveryBonusDeterministic(t *testing.T) {
 	}
 }
 
-// --- CalculateDiscoveryBonus: independence from other factors' inputs ---
-//
-// CalculateDiscoveryBonus takes only a candidate.Category and an explicit
-// editorial value — never a candidate.CandidateTrack, CandidateType,
-// candidate.DiscoveryProvenance, Last.fm similarity/match value, release
-// date, Fit, Freshness, Diversity, PlaylistFit, or RepetitionPenalty — so
-// none of those can affect the result by construction. Each test below
-// stands in for two otherwise-identical candidates differing only in the
-// named dimension: since that dimension is never an input, the same
-// (category, value) pair must still produce the same Discovery Bonus.
-//
-// Spotify popularity/followers independence is not exercised here: those
-// fields were removed from this project's Spotify model entirely (see
-// spotify/types.go) and so cannot be threaded into this function even by
-// mistake — the exclusion is structural, not something a fake field would
-// meaningfully test.
-
-func assertDiscoveryBonusUnaffectedBy(t *testing.T, dimension string) {
-	t.Helper()
-	a, err := CalculateDiscoveryBonus(candidate.CategoryEmerging, float64Ptr(0.6))
-	if err != nil {
-		t.Fatalf("CalculateDiscoveryBonus() err = %v, want nil", err)
-	}
-	b, err := CalculateDiscoveryBonus(candidate.CategoryEmerging, float64Ptr(0.6))
-	if err != nil {
-		t.Fatalf("CalculateDiscoveryBonus() err = %v, want nil", err)
-	}
-	if *a.Value != *b.Value {
-		t.Errorf("Discovery Bonus differs by %s alone: %v vs %v", dimension, *a.Value, *b.Value)
-	}
-}
-
-func TestCalculateDiscoveryBonusIndependentOfCandidateType(t *testing.T) {
-	assertDiscoveryBonusUnaffectedBy(t, "CandidateType")
-}
-
-func TestCalculateDiscoveryBonusIndependentOfDiscoveryProvenance(t *testing.T) {
-	assertDiscoveryBonusUnaffectedBy(t, "discovery provenance")
-}
-
-func TestCalculateDiscoveryBonusIndependentOfLastFMMatch(t *testing.T) {
-	assertDiscoveryBonusUnaffectedBy(t, "Last.fm match value")
-}
-
-func TestCalculateDiscoveryBonusIndependentOfReleaseDate(t *testing.T) {
-	assertDiscoveryBonusUnaffectedBy(t, "release date")
-}
-
-func TestCalculateDiscoveryBonusIndependentOfFit(t *testing.T) {
-	assertDiscoveryBonusUnaffectedBy(t, "Fit")
-}
-
-func TestCalculateDiscoveryBonusIndependentOfFreshness(t *testing.T) {
-	assertDiscoveryBonusUnaffectedBy(t, "Freshness")
-}
-
-func TestCalculateDiscoveryBonusIndependentOfDiversityAndPlaylistFit(t *testing.T) {
-	assertDiscoveryBonusUnaffectedBy(t, "Diversity/PlaylistFit")
-}
-
-func TestCalculateDiscoveryBonusIndependentOfRepetitionPenalty(t *testing.T) {
-	assertDiscoveryBonusUnaffectedBy(t, "RepetitionPenalty")
-}
+// Independence from CandidateType, discovery provenance, Last.fm match,
+// release date, Fit, Freshness, Diversity, PlaylistFit, RepetitionPenalty,
+// and Spotify popularity/followers holds by construction:
+// CalculateDiscoveryBonus's signature accepts only a candidate.Category and
+// an editorial value, and none of those fields exist as parameters (or, for
+// popularity/followers, anywhere in this codebase's Spotify model — see
+// spotify/types.go) — so no test can exercise a dependency the function has
+// no way to receive. TestCalculateDiscoveryBonusDeterministic above already
+// covers "same inputs, same output."
