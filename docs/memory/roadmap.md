@@ -37,10 +37,14 @@ of future implementation requirements.
 - **M5 — Musical Ranking & Bridges** — In progress (the Candidate Scoring
   Model is defined: six factors, initial weights, and the combination
   formula; the Fit factor's algorithm is implemented (Card #41,
-  `musicaldna` package + `scoring.CalculateFit`), and the Freshness
-  factor's algorithm is implemented (Card #42, `scoring.CalculateFreshness`,
-  reusing Card #37's playlist-history retrieval) — see
-  [`docs/scoring-model.md`](../scoring-model.md); Discovery Bonus,
+  `musicaldna` package + `scoring.CalculateFit`), the Freshness factor's
+  algorithm is implemented (Card #42, `scoring.CalculateFreshness`,
+  reusing Card #37's playlist-history retrieval), and the Discovery Bonus
+  factor's algorithm is implemented (Card #43,
+  `scoring.CalculateDiscoveryBonus` — eligible only for `CategoryEmerging`
+  candidates, and only when an explicit editorial discovery value is
+  supplied; never derived from discovery provenance, Last.fm similarity,
+  or popularity) — see [`docs/scoring-model.md`](../scoring-model.md);
   Diversity, Repetition Penalty, Playlist Fit, ranking, and automatic
   selection remain open)
 - **M6 — Curator Experience** — Planned

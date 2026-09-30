@@ -785,6 +785,60 @@
   model and [`decisions.md`](decisions.md) for the curve-choice and
   history-reuse reasoning.
 
+- M5 continues with Card #43 (Define Discovery Bonus):
+  `backend/internal/scoring/discovery_bonus.go` implements the Discovery
+  Bonus factor — the editorial value of surfacing a `CategoryEmerging`
+  candidate as a genuine discovery, never a proxy for how unknown it is.
+  `CalculateDiscoveryBonus(category candidate.Category,
+  editorialDiscoveryValue *float64) (DiscoveryBonusResult, error)` v1's
+  formula is deliberately trivial — `DiscoveryBonus =
+  editorialDiscoveryValue` — applied only when `category ==
+  candidate.CategoryEmerging` (necessary but never sufficient on its own)
+  and a value was explicitly supplied by the caller; there is no `if
+  Category == Emerging: DiscoveryBonus = fixed value` shortcut anywhere.
+  `DiscoveryBonusResult{Value, Category, Eligible, Supplied}` makes "not
+  eligible," "eligible but unassessed," and "eligible and scored"
+  independently inspectable: `Value` is `nil` for the first two cases and
+  an explicit `0.0` editorial assessment ("no meaningful discovery value")
+  is preserved exactly, never collapsed into `nil`. No
+  `DiscoveryBonusWeights`/config struct was added — v1's identity formula
+  has no configurable knob, unlike `FitWeights`'s dimension weights or
+  `FreshnessConfig`'s half-life. `CalculateDiscoveryBonus` takes no
+  `candidate.CandidateTrack`, `CandidateType`, discovery provenance, or
+  Last.fm similarity/match value — `candidate.DiscoveryProvenance.LastFMMatch`
+  remains exactly what it was documented as since Card #39, discovery
+  metadata only, never a ranking signal — nor Spotify popularity/followers
+  (which don't exist anywhere in this codebase's Spotify model, removed for
+  Development Mode), release date, Fit, Freshness, Diversity, PlaylistFit,
+  or RepetitionPenalty; none of those are formula inputs, by construction.
+  A candidate's real `CandidateTrack.Provenance` stays available to a
+  caller for editorial explanation alongside the resulting
+  `DiscoveryBonusResult` — the two are shown together, never combined into
+  one number, and provenance is never threaded into the calculation itself.
+  `ErrDiscoveryBonusValueOutOfRange` (added to `scoring/errors.go`) rejects
+  a non-nil editorial value outside `[0,1]` or NaN before any computation,
+  mirroring `CalculateFit`/`CalculateFreshness`'s validate-first convention.
+  22 new tests across `scoring/discovery_bonus_test.go` (eligibility/supply
+  combinations, explicit-zero-vs-nil, the category boundary, validation,
+  determinism, and eight independence regression guards covering
+  CandidateType/provenance/Last.fm match/release date/Fit/Freshness/
+  Diversity+PlaylistFit/RepetitionPenalty) and
+  `scoring/discovery_bonus_integration_test.go` (a full candidate →
+  `CandidateScore` path with real provenance left untouched, a
+  non-Emerging candidate staying nil end-to-end, the existing `0.15`
+  default weight confirmed unchanged, and `Calculate`'s missing-factor
+  renormalization confirmed correct with Discovery Bonus present) exercise
+  every case, all against fakes/pure values, no real network calls.
+  `scoring.Factors`, `scoring.Weights`, `scoring.Calculate`,
+  `candidate.CandidateTrack`, `scoring.CalculateFit`,
+  `scoring.CalculateFreshness`, and `discovery/pool.go` are all unchanged;
+  no ranking, selection, `Status` mutation, playlist mutation, persistence,
+  or HTTP/API wiring — `CalculateDiscoveryBonus` stays exactly as unwired
+  from any pipeline/handler as `CalculateFit`/`CalculateFreshness` are
+  today. See [`docs/scoring-model.md`](../scoring-model.md) for the full
+  Discovery Bonus model and [`decisions.md`](decisions.md) for the
+  exclusion-list and parameter-vs-field reasoning.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.
