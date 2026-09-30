@@ -1333,3 +1333,108 @@ given score's completeness. If zero positive factors are available,
 repetition history is not evidence of repetition. See
 [`docs/scoring-model.md`](../scoring-model.md) for the worked numeric
 example and the full missing-factor strategy.
+
+---
+
+**Decision:** Introduce `backend/internal/musicaldna` as a new package
+holding one shared `Profile` type (mood/energy/texture/cultural influence,
+each optional) and two editorial contexts built from it — `ProjectDNA`
+(stable, project-wide) and `WeeklyDirection` (contextual, per edition) —
+and implement the Fit factor (`scoring.CalculateFit`, Card #41) against
+them, rather than deriving Fit from `candidate.CandidateTrack` fields or
+inventing a second Musical DNA representation.
+
+**Context:** Card #41 requires Fit to evaluate "compatibility with Sound
+Continuum DNA" and "compatibility with the current week's direction,"
+explicitly forbidding genre matching, Spotify Audio Features/Analysis,
+popularity, and fabricated precision. Before this card, "musical DNA" was
+only an informal phrase (this file, the Card #29 entry above) and no
+weekly/edition-direction model existed anywhere in the repo.
+
+**Reason — package placement:** `Profile`/`ProjectDNA`/`WeeklyDirection`
+are domain concepts in their own right (an editorial vocabulary and two
+contexts it describes), not an evaluation *of* a candidate — the same
+distinction that put `scoring` outside `candidate` (see the Card #40
+entry above) argues against putting these inside `scoring` too. They also
+don't belong in `candidate`: a candidate's own musical tagging is
+supplied as a plain `musicaldna.Profile` argument to `CalculateFit`, not
+stored on `CandidateTrack` (see below), so `candidate` never needs to
+import this concept. `scoring` imports `musicaldna`, never the reverse —
+no cycle.
+
+**Reason — one `Profile` type, three roles:** A candidate's tagged
+characteristics, `ProjectDNA`'s baseline, and `WeeklyDirection`'s target
+are the same kind of thing — a small set of musical-character dimensions —
+so they share one type. Introducing a second, differently-shaped
+representation for any of the three would be exactly the "competing
+definition of Musical DNA" the card forbids.
+
+**Reason — `ProjectDNA.Profile` is empty by default:** `docs/manifesto.md`
+and Sound Continuum's M1 decisions describe editorial *process and
+philosophy* — continuum, musical bridges, discovery without forced
+obscurity, human judgment — not concrete mood/energy/texture/cultural
+values. Mapping each `Profile` dimension against the manifesto:
+
+| Dimension | Manifesto/M1 support for a concrete value | Value set |
+|---|---|---|
+| Mood | None — manifesto principle 1 ("music is a continuum") explicitly rejects a fixed identity here | unset |
+| Energy | None | unset |
+| Texture | None | unset |
+| CulturalInfluence | None — manifesto never addresses geography/culture; `project-context.md`'s "bridges matter more than rigid genre classification" argues against fixing one | unset |
+
+Setting any of these would assert a permanent musical-identity claim the
+manifesto does not make, and would contradict the continuum principle
+`ProjectDNA` exists to encode. `DefaultProjectDNA()` returns an empty
+`Profile` today, not a placeholder awaiting this package's own future
+work — it is the accurate reflection of what the manifesto currently
+specifies. A field should be set here only once a durable, project-wide
+trait is actually documented in the manifesto or this file.
+
+**Reason — `WeeklyDirection` carries more weight than `ProjectDNA`:**
+`scoring.DefaultFitWeights()` splits the two components 0.75/0.25 in
+`WeeklyDirection`'s favor, per the card's requirement and the manifesto's
+"each week is a chapter" principle. Because `ProjectDNA` is empty by
+construction today, this split is also realized structurally: the project
+component contributes nothing to `CalculateFit` until a real dimension
+value exists, so Fit is driven entirely by `WeeklyDirection` in practice,
+not merely by a documented ratio.
+
+**Reason — exact string match, no confidence, no override:** No
+fuzzy/embedding similarity is available without the AI/ML this project
+excludes; a partial-credit heuristic between arbitrary editorial strings
+would itself be fabricated precision, so `compareProfiles` uses
+case-insensitive, trimmed exact match only. A confidence score (Fit value
+vs. confidence in that value) was considered and left out — it would
+either be an unearned statistical claim or unnecessary complexity right
+now; open question for a future card. No editorial-override mechanism was
+built: none exists in Card #40 to preserve, and `Factors.Fit` is already a
+plain settable `*float64` a human or future workflow can overwrite
+directly — a low or missing Fit value never means "rejected."
+
+**Reason — candidate profile is a parameter, not a `CandidateTrack`
+field:** No automatic signal exists today for a candidate's own musical
+character (no Spotify Audio Features, genre excluded as a proxy), so a
+`musicaldna.Profile` for a candidate can currently only come from explicit
+editorial tagging. `CalculateFit(candidateProfile, project, direction,
+weights)` takes it as a plain argument rather than adding a field to
+`candidate.CandidateTrack` — Card #38's struct stays completely unchanged,
+and no persistence is introduced for candidate-level tagging (out of
+scope per the MVP constraints). A future card can decide how/where such
+tagging is captured and stored.
+
+**Consequences:** `backend/internal/musicaldna/{profile,project_dna,
+weekly_direction,errors}.go` define the domain types; `backend/internal/
+scoring/fit.go` adds `FitDimension`, `FitComponent`, `FitWeights`,
+`DefaultFitWeights`, `FitDimensionResult`, `FitResult`, and
+`CalculateFit`. Missing dimensions/components are renormalized at both
+levels — the same idiom `Calculate` already uses for `Factors` — so
+`Fit` is `nil`, never `0.0`, when nothing is comparable.
+`FitResult.Dimensions` carries all 8 (dimension × component) entries for
+explainability regardless of whether `Value` is set. `CalculateFit` never
+takes a `candidate.CandidateTrack`, so it is independent of
+`CandidateType`/`Category`/release date/discovery provenance/playlist
+sequence by construction, not by convention — see
+`backend/internal/scoring/fit_test.go`'s explicit independence tests. No
+change to `candidate.CandidateTrack`, `scoring.Factors`, `scoring.Weights`,
+or `scoring.Calculate`. See [`docs/scoring-model.md`](../scoring-model.md)
+for the full Fit model.

@@ -44,15 +44,124 @@ one is a penalty.
 None of the five positive factors' actual calculation algorithms are
 implemented by this card — `scoring.Factors` only holds already-calculated
 (or not-yet-calculated) values. Later M5 cards implement one factor at a
-time.
+time. **Fit's algorithm is implemented as of Card #41** — see below;
+Freshness, Discovery Bonus, Diversity, Repetition Penalty, and Playlist Fit
+remain future cards.
 
-### Fit
+### Fit (Card #41, `backend/internal/scoring/fit.go`)
 
-The most important conceptual factor: whether a candidate belongs to Sound
-Continuum's editorial identity — musical character, mood, energy, texture,
-vocal/melodic/rhythmic qualities, cultural context. Not derived from
-genre strings, Spotify popularity, or any other metadata proxy; the actual
-analysis is future work.
+Fit answers one question: **"How naturally does this candidate belong to
+the musical identity and direction Sound Continuum is currently building?"**
+It is not a popularity score, a genre-matching score, a recommendation
+score, or a playlist-transition score (that's Playlist Fit, below).
+
+**Two contextual layers.** Sound Continuum's musical identity has two
+distinct parts, both defined in `backend/internal/musicaldna`:
+
+- **`musicaldna.ProjectDNA`** — the stable, project-wide identity ("what is
+  Sound Continuum?"), sourced only from [`docs/manifesto.md`](manifesto.md)
+  and Sound Continuum's M1 decisions.
+- **`musicaldna.WeeklyDirection`** — the current edition's explicit
+  direction ("what is this edition becoming?"), set by a human curator, one
+  per edition (`EditionID`). Card #41 represents this at the domain level
+  only — no UI, no HTTP endpoint, no persistence; it must always be an
+  explicit input, never inferred from whichever candidates a discovery
+  workflow happens to produce.
+
+Both are expressed with the same `musicaldna.Profile` type (also used for a
+candidate's own tagged characteristics), so there is one dimension
+vocabulary, not three competing representations.
+
+**Why `ProjectDNA` is empty today.** The manifesto describes editorial
+*process and philosophy* — music as a continuum, musical bridges over
+individual merit, discovery without forced obscurity, human editorial
+judgment — not concrete mood/energy/texture/cultural values. Setting a
+`Profile` field on `ProjectDNA` would assert "Sound Continuum's identity
+always has this musical quality," which the manifesto does not claim and
+which would contradict its continuum principle (§1). So
+`musicaldna.DefaultProjectDNA()` leaves every dimension unset, and Fit is
+driven entirely by `WeeklyDirection` until a real, durable, project-wide
+trait is documented in the manifesto or `docs/memory/decisions.md` and a
+field is set here to match — see the Card #41 entry in
+`docs/memory/decisions.md` for the explicit per-dimension mapping and
+reasoning.
+
+**Dimensions.** Four, drawn from the qualities this document already named
+for Fit before Card #41 (mood, energy, texture, cultural context) rather
+than invented independently: `Mood`, `Energy`, `Texture`,
+`CulturalInfluence`. Qualities that would require unavailable audio-level
+analysis to observe reliably (tempo, detailed rhythmic/melodic structure,
+vocal character) are left out — Spotify's Audio Features/Audio Analysis
+endpoints are unavailable to this app (see
+`docs/memory/decisions.md`'s M3 Audio Features decision), and fabricating
+these values from genre strings or nothing at all is explicitly forbidden.
+Each dimension is an optional `*string`, supplied only through explicit
+editorial input (never derived from `CandidateMetadata`, genre, or
+popularity) — nil means "not supplied," never "poor fit."
+
+**Comparison strategy.** Case-insensitive, trimmed exact string match per
+dimension. No fuzzy or embedding-based similarity is used — that would
+require the AI/ML this project explicitly excludes, and any partial-credit
+heuristic between arbitrary strings would be fabricated precision.
+
+**Weights** (`scoring.DefaultFitWeights()`), two independent groups, each
+summing to 1.0:
+
+| Weight | Value | Group |
+|---|---|---|
+| Weekly Direction | 0.75 | component |
+| Project DNA | 0.25 | component |
+| Mood | 0.35 | dimension |
+| Energy | 0.25 | dimension |
+| Texture | 0.25 | dimension |
+| Cultural Influence | 0.15 | dimension |
+
+Weekly Direction (0.75) far outweighs Project DNA (0.25), per the card's
+requirement that the current week's direction carry "greater contextual
+importance than a generic project-wide similarity" — and, because
+`ProjectDNA` is empty by construction today, this split is realized
+structurally, not just by number. Mood is weighted highest among
+dimensions as the most direct expression of "does this belong to the story
+we're telling right now"; Cultural Influence is weighted lowest since Card
+#41 explicitly warns against genre/cultural matching becoming the
+definition of Fit.
+
+**Missing dimensions.** Renormalized, at two levels, using the same idiom
+`scoring.Calculate` already uses for missing factors: within one comparison
+(Project or Weekly), a dimension missing on either side is excluded and the
+match ratio is computed over the dimensions actually available; across the
+two comparisons, a component with nothing available contributes nothing and
+weight is renormalized over whichever component did produce a value. `Fit`
+is `nil` — never a fabricated `0.0` — only when neither comparison had
+anything to compare. This is deliberate: missing musical-character data
+must never read as "poor fit," which would systematically penalize
+emerging or less-documented artists.
+
+**No confidence score.** Considered and left out: it would either be a
+fake statistical calibration or unnecessary complexity at this stage. Open
+question for a future card.
+
+**No editorial override mechanism.** None exists in Card #40 to preserve.
+`Factors.Fit` is already a plain settable `*float64`, so a human or future
+workflow can already override a Fit value by direct assignment — a low Fit
+score never means "candidate rejected," only "the current model sees
+weaker fit according to available signals." Building a full override
+workflow is out of scope for this card.
+
+**Explainability.** `scoring.FitResult.Dimensions` carries one
+`FitDimensionResult` per (dimension, component) pair — 8 total — recording
+whether it was available and whether it matched, so a `nil` or low `Fit`
+value is always traceable to specific missing or mismatched dimensions,
+never an opaque number.
+
+**Independence from the other five factors.** `CalculateFit` takes only
+`musicaldna.Profile`/`ProjectDNA`/`WeeklyDirection` values — never a
+`candidate.CandidateTrack` — so it cannot see, and cannot be affected by,
+`CandidateType`, `Category`, release date (Freshness's domain), discovery
+provenance (Discovery Bonus's domain), or playlist sequence (Playlist
+Fit's domain). See Card #41's tests in
+`backend/internal/scoring/fit_test.go` for explicit regression coverage of
+each independence claim.
 
 ### Freshness
 
@@ -62,6 +171,11 @@ scoring signal. A `Past` candidate can still have meaningful freshness if
 it's being rediscovered; a `New Release` candidate does not automatically
 score `Freshness = 1.0` just because it's new.
 
+Distinct from **Fit**: Fit never reads release date, and Freshness never
+reads musical character — a very fresh candidate can have poor Fit, and a
+perfectly-fitting candidate can be old. `scoring.CalculateFit` takes no
+release-date input, by construction (see Card #41 tests).
+
 ### Discovery Bonus
 
 The editorial value of surfacing something less obvious to the audience —
@@ -69,6 +183,11 @@ The editorial value of surfacing something less obvious to the audience —
 not automatically mean "valuable," and `Category: Emerging` does not
 automatically mean a high score. Obscurity is never rewarded for its own
 sake, per the manifesto's "discovery without forced obscurity" principle.
+
+Distinct from **Fit**: Discovery Bonus reads discovery provenance (how a
+candidate was found); Fit never does. A candidate discovered through an
+unusual path can still have strong or weak Fit independently — provenance
+is not itself a Fit input (see Card #41 tests).
 
 ### Diversity
 
@@ -200,9 +319,11 @@ would misleadingly look like "weakest possible candidate."
 A missing `RepetitionPenalty` is treated as `0.0` (no discount): silence
 about repetition history is not evidence of repetition.
 
-Since M5 implements factors one card at a time, every positive factor is
-`nil` as of Card #40 — `scoring.Calculate` is fully implemented and
-tested, but no production code path constructs real factor values yet.
+Since M5 implements factors one card at a time, Fit is the only positive
+factor with an implemented algorithm as of Card #41 — `scoring.Calculate`
+handles all six factors, but Freshness, Discovery Bonus, Diversity,
+Repetition Penalty, and Playlist Fit have no production code path
+constructing real values yet.
 
 ## Explainability
 

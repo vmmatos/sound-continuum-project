@@ -701,6 +701,52 @@
   bounded-at-zero edge case), error propagation on invalid input,
   explainability, and determinism.
 
+- M5 continues with Card #41 (Define Musical Fit): a new package,
+  `backend/internal/musicaldna`, holds one shared dimension vocabulary,
+  `Profile` (`Mood`, `Energy`, `Texture`, `CulturalInfluence`, each
+  optional), reused for three roles — a candidate's editorially-tagged
+  characteristics, `ProjectDNA` (Sound Continuum's stable, project-wide
+  identity), and `WeeklyDirection` (the current edition's explicit
+  direction, `EditionID` + `Profile` + free-text `Notes`,
+  `NewWeeklyDirection`-constructed, no UI/persistence). `ProjectDNA`'s
+  `Profile` is empty by default (`DefaultProjectDNA()`) — the manifesto
+  and M1 describe editorial process/philosophy, not concrete musical
+  values, so every dimension stays unset until a real, durable
+  project-wide trait is documented (see `decisions.md`'s per-dimension
+  mapping). `backend/internal/scoring/fit.go` implements the Fit factor:
+  `CalculateFit(candidateProfile, project, direction, weights)` compares
+  the candidate's `Profile` against both `ProjectDNA.Profile` and
+  `WeeklyDirection.Profile` using case-insensitive, trimmed exact-string
+  match per dimension (no fuzzy/embedding similarity, no genre matching).
+  Missing dimensions are renormalized within each comparison, and the two
+  comparisons are renormalized against each other via `FitWeights`
+  (`WeeklyWeight` 0.75, `ProjectWeight` 0.25, plus `Mood` 0.35/`Energy`
+  0.25/`Texture` 0.25/`CulturalInfluence` 0.15) — the same
+  missing-data-renormalization idiom `scoring.Calculate` already uses for
+  `Factors`. Because `ProjectDNA` is empty by construction today, Fit is
+  driven entirely by `WeeklyDirection` in practice. `Fit` is `nil`, never
+  a fabricated `0.0`, when nothing is comparable on either side.
+  `FitResult.Dimensions` carries all 8 (dimension × component) entries for
+  explainability. No confidence score and no editorial-override mechanism
+  were built (both are documented, deliberate omissions — `Factors.Fit`
+  is already a plain settable `*float64`). The candidate-side `Profile` is
+  a plain function argument, not a new `CandidateTrack` field — Card #38's
+  struct is unchanged, and no persistence was introduced for candidate
+  tagging. `CalculateFit` never takes a `candidate.CandidateTrack`, so it
+  is independent of `CandidateType`/`Category`/release date/discovery
+  provenance/playlist sequence by construction. 21 new unit/integration
+  tests across `musicaldna` and `scoring` (`fit_test.go`,
+  `fit_integration_test.go`) cover strong/weak fit, partial and fully
+  missing data, weight validation, determinism, explicit independence
+  from classification/freshness/provenance, explainability, score
+  integration, and one integration test building a realistic
+  `CandidateTrack` through `CandidateScore` with no live Spotify call.
+  `scoring.Factors`/`scoring.Weights`/`scoring.Calculate` are unchanged;
+  no ranking, selection, or playlist mutation. See
+  [`docs/scoring-model.md`](../scoring-model.md) for the full Fit model
+  and [`decisions.md`](decisions.md) for the manifesto-to-`ProjectDNA`
+  mapping.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.
