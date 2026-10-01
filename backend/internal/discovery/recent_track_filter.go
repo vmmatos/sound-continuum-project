@@ -62,8 +62,8 @@ const playlistItemsPageSize = 50
 // the official Sound Continuum playlist's own added_at history — the
 // source of truth for what was recently published. A candidate is
 // "recently used" when its Spotify track ID's most recent added_at in the
-// playlist is on or after (now - LookbackDays); see recentTrackIndex for
-// the exact boundary.
+// playlist is on or after (now - LookbackDays); see
+// recentTrackAndArtistIndex for the exact boundary.
 //
 // Returns an error — never a fallback empty/all-eligible result — if the
 // official playlist isn't configured yet or its items can't be retrieved
@@ -139,8 +139,8 @@ func (s *Service) PlaylistArtistHistory(ctx context.Context) (map[string]time.Ti
 }
 
 // playlistHistoryIndexes resolves the official playlist and walks it once
-// via recentTrackIndex's underlying logic, building both the track and
-// artist history indexes in the same pagination pass.
+// via recentTrackAndArtistIndex, building both the track and artist
+// history indexes in the same pagination pass.
 func (s *Service) playlistHistoryIndexes(ctx context.Context) (trackIndex, artistIndex map[string]time.Time, err error) {
 	playlist, err := s.spotify.OfficialPlaylist(ctx)
 	if err != nil {
@@ -149,25 +149,16 @@ func (s *Service) playlistHistoryIndexes(ctx context.Context) (trackIndex, artis
 	return s.recentTrackAndArtistIndex(ctx, playlist.SpotifyPlaylistID)
 }
 
-// recentTrackIndex walks every item of the official playlist (following
-// pagination in full — the card explicitly forbids assuming the first
-// page is enough) and returns each distinct Spotify track ID's most
-// recent added_at. Episodes, unavailable items, and items with no track
-// ID or an unparsable added_at are skipped individually rather than
-// aborting the scan; a duplicate track ID keeps the maximum added_at.
-func (s *Service) recentTrackIndex(ctx context.Context, playlistID string) (map[string]time.Time, error) {
-	trackIndex, _, err := s.recentTrackAndArtistIndex(ctx, playlistID)
-	if err != nil {
-		return nil, err
-	}
-	return trackIndex, nil
-}
-
-// recentTrackAndArtistIndex is recentTrackIndex's shared implementation,
-// extended (Card #45) to also build an artist-ID -> most-recent-added_at
-// index from the same walk, so Repetition Penalty's artist dimension
-// needs no second playlist retrieval. The track-index behavior is
-// byte-for-byte unchanged from Card #37/#42.
+// recentTrackAndArtistIndex walks every item of the official playlist
+// (following pagination in full — the card explicitly forbids assuming
+// the first page is enough) and returns each distinct Spotify track ID's
+// most recent added_at, alongside each distinct Spotify artist ID's most
+// recent added_at across any of that artist's tracks (Card #45, so
+// Repetition Penalty's artist dimension needs no second playlist
+// retrieval). Episodes, unavailable items, and items with no track ID or
+// an unparsable added_at are skipped individually rather than aborting
+// the scan; a duplicate track/artist ID keeps the maximum added_at. The
+// track-index behavior is byte-for-byte unchanged from Card #37/#42.
 func (s *Service) recentTrackAndArtistIndex(ctx context.Context, playlistID string) (trackIndex, artistIndex map[string]time.Time, err error) {
 	trackIndex = make(map[string]time.Time)
 	artistIndex = make(map[string]time.Time)
