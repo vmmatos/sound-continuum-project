@@ -837,6 +837,42 @@
       available but unintegrated
 - [x] No tests (no production code introduced)
 
+## Done (Card #48 — Detect Potential Musical Bridges)
+
+- [x] `backend/internal/scoring/bridge.go` — `DetectPotentialBridge`, a
+      standalone, deterministic `PotentialBridge = true/false` evidence
+      signal for a candidate pair; kept entirely outside
+      `scoring.Factors`/`scoring.Calculate`/`CandidateScore`
+- [x] Reuses `playlist_fit.go`'s unexported `playlistFitMatchOrBaseline`/
+      `playlistFitEnergyScore` comparators verbatim for Mood/Energy/
+      Texture/Cultural Influence — no duplicated comparison logic
+- [x] Three contextual signals from Card #47's available set: shared
+      Spotify artist identity, Last.fm artist similarity (caller-supplied,
+      no Last.fm call inside the function), release-era match (via the
+      existing `scoring.DiversityEra`)
+- [x] Evidence-count decision rule (`DefaultMinimumBridgeEvidence = 2`),
+      not a weighted formula — no single signal can force a bridge alone
+- [x] Genre is not a function parameter — cannot contribute evidence by
+      construction
+- [x] `BridgeTrack` mirrors Card #44's `EditionTrack` shape — no new track
+      representation
+- [x] 15 new unit tests (`backend/internal/scoring/bridge_test.go`):
+      strong/partial relationship, evidence-count boundary, gradual vs.
+      abrupt energy progression, contrast not auto-rejected, no meaningful
+      evidence, Last.fm-alone-does-not-force-a-bridge, missing data
+      excluded not negative, determinism; independence from
+      `CandidateScore`/other factors holds by construction (no such type
+      in the function signature)
+- [x] `go build ./...`, `go vet ./...`, `go test ./...` verified clean
+- [x] No HTTP endpoint, no persistence, no frontend, no changes to
+      `candidate`/`musicaldna`/`discovery`/`lastfm`/any other `scoring`
+      file
+- [x] `docs/bridge-detection.md` — new doc: what a potential bridge means,
+      signals used, signals deliberately excluded, why PotentialBridge ≠
+      confirmed bridge
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+
 ## In progress
 
 - Nothing currently in progress.
@@ -848,9 +884,11 @@
       Filter, Metadata Enrichment, and discovery provenance are all done,
       see Cards 33-39 above); candidate persistence remains open for M5+
 - M5: Musical ranking & bridges — Candidate Scoring Model defined (Card
-      #40); Fit (Card #41), Freshness (Card #42), and Discovery Bonus
-      (Card #43) factors implemented; Diversity, Repetition Penalty,
-      Playlist Fit, ranking, and editorial selection remain open
+      #40); Fit (#41), Freshness (#42), Discovery Bonus (#43), Diversity
+      (#44), Repetition Penalty (#45), and Playlist Fit (#46) factors
+      implemented; musical similarity investigated (#47, no engine built);
+      Potential Bridge Detection implemented (#48, standalone, non-
+      weighted); ranking and editorial selection remain open
 - M6: Curator experience
 - M7: Weekly editorial workflow
 - M8: Feedback & evolution

@@ -59,8 +59,13 @@ of future implementation requirements.
   match-or-baseline and ordinal-energy scoring model, independent of
   every other factor) — see
   [`docs/scoring-model.md`](../scoring-model.md); all six scoring factors
-  are now implemented, M5 now only has ranking and automatic selection
-  remaining open)
+  are now implemented. Musical similarity signals were investigated (Card
+  #47, research only — no similarity engine built), and Potential Bridge
+  Detection is implemented (Card #48, `scoring.DetectPotentialBridge` — a
+  standalone, non-weighted, evidence-counting editorial signal for a
+  candidate pair, deliberately kept outside `scoring.Factors`/
+  `CandidateScore` — see [`docs/bridge-detection.md`](../bridge-detection.md)).
+  M5 now only has ranking and automatic selection remaining open)
 - **M6 — Curator Experience** — Planned
 - **M7 — Weekly Editorial Workflow** — Planned
 - **M8 — Feedback & Evolution** — Planned
