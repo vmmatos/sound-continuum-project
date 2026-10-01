@@ -905,6 +905,37 @@
 - [x] Project memory updated (`current-state.md`, `decisions.md`,
       `roadmap.md`)
 
+## Done (Card #50 — Generate Candidate Explanations)
+
+- [x] `scoring.GenerateExplanation(ExplanationInput) CandidateExplanation`
+      (`backend/internal/scoring/explanation.go`) — a short, deterministic,
+      human-readable explanation built from an already-computed
+      `CandidateScore.Factors` and, optionally, a Card #48 `BridgeResult`
+- [x] Not a new scoring factor, not a second score — never changes
+      `FinalScore`, `Factors`, `CandidateTrack.Status`, or ranking
+- [x] A factor is mentioned only when it clears a mention threshold
+      (0.6); a `nil` or low factor is always silently omitted, never
+      described as weak/zero
+- [x] Freshness correctly distinguishes "new to the Sound Continuum
+      playlist" from "has not appeared recently" — never release-date
+      freshness
+- [x] Repetition Penalty phrased as a neutral signal/caveat, never an
+      automatic-rejection claim
+- [x] At most 3 factors named (by value) to stay concise; a detected
+      potential bridge is always mentioned, described only from evidence
+      `BridgeResult` actually reports (never genre)
+- [x] Neutral `"No strong scoring signal available."` fallback when
+      nothing clears a threshold
+- [x] No HTTP endpoint, no persistence, no frontend, no change to
+      `Rank`/`RankedCandidate` — stays unwired like every other M5 factor
+- [x] 24 new unit/integration tests
+      (`backend/internal/scoring/explanation_test.go`,
+      `explanation_integration_test.go`)
+- [x] `go build ./...`, `go vet ./...`, `go test ./...` verified clean
+- [x] `docs/scoring-model.md` — new "Candidate Explanations" section
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+
 ## In progress
 
 - Nothing currently in progress.
@@ -921,7 +952,8 @@
       implemented; musical similarity investigated (#47, no engine built);
       Potential Bridge Detection implemented (#48, standalone, non-
       weighted); candidate ranking implemented (#49, `scoring.Rank`);
-      automatic editorial selection remains open
+      Candidate Explanations implemented (#50, `scoring.GenerateExplanation`,
+      M5's final card); automatic editorial selection remains open
 - M6: Curator experience
 - M7: Weekly editorial workflow
 - M8: Feedback & evolution

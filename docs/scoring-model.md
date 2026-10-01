@@ -883,6 +883,64 @@ per-candidate `musicaldna.Profile` tags, a `CurrentEditionContext`, and
 editorial discovery values, none of which any workflow collects yet — that
 is M6 "Curator Experience" territory, not this card's scope.
 
+## Candidate Explanations (Card #50, `backend/internal/scoring/explanation.go`)
+
+**Candidate explanations describe why the existing scoring result looks the
+way it does; they do not provide an independent editorial judgement.**
+`GenerateExplanation(ExplanationInput) CandidateExplanation` is M5's final
+card: it turns an already-computed `CandidateScore` — plus, optionally, a
+`BridgeResult` for the same candidate pair (Card #48) — into one short,
+deterministic sentence (`CandidateExplanation.Text`), with the individual
+pieces of evidence it drew on also exposed as a structured
+`[]ExplanationReason` for possible future UI use.
+
+**Grounded in what was actually computed, nothing invented.** The text is
+built entirely from `CandidateScore.Factors` (the six already-normalized
+`[0,1]` values Cards #40-46 produce) and, when supplied, `BridgeResult`'s own
+`Dimensions`/`Signals`. It is not a second score, not a new factor, and
+generating it never recomputes or mutates `CandidateScore`,
+`CandidateTrack.Status`, or ranking.
+
+**A factor is only mentioned when it clears `explanationMentionThreshold`
+(0.6)** — Fit ("strong musical fit"), Playlist Fit ("a promising sequence
+fit"), Discovery Bonus ("emerging discovery with strong editorial value"),
+and Diversity ("a strong diversity contribution"). A `nil` or low factor is
+always silently omitted, **never** described as weak, low, or zero — the
+same missing-data discipline `Calculate`/`CalculateFit`/etc. already apply
+to the numbers themselves, extended to the prose that explains them.
+
+**Freshness is playlist-history freshness, never release freshness.**
+`Factors.Freshness == 1.0` reads as "new to the Sound Continuum playlist"
+(the exact value only a never-used candidate can produce — see
+`freshness.go`); a high-but-not-1.0 value reads as "has not appeared
+recently in Sound Continuum." Neither ever claims anything about the
+track's release date.
+
+**Repetition Penalty is phrased as a signal, never a rejection.** A value at
+or above `explanationRepetitionThreshold` (0.3) appends one neutral clause
+("a repetition penalty from recent playlist history") — it never says the
+candidate should not be selected; a human curator can always choose to
+repeat an artist or track intentionally.
+
+**At most the three most meaningful factors are named** —
+`explanationMaxFragments` (3), chosen by factor value — so the sentence
+stays concise rather than mechanically listing all six. A detected
+potential bridge (`BridgeResult.PotentialBridge == true`) is always
+mentioned regardless of this cap, described from the first dimension or
+signal `BridgeResult` actually reports as evidence (e.g. "a shared energy
+profile," "a shared artist") — genre is never referenced, since
+`bridge.go` excludes it from evidence by construction already (see
+[`docs/bridge-detection.md`](bridge-detection.md)). When nothing clears any
+threshold and no bridge or repetition signal exists, the result is the
+neutral fallback `"No strong scoring signal available."`, never a fabricated
+reason.
+
+**Not wired into any pipeline or HTTP endpoint**, consistent with every
+other M5 factor since Card #41: a future M6 caller generates an explanation
+per `RankedCandidate` by passing its own `Score` (and, where computed, a
+`BridgeResult`) — `Rank`/`RankedCandidate` gain no new field, and ranking
+order never depends on the explanation.
+
 ## What this is not
 
 - Not ranking: nothing here sorts a candidate pool.
@@ -893,5 +951,7 @@ is M6 "Curator Experience" territory, not this card's scope.
   popularity, no social/follower counts feed any factor.
 - Not threshold-based: this card defines no "score ≥ X means select"
   rule, and none should be added without a dedicated future decision.
+- Not a second scoring factor: `GenerateExplanation` never changes
+  `FinalScore` or any `Factors` value — it only narrates them.
 - Not machine learning: every factor and the combination formula are
   deterministic, explainable, and hand-authored.
