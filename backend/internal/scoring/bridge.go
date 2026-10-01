@@ -69,13 +69,13 @@ type BridgeDimensionResult struct {
 // BridgeSignalResult explains one contextual signal. Available is false
 // when the signal could not be assessed at all (e.g. no Last.fm match was
 // supplied, or one side has no artist IDs) — this is distinct from
-// Present, which is false when the signal was assessed but found no
-// relationship. Evidence is true only when Available && Present.
+// Present, which is false both when unavailable and when the signal was
+// assessed but found no relationship. Present counts as evidence whenever
+// it is true (it is always false when Available is false).
 type BridgeSignalResult struct {
 	Signal    BridgeSignal
 	Available bool
 	Present   bool
-	Evidence  bool
 }
 
 // DefaultMinimumBridgeEvidence is the minimum number of independently
@@ -97,7 +97,6 @@ const DefaultMinimumBridgeEvidence = 2
 type BridgeResult struct {
 	PotentialBridge bool
 	EvidenceCount   int
-	MinimumEvidence int
 	Dimensions      []BridgeDimensionResult
 	Signals         []BridgeSignalResult
 }
@@ -131,9 +130,10 @@ type BridgeResult struct {
 // reports whether it counts as a "meaningful relationship": a dimension
 // counts when Available && Score > 0.5 (an exact match or an adjacent-
 // energy progression; a 0.5 baseline mismatch or a distant energy gap is
-// neutral, never negative); a contextual signal counts when
-// Available && Present. PotentialBridge is true when the total count of
-// meaningful relationships is at least DefaultMinimumBridgeEvidence.
+// neutral, never negative); a contextual signal counts when Present (which
+// is always false when the signal is unavailable). PotentialBridge is true
+// when the total count of meaningful relationships is at least
+// DefaultMinimumBridgeEvidence.
 //
 // a/b and lastFMArtistMatch are plain values — DetectPotentialBridge takes
 // no candidate.CandidateTrack, CandidateScore, or any other scoring
@@ -193,7 +193,7 @@ func DetectPotentialBridge(a, b BridgeTrack, lastFMArtistMatch *float64) BridgeR
 
 	signals := []BridgeSignalResult{sharedArtist, lastFM, era}
 	for _, s := range signals {
-		if s.Evidence {
+		if s.Present {
 			evidenceCount++
 		}
 	}
@@ -201,7 +201,6 @@ func DetectPotentialBridge(a, b BridgeTrack, lastFMArtistMatch *float64) BridgeR
 	return BridgeResult{
 		PotentialBridge: evidenceCount >= DefaultMinimumBridgeEvidence,
 		EvidenceCount:   evidenceCount,
-		MinimumEvidence: DefaultMinimumBridgeEvidence,
 		Dimensions:      dimResults,
 		Signals:         signals,
 	}
@@ -219,7 +218,6 @@ func bridgeSharedArtistSignal(a, b []string) BridgeSignalResult {
 		Signal:    BridgeSignalSharedArtist,
 		Available: true,
 		Present:   present,
-		Evidence:  present,
 	}
 }
 
@@ -233,7 +231,6 @@ func bridgeLastFMSignal(match *float64) BridgeSignalResult {
 		Signal:    BridgeSignalLastFMArtistSimilarity,
 		Available: true,
 		Present:   present,
-		Evidence:  present,
 	}
 }
 
@@ -247,6 +244,5 @@ func bridgeEraSignal(a, b *string) BridgeSignalResult {
 		Signal:    BridgeSignalReleaseEra,
 		Available: true,
 		Present:   present,
-		Evidence:  present,
 	}
 }

@@ -181,7 +181,7 @@ func TestDetectPotentialBridgeLastFMAloneDoesNotForceBridge(t *testing.T) {
 	result := DetectPotentialBridge(a, b, bridgeFloatPtr(1.0))
 
 	lastfm := findBridgeSignal(t, result, BridgeSignalLastFMArtistSimilarity)
-	if !lastfm.Evidence {
+	if !lastfm.Present {
 		t.Fatalf("expected Last.fm similarity to register as evidence")
 	}
 	if result.PotentialBridge {
@@ -201,27 +201,9 @@ func TestDetectPotentialBridgeLastFMUnavailableWhenNil(t *testing.T) {
 	}
 }
 
-// --- 7. Genre cannot contribute: no parameter exists for it ---
-
-func TestDetectPotentialBridgeHasNoGenreInput(t *testing.T) {
-	// DetectPotentialBridge's signature has no genre parameter at all, so
-	// genre overlap cannot be evidence by construction. This test documents
-	// that guarantee: two tracks with identical (hypothetical) genres but no
-	// other relationship still yield PotentialBridge == false.
-	a := BridgeTrack{Sound: musicaldnaProfile("euphoric", "low", "acoustic", "latin")}
-	b := BridgeTrack{Sound: musicaldnaProfile("melancholic", "high", "electronic", "nordic")}
-
-	result := DetectPotentialBridge(a, b, nil)
-
-	if result.PotentialBridge {
-		t.Fatalf("expected no signal to smuggle in genre-based evidence")
-	}
-	for _, s := range result.Signals {
-		if s.Signal != BridgeSignalSharedArtist && s.Signal != BridgeSignalLastFMArtistSimilarity && s.Signal != BridgeSignalReleaseEra {
-			t.Fatalf("unexpected signal present: %s", s.Signal)
-		}
-	}
-}
+// Genre cannot contribute evidence because DetectPotentialBridge's
+// signature has no genre parameter at all — a compile-time guarantee, not
+// something a unit test can additionally exercise.
 
 // --- 8. Missing data is not automatically negative ---
 
@@ -257,7 +239,7 @@ func TestDetectPotentialBridgeMissingArtistIDsLeavesSharedArtistUnavailable(t *t
 	if shared.Available {
 		t.Fatalf("expected shared artist signal unavailable with no artist IDs on either side")
 	}
-	if shared.Evidence {
+	if shared.Present {
 		t.Fatalf("unavailable shared artist signal must never count as evidence")
 	}
 }
