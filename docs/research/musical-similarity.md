@@ -258,17 +258,3 @@ relationships no available signal can detect. This matches the posture
 this project already took for Last.fm-in-M3 (deferred to M4, Card 23) and
 for audio-features-based bridging (ruled out entirely, Card 23/M3
 decision) — consistent, not a new exception.
-
----
-
-## Relationship to Card #46 (Playlist Fit)
-
-Card #46 evaluates whether a *candidate* fits the *current sequence*,
-using explicit editorial `musicaldna.Profile` values a curator supplies.
-This document does not propose any change to that model, its weights, or
-its code (`backend/internal/scoring/playlist_fit.go`,
-`docs/scoring-model.md`'s Playlist Fit section are both untouched by this
-card). What this research adds, if anything is built from it later, is
-*optional display context* a curator could see while deciding what
-`musicaldna.Profile` values to assign a candidate — never a second,
-competing fit calculation.

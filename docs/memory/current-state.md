@@ -1040,27 +1040,10 @@
   nil-case-representation reasoning.
 
 - Card #47 (Explore Musical Similarity) is complete — investigation only,
-  no production code. `docs/research/musical-similarity.md` documents
-  which Spotify/Last.fm signals could provide evidence of musical
-  similarity between two tracks, distinct from Card #46's editorial
-  Playlist Fit model: confirms Spotify audio attributes remain unavailable
-  (no change since Card 23/M3); finds shared Spotify artist identity
-  (`candidate.CandidateArtist.SpotifyArtistID`) and Spotify artist genres
-  are weak/unreliable similarity signals (identity and context only, not
-  musical resemblance); finds Last.fm's integrated `artist.getsimilar`
-  `Match` score (already used by `discovery.DiscoverEmerging`, Card #35)
-  is a listening-co-occurrence signal, not acoustic similarity, and that
-  `track.getSimilar`/`tag.*` are available via the API but remain
-  unintegrated into `backend/internal/lastfm`; finds release era is
-  contextual only, mirroring Diversity's (Card #44) existing conclusion.
-  Conclusion: a musical similarity engine is **not justified now** and
-  stays deferred — no available signal is precise enough to automate
-  without misrepresenting its reliability, and the manifesto's bridge
-  philosophy explicitly includes relationships (cross-genre rhythm match,
-  deliberate contrast) no available signal can detect. One new decision
-  recorded in `decisions.md`. No new package, Last.fm client method,
-  dependency, API endpoint, or test was added; `scoring.
-  CalculatePlaylistFit` (Card #46) and `musicaldna.Profile` are untouched.
+  no production code. A musical similarity engine is not justified now and
+  stays deferred. See [`decisions.md`](decisions.md) for the reasoning and
+  [`docs/research/musical-similarity.md`](../research/musical-similarity.md)
+  for the full investigation.
 
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
