@@ -1045,6 +1045,45 @@
   [`docs/research/musical-similarity.md`](../research/musical-similarity.md)
   for the full investigation.
 
+- Card #48 (Detect Potential Musical Bridges) is implemented:
+  `scoring.DetectPotentialBridge` (`backend/internal/scoring/bridge.go`),
+  a standalone, deterministic evidence-gathering function for a candidate
+  pair — `BridgeResult.PotentialBridge = true/false`, never a ranking,
+  weighted score, or automatic selection, and kept entirely outside
+  `scoring.Factors`/`scoring.Calculate`/`CandidateScore`. It reuses Card
+  #46's unexported `playlistFitMatchOrBaseline`/`playlistFitEnergyScore`
+  comparators verbatim for the four explicit `musicaldna.Profile`
+  dimensions (Mood/Energy/Texture/Cultural Influence — exact match 1.0,
+  known mismatch 0.5 baseline, missing excluded) and adds three contextual
+  signals from Card #47's catalogued-available set: shared Spotify artist
+  identity, Last.fm artist similarity (caller-supplied, no Last.fm call
+  inside the function), and release-era match (via the existing
+  `scoring.DiversityEra`). `BridgeTrack` (artist IDs, era,
+  `musicaldna.Profile`) mirrors Card #44's `EditionTrack` shape rather than
+  introducing a third track representation. The decision rule is a plain
+  evidence count, not a weighted formula: each of the 7 signals (4
+  dimensions + 3 contextual) counts as a "meaningful relationship" when
+  available and scoring above the existing 0.5 baseline; `PotentialBridge`
+  is true once the count reaches `DefaultMinimumBridgeEvidence` (2) — one
+  exported constant, documented and trivially changed later, satisfying the
+  card's "no single signal is proof" requirement without inventing
+  per-dimension weights. Genre is not a function parameter at all — it
+  cannot contribute evidence by construction, matching Card #47's
+  low-reliability finding. 15 new unit tests
+  (`backend/internal/scoring/bridge_test.go`) cover strong/partial
+  relationships, the evidence-count boundary at exactly 1 vs. 2, gradual vs.
+  abrupt energy progression, contrast not being auto-rejected, no
+  meaningful evidence, the Last.fm-alone-does-not-force-a-bridge case,
+  missing data being excluded rather than negative, and determinism;
+  independence from `CandidateScore`/Freshness/Diversity/Repetition
+  Penalty/Playlist Fit/popularity holds by construction (no such type
+  appears in the function's signature). No HTTP endpoint, no persistence,
+  no frontend, no change to `candidate`/`musicaldna`/`discovery`/`lastfm`/
+  any other `scoring` file. See
+  [`docs/bridge-detection.md`](../bridge-detection.md) for the full model
+  and [`decisions.md`](decisions.md) for the standalone-vs-weighted
+  reasoning.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

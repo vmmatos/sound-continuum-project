@@ -2052,3 +2052,49 @@ score without a new, separately justified decision. `scoring.
 CalculatePlaylistFit` (Card #46) and `musicaldna.Profile` are unchanged by
 this investigation. No new package, Last.fm client method, or dependency
 was added.
+
+---
+
+**Decision:** Implement Potential Bridge Detection (Card #48) as a
+standalone, evidence-counting function in the existing `scoring` package
+(`backend/internal/scoring/bridge.go`), explicitly kept out of
+`scoring.Factors`/`scoring.Calculate`/`CandidateScore`, and using a
+deterministic evidence-count threshold rather than a weighted score.
+
+**Context:** Card #48 needed to turn Card #47's catalogued signals (shared
+artist identity, Last.fm artist similarity, release era) plus the existing
+Mood/Energy/Texture/Cultural Influence dimensions (Card #41/#46) into a
+`PotentialBridge = true/false` editorial signal for a candidate pair. The
+card explicitly forbids a weighted formula (`Mood × 0.25 + ...`) and
+forbids treating any single signal — including Last.fm similarity — as
+proof on its own.
+
+**Reason:** `scoring` already holds every other independent, explainable
+"Calculate*" factor and already depends on `musicaldna`, so a new package
+would only duplicate that dependency edge (the same reasoning already
+recorded for `pool.go`/`recent_track_filter.go`/`metadata_enrichment.go`
+in the `discovery` package). `DetectPotentialBridge` reuses
+`playlist_fit.go`'s unexported `playlistFitMatchOrBaseline`/
+`playlistFitEnergyScore` comparators verbatim rather than duplicating the
+categorical-match/baseline and ordinal-energy-distance logic Card #46
+already implemented and tested. The evidence-count rule (a dimension or
+contextual signal counts when its score exceeds the existing 0.5 baseline;
+`PotentialBridge` requires at least `DefaultMinimumBridgeEvidence` (2) such
+signals) is the smallest deterministic rule that satisfies "no single
+signal is proof" without inventing per-dimension weights — one exported
+constant, not a config struct, since there is exactly one caller-visible
+knob. Genre was deliberately left out of the function signature entirely
+(not merely unused) so it cannot contribute evidence by construction,
+matching Card #47's finding that Spotify genres are too unreliable to use
+as a similarity signal.
+
+**Consequences:** `BridgeTrack` (artist IDs, era, `musicaldna.Profile`)
+mirrors `EditionTrack`'s shape (Card #44) rather than introducing a third
+track representation; both are plain function-level inputs, not
+`candidate.CandidateTrack`. `DetectPotentialBridge` has no candidate,
+`CandidateScore`, or other factor's value anywhere in its signature, so it
+is structurally independent of Freshness/Diversity/Repetition
+Penalty/Playlist Fit/popularity. See
+[`docs/bridge-detection.md`](../bridge-detection.md) for the full model.
+No HTTP endpoint, no persistence, no frontend, and no change to any
+existing `scoring`/`candidate`/`discovery`/`lastfm` behavior.
