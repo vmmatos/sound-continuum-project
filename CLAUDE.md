@@ -48,3 +48,20 @@ infra. See `docs/memory/decisions.md` for the full reasoning.
 
 - Backend: Go, standard library (`net/http`), no framework.
 - Frontend: Vue 3 + Vite + Pinia.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live as GitHub issues in vmmatos/sound-continuum-project.
+See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five canonical labels (needs-triage, needs-info, ready-for-agent,
+ready-for-human, wontfix). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context (`CONTEXT.md` + `docs/adr/` at repo root, created lazily —
+none exist yet). See `docs/agents/domain.md`.
