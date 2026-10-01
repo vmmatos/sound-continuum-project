@@ -1125,6 +1125,54 @@
   model and [`decisions.md`](decisions.md) for the package-placement and
   tie-breaker reasoning.
 
+- Card #50 (Generate Candidate Explanations) is implemented — M5's final
+  card: `scoring.GenerateExplanation(ExplanationInput) CandidateExplanation`
+  (`backend/internal/scoring/explanation.go`), added to the existing
+  `scoring` package, no new package. It turns an already-computed
+  `CandidateScore` (Card #40) — plus, optionally, a `BridgeResult` for the
+  same candidate pair (Card #48) — into one short, deterministic,
+  human-readable sentence (`CandidateExplanation.Text`) plus a structured
+  `[]ExplanationReason` tag list for possible future UI use. The text is
+  built entirely from `CandidateScore.Factors`' six already-normalized
+  values (not each factor's full result struct — see decisions.md for why
+  that's sufficient and not a shortcut) and, when supplied,
+  `BridgeResult.Dimensions`/`Signals`; it never recomputes or mutates
+  `CandidateScore`, `CandidateTrack.Status`, or ranking, and it is not a
+  second scoring factor. A factor is mentioned only when its value clears
+  `explanationMentionThreshold` (0.6) — Fit, Playlist Fit, Discovery Bonus,
+  Diversity — and a `nil` or low factor is always silently omitted, never
+  described as weak/zero. Freshness distinguishes "new to the Sound
+  Continuum playlist" (`Factors.Freshness == 1.0`, the exact value only a
+  never-used candidate can produce) from "has not appeared recently in
+  Sound Continuum" (high but not exactly 1.0) — never release-date
+  freshness. Repetition Penalty (`explanationRepetitionThreshold`, 0.3)
+  appends a neutral caveat clause, never a rejection claim. At most
+  `explanationMaxFragments` (3) factors are named, by value, to stay
+  concise; a detected potential bridge is always mentioned regardless of
+  that cap, described from the first dimension/signal `BridgeResult`
+  actually reports as evidence — never genre, which `bridge.go` already
+  excludes by construction. With nothing to report, the result is the
+  neutral fallback `"No strong scoring signal available."`. 24 new unit/
+  integration tests across `scoring/explanation_test.go` and
+  `scoring/explanation_integration_test.go` cover every case Card #50
+  lists: strong fit, never-used and not-recently-used freshness (plus a
+  low-freshness-omitted case), discovery value, diversity contribution,
+  playlist fit, a bridge mention from dimension evidence and from signal
+  evidence alone, no bridge mention when not detected, a meaningful and a
+  negligible repetition penalty, multiple strong factors staying capped/
+  concise, missing factors never described negatively, an explicit-zero
+  factor staying silently omitted, the no-signal fallback, a
+  repetition-only sentence (not the generic fallback), determinism, and no
+  mutation of the input `CandidateScore`. Like every other M5 factor since
+  Card #41, `GenerateExplanation` stays unwired from any pipeline/handler —
+  no HTTP endpoint, no persistence, no frontend, no change to
+  `Rank`/`RankedCandidate`. `candidate`, `discovery`, and every other
+  `scoring` file are unchanged. M5 (Musical Ranking & Bridges) is now
+  feature-complete except automatic selection, which remains out of scope.
+  See [`docs/scoring-model.md`](../scoring-model.md) for the full
+  Candidate Explanations model and [`decisions.md`](decisions.md) for the
+  Factors-vs-full-result-structs and stays-unwired reasoning.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

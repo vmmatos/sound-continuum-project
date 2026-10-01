@@ -2149,3 +2149,70 @@ future card needs ranking to recompute scores internally (e.g. a
 single-call "rank this pool" convenience function), add that as a new,
 separate function rather than changing `Rank`'s existing pure-sort
 contract.
+
+---
+
+**Decision:** Build Card #50's `GenerateExplanation` from
+`CandidateScore.Factors` (the six already-normalized `[0,1]` values), not
+from each factor's full result struct (`FitResult`, `FreshnessResult`,
+`DiscoveryBonusResult`, `DiversityResult`, `RepetitionPenaltyResult`,
+`PlaylistFitResult`).
+
+**Context:** Every M5 factor (Cards #41-46) returns a rich result struct
+with per-dimension breakdowns, in addition to the single normalized value
+threaded into `Factors`. Card #50 needed to decide which of these two
+representations an explanation should read from.
+
+**Reason:** The single `Factors` value is sufficient, not a shortcut that
+loses information the card actually needs: `FreshnessResult`'s own doc
+comment guarantees a never-used candidate's value is *exactly* `1.0` while
+a used candidate's recovery curve asymptotically approaches but never
+reaches `1.0`, so `*Factors.Freshness == 1.0` reliably distinguishes
+"never appeared" from "appeared, but long ago" without needing
+`FreshnessResult.LastUsedAt`. `CalculateDiscoveryBonus` only sets
+`Factors.DiscoveryBonus` non-nil when `Category == CategoryEmerging` AND an
+editorial value was supplied, so a non-nil `Factors.DiscoveryBonus` already
+encodes "genuine, assessed Emerging discovery" — `DiscoveryBonusResult`'s
+separate `Category`/`Eligible`/`Supplied` fields add no explanatory value
+`Factors` doesn't already imply. For Fit/Diversity/PlaylistFit/
+RepetitionPenalty, the single value is exactly what the card asks the
+explanation to communicate ("strong fit," "diversity contributes
+positively"); reading each dimension's own `Available`/`Match`/`Value`
+would produce the mechanical "Fit 0.83, Playlist Fit 0.72..." listing the
+card explicitly forbids (section 3 of its spec).
+
+**Consequences:** `GenerateExplanation`'s only inputs are `CandidateScore`
+and an optional `BridgeResult` (which genuinely can't come from `Factors`
+— Card #48 deliberately keeps it out of `Factors`/`Calculate`). If a future
+card needs dimension-level explanation detail (e.g. "Mood and Energy
+matched, Texture didn't"), that's new, separate scope — not a reason to
+widen `ExplanationInput` today.
+
+---
+
+**Decision:** `GenerateExplanation` stays unwired from `Rank`/
+`RankedCandidate` and from any HTTP endpoint — no new field on
+`RankedCandidate`, no handler.
+
+**Context:** Card #50's own spec (section 16) allows exposing the
+explanation "alongside each ranked candidate where appropriate," without
+mandating it; every M5 factor since Card #41 (Fit, Freshness, Discovery
+Bonus, Diversity, Repetition Penalty, Playlist Fit, Potential Bridge
+Detection, Rank itself) has stayed a pure, unwired library function, each
+for the same stated reason — the real editorial inputs (per-candidate
+`musicaldna.Profile` tags, a `CurrentEditionContext`, editorial discovery
+values) don't exist in any workflow yet; that's M6 "Curator Experience"
+scope.
+
+**Reason:** Adding an `Explanation` field to `RankedCandidate` or a new
+endpoint today would mean generating explanations for candidates almost
+every factor is nil for — legitimate per the missing-data rule, but not a
+meaningful curator-facing feature yet, and scope this card's Definition of
+Done (which explicitly says "No new HTTP endpoint is required. No frontend
+work is required.") does not call for.
+
+**Consequences:** A future M6 caller generates an explanation per
+`RankedCandidate` by calling `GenerateExplanation(ExplanationInput{Score:
+ranked.Score})` directly (and, where a bridge was separately computed for
+that pair, passing it too) — no change to `rank.go` is needed to support
+that.

@@ -69,8 +69,13 @@ of future implementation requirements.
   deterministic, `FinalScore`-descending sort over already-scored
   candidates; curation assistance only, never selection, and not wired
   into any pipeline/endpoint since the editorial inputs needed to score
-  real pool candidates end-to-end don't exist until M6). M5 now only has
-  automatic selection remaining open)
+  real pool candidates end-to-end don't exist until M6). Candidate
+  Explanations are implemented (Card #50, M5's final card —
+  `scoring.GenerateExplanation`, a short deterministic human-readable
+  explanation built from an already-computed `CandidateScore` and,
+  optionally, a Card #48 `BridgeResult` — never a new scoring factor,
+  never wired into `Rank`/any endpoint). M5 now only has automatic
+  selection remaining open)
 - **M6 — Curator Experience** — Planned
 - **M7 — Weekly Editorial Workflow** — Planned
 - **M8 — Feedback & Evolution** — Planned
