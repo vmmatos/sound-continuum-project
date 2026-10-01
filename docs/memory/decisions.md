@@ -1891,3 +1891,129 @@ actually used most recently.
 A future caller wiring Repetition Penalty into a real pipeline passes
 `candidate.Metadata.Artists`' `SpotifyArtistID` values directly, exactly as
 a future Diversity caller would.
+
+---
+
+**Decision:** Score a Mood/Texture/Cultural Influence mismatch (both sides
+present, different values) in Playlist Fit as a flat `0.5` baseline, not
+`0.0`, while an exact case-insensitive trimmed match still scores `1.0`.
+
+**Context:** Card #46 explicitly forbids a pure similarity/exact-equality-
+only model and requires that "intentional contrast" be able to score
+strongly, not just exact matches — while also forbidding a hardcoded
+mood/texture/cultural-influence compatibility taxonomy (which would be the
+"generic music-similarity/transition engine" the card separately forbids
+building).
+
+**Reason:** A `0.5` baseline is the smallest deterministic rule that
+satisfies both constraints at once: it does not require knowing *which*
+mismatches are "good" contrasts (no taxonomy needed), yet it no longer
+treats every mismatch as equivalent to total failure — a candidate with one
+deliberately contrasting dimension and three aligned dimensions still
+scores strongly overall, rather than being dragged toward `0` the way
+`compareProfiles`'s exact-match-or-nothing rule (Fit, Card #41) would.
+Reusing Fit's exact-match-or-nothing rule as-is was rejected specifically
+because Card #46 calls that out as insufficient for Playlist Fit's
+"meaningful relationships" requirement.
+
+**Consequences:** `playlistFitMatchOrBaseline` in `playlist_fit.go` is used
+for Mood, Texture, Cultural Influence, and as Energy's fallback when either
+Energy value falls outside the 5-level ordinal vocabulary (see next
+decision). It is a genuinely different rule from `compareProfiles`
+(`fit.go`), by design — Playlist Fit is still not calling into or deriving
+from Fit.
+
+---
+
+**Decision:** Score Energy transitions with a small, fixed 5-level ordinal
+vocabulary (`"very low" < "low" < "medium" < "high" < "very high"`,
+case-insensitive, trimmed) local to `playlist_fit.go` only, using
+`score = 1 - |levelDiff|/4`, rather than extending `musicaldna.Profile`
+with a numeric/ordinal Energy type.
+
+**Context:** Card #46 requires energy transitions to support "meaningful
+relationships" (low→medium→high are all valid transitions) and explicitly
+forbids assuming more-similar-is-always-better or that transitions toward
+higher energy are automatically better — properties a plain string
+exact-match rule structurally cannot express.
+
+**Reason:** `musicaldna.Profile.Energy` is `*string` precisely because
+Card #41 established an explicit, open editorial vocabulary with no fixed
+ordinal scale — changing that type now would ripple into Fit and
+Diversity, which this card must not touch. A small ordinal map scoped to
+this one file lets Energy alone gain order-aware scoring without widening
+`musicaldna.Profile`'s contract or requiring editors to supply energy
+values from this exact 5-word set elsewhere in the system — any Energy
+value outside the vocabulary (including values Fit/Diversity already
+handle today) simply falls back to the same match-or-baseline rule every
+other dimension uses, so nothing that worked before this card regresses.
+
+**Consequences:** `playlistFitEnergyLevels`/`playlistFitEnergyScore` are
+private to `playlist_fit.go`; no other package or factor can see or depend
+on this vocabulary. A future card that wants a project-wide ordinal energy
+scale would need its own, separately-justified decision — this one is
+scoped to Playlist Fit's transition scoring only.
+
+---
+
+**Decision:** Reuse `scoring.CurrentEditionContext`/`EditionTrack` (Card
+#44) as-is for Playlist Fit's transition anchor —
+`ctx.Tracks[len(ctx.Tracks)-1]` is the previous track — rather than
+defining a second "current edition" representation or adding an ID/title
+field to `EditionTrack`.
+
+**Context:** Card #46 requires "the smallest appropriate in-memory/
+function-level representation" of the edition in progress, explicitly not
+persisted and not the historical Spotify playlist, and separately requires
+Playlist Fit's explainability to name "which previous track" anchored the
+comparison.
+
+**Reason:** `CurrentEditionContext`/`EditionTrack` already is exactly that
+representation, introduced for Diversity (Card #44) for the same stated
+purpose; a second type would be the kind of duplicated "current edition"
+model Card #44's own reasoning already rejected (see its matching
+decision above). `EditionTrack` carries no ID/title field today because
+Diversity never needed one (it only counts occurrences); adding one now,
+only so Playlist Fit can report "which track" by name, would be scope
+creep into Card #44's type for a need this card can satisfy structurally
+instead — a Go slice preserves insertion order, so `Tracks[len(Tracks)-1]`
+is already, unambiguously, "the last selected track," and
+`PlaylistFitResult.PreviousTrackIndex` plus each dimension's actual
+compared values are sufficient explainability without an identity field.
+
+**Consequences:** `diversity.go` is completely untouched by this card. A
+future card that genuinely needs track identity on `EditionTrack` (e.g. to
+report it by title in a UI) can add that field then, independently
+justified — not retrofitted here.
+
+---
+
+**Decision:** Represent "no transition anchor exists" in
+`PlaylistFitResult` with `ContextProvided bool` plus
+`PreviousTrackIndex *int` (nil when absent) — not a third, Diversity-style
+`EditionEmpty bool` alongside them.
+
+**Context:** Card #46 requires `PlaylistFit = nil` whenever the edition has
+no selected tracks yet, covering both a `nil` `*CurrentEditionContext` and
+a non-nil context with zero `Tracks`. Diversity (Card #44) distinguishes
+an analogous pair of cases with two separate bools,
+`ContextProvided`/`EditionEmpty`, because for Diversity the two cases could
+otherwise be confused with a real, different value (`1.0`, "maximally
+diverse").
+
+**Reason:** Playlist Fit has no equivalent ambiguity — "no previous track"
+can only ever produce `Value == nil`, never a competing fabricated value,
+so Diversity's specific reason for a second bool doesn't apply here.
+`ContextProvided` alone already answers "was context even supplied," and
+`PreviousTrackIndex == nil` already answers "is there a transition anchor
+at this position" — together they convey at least as much information as
+Diversity's pair (`PreviousTrackIndex` additionally reports *where* the
+anchor is, once one exists), so adding a third, partially-redundant
+`EditionEmpty` field would be unrequested structure for information the
+other two fields already carry.
+
+**Consequences:** `PlaylistFitResult` has one fewer field than
+`DiversityResult`'s equivalent explainability surface, by deliberate
+design, not oversight — a future reader diffing the two types should not
+"fix" this by adding a matching `EditionEmpty` field without a new,
+independently-justified reason.

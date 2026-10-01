@@ -475,18 +475,119 @@ positive factors thread into their own `Factors` field — `score.go` needed
 no changes. The existing `Weights.Diversity = 0.15` (Card #40) is
 unchanged.
 
-### Playlist Fit
+### Playlist Fit (Card #46, `backend/internal/scoring/playlist_fit.go`)
 
-Distinct from **Fit**: Fit asks "does this candidate belong to Sound
-Continuum's identity at all?" (a general, largely context-independent
+Playlist Fit answers one question: **"If this candidate were added right
+now, would it make the musical journey flow naturally from what's already
+selected?"** Distinct from **Fit**: Fit asks "does this candidate belong to
+Sound Continuum's identity at all?" (a general, largely context-independent
 question); Playlist Fit asks "does this candidate make sense in the
 *current* chapter/journey?" (relationship to recently selected material,
 narrative continuity, transition opportunities). A candidate can have high
 general Fit and low Playlist Fit in a given edition, or vice versa — the
-two factors are independent and neither is derived from the other. No
-musical-similarity algorithm, Audio Features, or Spotify Recommendations
-are used for this factor, now or in any planned future card (see
-`docs/memory/decisions.md`'s M3 Audio Features decision).
+two factors are independent and neither is derived from the other, and
+Playlist Fit is independently calculated from the previous track, the
+candidate, and the transition context only — never as a function of Fit's,
+Diversity's, Freshness's, Discovery Bonus's, or Repetition Penalty's
+*calculated values*. No musical-similarity algorithm, Audio Features, or
+Spotify Recommendations are used for this factor, now or in any planned
+future card (see `docs/memory/decisions.md`'s M3 Audio Features decision).
+
+**Sequence-aware, not exhaustive.** The sole transition anchor is the
+single track immediately preceding the candidate — the last track already
+selected for the current edition. Playlist Fit deliberately does not
+evaluate a candidate against every track in the edition, does not support
+arbitrary insertion positions, and never reorders, auto-selects, or
+mutates the edition or the official Spotify playlist; it only scores one
+specific transition.
+
+**Current edition context, reused rather than reinvented.**
+`scoring.CalculatePlaylistFit` takes the same `*scoring.CurrentEditionContext`
+Diversity (Card #44) already defined — `Tracks []scoring.EditionTrack`, each
+carrying a `musicaldna.Profile` `Sound` — rather than inventing a second
+"current edition" representation. Because `Tracks` is an ordinary Go slice,
+insertion order is naturally preserved, so the previous track is simply
+`ctx.Tracks[len(ctx.Tracks)-1]`. `EditionTrack` gains no ID/title field for
+this card — Playlist Fit's explainability instead reports the previous
+track's structural *position* (`PreviousTrackIndex`) and its actual
+Mood/Energy/Texture/CulturalInfluence values as used in the comparison (via
+`PlaylistFitDimensionResult`), not an identity Diversity never needed and
+this card has no reason to add.
+
+**Four transition dimensions**, combined with equal fixed 25% weight each
+(`PlaylistFitDimension` — Mood, Energy, Texture, Cultural Influence — no
+`PlaylistFitWeights` config struct, mirroring the Diversity/Discovery Bonus
+precedent since v1 has no real configurable knob), renormalized over
+whichever dimensions are available on both the candidate and the previous
+track.
+
+**Mood, Texture, and Cultural Influence** use a case-insensitive, trimmed
+match-or-baseline scorer — deliberately not pure exact-match-only:
+
+```
+score(a, b) = 1.0   if a and b match (case-insensitive, trimmed)
+score(a, b) = 0.5   otherwise (both present, different values)
+```
+
+The `0.5` baseline, not `0.0`, is what lets "intentional contrast" score
+strongly rather than being punished as if it were simply wrong: a single
+contrasting dimension still contributes half its weight, so if the other
+dimensions align, overall Playlist Fit stays high. More-similar is never
+assumed to always be better.
+
+**Energy** uses a small, fixed 5-level ordinal vocabulary — `"very low" <
+"low" < "medium" < "high" < "very high"` — local to `playlist_fit.go` only;
+`musicaldna.Profile.Energy` itself stays `*string` everywhere else in the
+codebase. When both values parse into the vocabulary:
+
+```
+score(a, b) = 1 - |level(a) - level(b)| / 4
+```
+
+Same level scores `1.0`; adjacent levels score `0.75`; opposite ends score
+`0.0` — symmetric and direction-agnostic, so a low→medium transition scores
+identically to medium→low, and a transition toward higher energy is never
+automatically treated as better than one toward lower energy. Meaningful
+non-identical relationships (low→medium, medium→high, etc.) are therefore
+all valid, partially-rewarded transitions, not failures. When either value
+falls outside the 5-level vocabulary, Energy falls back to the same
+match-or-baseline rule as Mood/Texture/Cultural Influence.
+
+**Missing data.** A dimension is `Available: false` and excluded from the
+combination — never treated as `0` — when either the candidate or the
+previous track lacks it; the remaining weight is renormalized over
+whichever dimensions are available, the same missing-data idiom
+`CalculateFit`/`CalculateDiversity` already use.
+
+**No previous track yet.** A `nil` `*CurrentEditionContext` and a non-nil
+context with zero `Tracks` both mean no transition anchor exists —
+`PlaylistFit = nil` in both cases ("no transition exists" is not "bad
+transition," so it is never a fabricated `0.0`). The two cases remain
+distinguishable via `PlaylistFitResult.ContextProvided`/
+`PreviousTrackIndex` without a third, partially-redundant bool (see
+`docs/memory/decisions.md`). `PlaylistFit` is also `nil` whenever no
+dimension was comparable at all (e.g. the candidate's profile is entirely
+unsupplied).
+
+**Independence from the other five factors.** `CalculatePlaylistFit` takes
+only `musicaldna.Profile`/`*CurrentEditionContext` — never a
+`candidate.CandidateTrack`, `CandidateType`, `Category`, popularity, or any
+other factor's calculated value — so Fit, Freshness, Discovery Bonus,
+Diversity, Repetition Penalty, and historical (non-edition) playlist usage
+cannot affect Playlist Fit by construction.
+
+**Explainability.** `scoring.PlaylistFitResult` carries the overall
+`Value`, `ContextProvided`, `PreviousTrackIndex` (the transition anchor's
+position in `ctx.Tracks`), and one `PlaylistFitDimensionResult` per
+Mood/Energy/Texture/Cultural Influence (each `Available` plus its own
+[0,1] contribution) — never an opaque number, and never a duplicate of the
+full `CandidateTrack`.
+
+**Integration and weight.** `scoring.CalculatePlaylistFit`'s `Value
+*float64` threads into `Factors.PlaylistFit` exactly as the other five
+factors thread into their own `Factors` field — `score.go` needed no
+changes. The existing `Weights.PlaylistFit = 0.25` (Card #40) and
+`Calculate()`'s combination formula are both unchanged.
 
 ### Repetition Penalty (Card #45, `backend/internal/scoring/repetition_penalty.go`)
 

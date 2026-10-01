@@ -973,6 +973,72 @@
   Repetition Penalty model and [`decisions.md`](decisions.md) for the
   max-vs-sum, horizon-choice, and playlist-history-extension reasoning.
 
+- M5 continues with Card #46 (Define Playlist Fit), M5's final scoring
+  factor — the Candidate Scoring Model's six factors are now all
+  implemented: `backend/internal/scoring/playlist_fit.go` implements
+  `CalculatePlaylistFit(candidateSound musicaldna.Profile, ctx
+  *CurrentEditionContext) PlaylistFitResult` — a sequence-aware factor
+  distinct from Musical Fit, Diversity, Repetition Penalty, Discovery
+  Bonus, Freshness, and popularity, whose sole transition anchor is the
+  single immediately-preceding track in the edition being assembled
+  (`ctx.Tracks[len(ctx.Tracks)-1]`), never every track in the edition and
+  never an arbitrary insertion position. It reuses
+  `scoring.CurrentEditionContext`/`EditionTrack` (Card #44) as-is — no
+  second "current edition" representation, and `EditionTrack` gains no
+  ID/title field. Four dimensions (Mood, Energy, Texture, Cultural
+  Influence), equal fixed 25% weight each, renormalized over whichever are
+  available on both the candidate and the previous track — no
+  `PlaylistFitWeights` config struct. Mood/Texture/Cultural Influence score
+  a case-insensitive trimmed exact match as `1.0` and any mismatch as a
+  flat `0.5` baseline (not `0.0`), so an intentional contrast still
+  contributes meaningfully rather than being scored as a failure. Energy
+  uses a small, fixed 5-level ordinal vocabulary ("very low".."very high")
+  local to `playlist_fit.go` only (`musicaldna.Profile.Energy` stays
+  `*string` everywhere else) with `score = 1 - |levelDiff|/4` — symmetric,
+  so low→medium and medium→low score identically and a transition toward
+  higher energy is never automatically "better" — falling back to the
+  same match-or-baseline rule when either value is outside the vocabulary.
+  `PlaylistFit = nil` (never a fabricated number) whenever there is no
+  previous track (nil context or a non-nil context with zero tracks, both
+  distinguishable via `PlaylistFitResult.ContextProvided`/
+  `PreviousTrackIndex`, without a redundant third bool) or no dimension is
+  comparable at all. `CalculatePlaylistFit` takes only
+  `musicaldna.Profile`/`*CurrentEditionContext` — never a
+  `candidate.CandidateTrack` or any other factor's calculated value — so it
+  is independent of CandidateType, Category, Fit, Freshness, Discovery
+  Bonus, Diversity, Repetition Penalty, popularity, and historical
+  (non-edition) playlist usage by construction, and it is never derived
+  from any other factor's score. `PlaylistFitResult` carries `Value`,
+  `ContextProvided`, `PreviousTrackIndex`, and one
+  `PlaylistFitDimensionResult` per dimension for explainability.
+  `scoring.Factors.PlaylistFit`/`scoring.Weights.PlaylistFit = 0.25`
+  (Card #40)/`scoring.Calculate`'s combination formula are all
+  unchanged — a caller threads `PlaylistFitResult.Value` into
+  `Factors.PlaylistFit` exactly as the other five factors already do;
+  `score.go` needed no changes. 17 new unit/integration test functions
+  (two with table-driven subtests, for energy progression/symmetry and
+  normalization bounds) across `scoring/playlist_fit_test.go` and
+  `scoring/playlist_fit_integration_test.go` cover every case Card #46
+  lists: strong/weak transitions, intentional contrast scoring strongly,
+  no-previous-track and missing-profile nil cases, partial-dimension
+  renormalization, energy progression and symmetry, mood/texture/cultural-
+  influence relationships without exact equality, independence from every
+  other factor and from CandidateType/Category/popularity/historical
+  playlist usage (proven by construction — the function accepts no
+  `CandidateTrack`), the A→B→C→D sequence-anchor case (must use C→D, never
+  A→D or B→D), the `CandidateScore.Factors.PlaylistFit` integration, the
+  unchanged `0.25` weight, 0.0–1.0 normalization bounds, and determinism.
+  `candidate`, `musicaldna`, `diversity.go`, `fit.go`, and `score.go` are
+  all unchanged. Like Fit/Freshness/Discovery Bonus/Diversity/Repetition
+  Penalty before it, `CalculatePlaylistFit` stays unwired from any
+  pipeline/handler — a pure, tested library function. M5 now has all six
+  scoring factors implemented (Fit, Freshness, Discovery Bonus, Diversity,
+  Repetition Penalty, Playlist Fit); only ranking and automatic selection
+  remain open. See [`docs/scoring-model.md`](../scoring-model.md) for the
+  full Playlist Fit model and [`decisions.md`](decisions.md) for the
+  mismatch-baseline, energy-vocabulary, context-reuse, and
+  nil-case-representation reasoning.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

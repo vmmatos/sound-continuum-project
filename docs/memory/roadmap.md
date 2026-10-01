@@ -47,13 +47,20 @@ of future implementation requirements.
   or popularity), the Diversity factor's algorithm is implemented
   (Card #44, `scoring.CalculateDiversity` — Artist/Era/Sound concentration
   evaluated against an explicit, transient `CurrentEditionContext`, never
-  the official playlist or candidate pool), and the Repetition Penalty
+  the official playlist or candidate pool), the Repetition Penalty
   factor's algorithm is implemented (Card #45,
   `scoring.CalculateRepetitionPenalty` — track and artist repetition
   against official playlist history, combined by `max`, a soft signal
-  distinct from the Card #37 hard Recent Track Filter) — see
-  [`docs/scoring-model.md`](../scoring-model.md); Playlist Fit, ranking,
-  and automatic selection remain open)
+  distinct from the Card #37 hard Recent Track Filter), and the Playlist
+  Fit factor's algorithm is implemented (Card #46,
+  `scoring.CalculatePlaylistFit` — a sequence-aware transition score
+  between the current edition's immediately-preceding track and the
+  candidate, using Mood/Energy/Texture/Cultural Influence with a
+  match-or-baseline and ordinal-energy scoring model, independent of
+  every other factor) — see
+  [`docs/scoring-model.md`](../scoring-model.md); all six scoring factors
+  are now implemented, M5 now only has ranking and automatic selection
+  remaining open)
 - **M6 — Curator Experience** — Planned
 - **M7 — Weekly Editorial Workflow** — Planned
 - **M8 — Feedback & Evolution** — Planned
