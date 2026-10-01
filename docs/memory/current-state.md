@@ -1110,15 +1110,15 @@
   `musicaldna.Profile` tags, a `CurrentEditionContext`, and editorial
   discovery values, none of which any workflow collects yet (M6
   "Curator Experience" territory, out of this card's scope — confirmed
-  with the curator during planning). 15 new unit tests
+  with the curator during planning). 10 new unit tests
   (`scoring/rank_test.go`) cover basic ordering, weight integration via
   real `Calculate` output, missing-factor renormalization and
   explicit-zero preservation, repetition-penalty-reduced ordering,
-  deterministic tie-breaking across repeated runs, the
-  eligible-candidates-only caller contract, full candidate metadata/
-  status preservation, empty pool, single candidate, independence from
-  popularity/release-date/genre/Last.fm-similarity, and nil-`FinalScore`
-  ordering. No changes to `candidate`/`discovery`/any other `scoring`
+  deterministic tie-breaking across repeated runs, full candidate
+  metadata (status included) preservation, empty pool, single candidate,
+  independence from popularity/release-date/genre/Last.fm-similarity, and
+  nil-`FinalScore` ordering. No changes to `candidate`/`discovery`/any
+  other `scoring`
   file; `scoring` still does not import `discovery`. M5 now only has
   automatic selection remaining open. See
   [`docs/scoring-model.md`](../scoring-model.md) for the full ranking

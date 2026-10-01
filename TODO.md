@@ -893,13 +893,13 @@
       no new dependency — confirmed with the curator that real end-to-end
       ranking needs editorial inputs (musicaldna profiles, edition
       context, discovery values) that don't exist until M6
-- [x] 15 new unit tests (`backend/internal/scoring/rank_test.go`): basic
+- [x] 10 new unit tests (`backend/internal/scoring/rank_test.go`): basic
       ordering, weight integration, missing-factor renormalization +
       explicit-zero preservation, repetition-penalty ordering,
-      deterministic tie-breaking, eligible-candidates-only contract,
-      candidate metadata/status preservation, empty pool, single
-      candidate, independence from popularity/release-date/genre/Last.fm
-      similarity, nil-`FinalScore` ordering
+      deterministic tie-breaking, candidate metadata (and status, as part
+      of it) preservation, empty pool, single candidate, independence
+      from popularity/release-date/genre/Last.fm similarity,
+      nil-`FinalScore` ordering
 - [x] `go build ./...`, `go vet ./...`, `go test ./...` verified clean
 - [x] `docs/scoring-model.md` — new "Ranking" section
 - [x] Project memory updated (`current-state.md`, `decisions.md`,

@@ -1,6 +1,7 @@
 package scoring
 
 import (
+	"math"
 	"reflect"
 	"testing"
 
@@ -171,45 +172,12 @@ func TestRankTieBreakDeterministic(t *testing.T) {
 	}
 }
 
-func TestRankRecentlyUsedCandidatesNeverAppear(t *testing.T) {
-	// Models the caller contract: only EligibleCandidates (Card #37's hard
-	// filter output) are ever turned into entries. A recently-used
-	// candidate that was never passed to Rank must never appear.
-	eligible := []CandidateScoreEntry{
-		{Candidate: testCandidate(t, "eligible-1"), Score: scoreWithFinal(t, "eligible-1", float64Ptr(0.6))},
-	}
-	// "recently-used-1" deliberately not included — simulating
-	// FilterRecentTracks already excluding it upstream.
-
-	ranked := Rank(eligible)
-
-	if len(ranked) != 1 {
-		t.Fatalf("len(ranked) = %d, want 1", len(ranked))
-	}
-	for _, r := range ranked {
-		if r.Candidate.ID == "recently-used-1" {
-			t.Fatal("recently-used candidate appeared in ranked output")
-		}
-	}
-}
-
 func TestRankPreservesCandidateMetadata(t *testing.T) {
 	c := testCandidate(t, "a")
 	ranked := Rank([]CandidateScoreEntry{{Candidate: c, Score: scoreWithFinal(t, "a", float64Ptr(0.5))}})
 
 	if !reflect.DeepEqual(ranked[0].Candidate, c) {
 		t.Errorf("Candidate was altered by Rank:\ngot  %+v\nwant %+v", ranked[0].Candidate, c)
-	}
-}
-
-func TestRankDoesNotChangeStatus(t *testing.T) {
-	c := testCandidate(t, "a")
-	wantStatus := c.Status
-
-	ranked := Rank([]CandidateScoreEntry{{Candidate: c, Score: scoreWithFinal(t, "a", float64Ptr(0.9))}})
-
-	if ranked[0].Candidate.Status != wantStatus {
-		t.Errorf("Status = %q, want %q (ranking must never mutate status)", ranked[0].Candidate.Status, wantStatus)
 	}
 }
 
@@ -281,9 +249,5 @@ func TestRankNilFinalScoreSortsLast(t *testing.T) {
 
 func floatsClose(a, b float64) bool {
 	const eps = 1e-9
-	d := a - b
-	if d < 0 {
-		d = -d
-	}
-	return d < eps
+	return math.Abs(a-b) < eps
 }
