@@ -63,7 +63,6 @@ type explanationFragment struct {
 	reason ExplanationReason
 	phrase string
 	value  float64
-	order  int
 }
 
 // GenerateExplanation builds a short, deterministic explanation for
@@ -76,24 +75,24 @@ func GenerateExplanation(in ExplanationInput) CandidateExplanation {
 
 	var fragments []explanationFragment
 	if f.Fit != nil && *f.Fit >= explanationMentionThreshold {
-		fragments = append(fragments, explanationFragment{ReasonStrongFit, "strong musical fit", *f.Fit, 0})
+		fragments = append(fragments, explanationFragment{ReasonStrongFit, "strong musical fit", *f.Fit})
 	}
 	if f.PlaylistFit != nil && *f.PlaylistFit >= explanationMentionThreshold {
-		fragments = append(fragments, explanationFragment{ReasonPlaylistFit, "a promising sequence fit", *f.PlaylistFit, 1})
+		fragments = append(fragments, explanationFragment{ReasonPlaylistFit, "a promising sequence fit", *f.PlaylistFit})
 	}
 	if f.Freshness != nil {
 		switch {
 		case *f.Freshness == 1.0:
-			fragments = append(fragments, explanationFragment{ReasonFreshPlaylistHistory, "new to the Sound Continuum playlist", *f.Freshness, 2})
+			fragments = append(fragments, explanationFragment{ReasonFreshPlaylistHistory, "new to the Sound Continuum playlist", *f.Freshness})
 		case *f.Freshness >= explanationMentionThreshold:
-			fragments = append(fragments, explanationFragment{ReasonFreshPlaylistHistory, "has not appeared recently in Sound Continuum", *f.Freshness, 2})
+			fragments = append(fragments, explanationFragment{ReasonFreshPlaylistHistory, "has not appeared recently in Sound Continuum", *f.Freshness})
 		}
 	}
 	if f.DiscoveryBonus != nil && *f.DiscoveryBonus >= explanationMentionThreshold {
-		fragments = append(fragments, explanationFragment{ReasonDiscoveryValue, "emerging discovery with strong editorial value", *f.DiscoveryBonus, 3})
+		fragments = append(fragments, explanationFragment{ReasonDiscoveryValue, "emerging discovery with strong editorial value", *f.DiscoveryBonus})
 	}
 	if f.Diversity != nil && *f.Diversity >= explanationMentionThreshold {
-		fragments = append(fragments, explanationFragment{ReasonDiversityContribution, "a strong diversity contribution", *f.Diversity, 4})
+		fragments = append(fragments, explanationFragment{ReasonDiversityContribution, "a strong diversity contribution", *f.Diversity})
 	}
 
 	sortFragments(fragments)
@@ -129,18 +128,16 @@ func GenerateExplanation(in ExplanationInput) CandidateExplanation {
 		text += ", with " + repetitionPhrase
 	}
 
-	return CandidateExplanation{Text: capitalize(text) + ".", Reasons: reasons}
+	return CandidateExplanation{Text: strings.ToUpper(text[:1]) + text[1:] + ".", Reasons: reasons}
 }
 
-// sortFragments orders fragments by factor value descending, breaking ties
-// on the fixed editorial priority order (order field) so the result is
-// deterministic regardless of input order.
+// sortFragments orders fragments by factor value descending. Ties keep their
+// original build order (Fit, PlaylistFit, Freshness, DiscoveryBonus,
+// Diversity — the fixed editorial priority) via sort.SliceStable, so the
+// result is deterministic regardless of input order.
 func sortFragments(fragments []explanationFragment) {
 	sort.SliceStable(fragments, func(i, j int) bool {
-		if fragments[i].value != fragments[j].value {
-			return fragments[i].value > fragments[j].value
-		}
-		return fragments[i].order < fragments[j].order
+		return fragments[i].value > fragments[j].value
 	})
 }
 
@@ -185,7 +182,7 @@ func bridgeEvidenceDescription(b BridgeResult) string {
 			return "related artist similarity"
 		}
 	}
-	return "shared musical evidence"
+	panic("bridgeEvidenceDescription: unreachable — PotentialBridge guarantees evidence above")
 }
 
 func joinWithAnd(items []string) string {
@@ -197,11 +194,4 @@ func joinWithAnd(items []string) string {
 	default:
 		return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
 	}
-}
-
-func capitalize(s string) string {
-	if s == "" {
-		return s
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
 }
