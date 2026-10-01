@@ -45,8 +45,9 @@ None of the five positive factors' actual calculation algorithms are
 implemented by this card — `scoring.Factors` only holds already-calculated
 (or not-yet-calculated) values. Later M5 cards implement one factor at a
 time. **Fit's algorithm is implemented as of Card #41, Freshness's as of
-Card #42, and Discovery Bonus's as of Card #43** — see below; Diversity,
-Repetition Penalty, and Playlist Fit remain future cards.
+Card #42, Discovery Bonus's as of Card #43, and Diversity's as of Card
+#44** — see below; Repetition Penalty and Playlist Fit remain future
+cards.
 
 ### Fit (Card #41, `backend/internal/scoring/fit.go`)
 
@@ -368,15 +369,111 @@ no changes. The existing `Weights.DiscoveryBonus = 0.15` (set in Card #40's
 renormalization already treats an unavailable Discovery Bonus as absent
 from the weighted average, never as `0`, with no code change required.
 
-### Diversity
+### Diversity (Card #44, `backend/internal/scoring/diversity.go`)
 
-How much a candidate contributes something different from what's already
-represented in the current playlist/candidate context. Not the same as
-randomness — Sound Continuum is built on musical bridges, so diversity
-should eventually reward variation that stays musically connected.
-Diversity is **contextual**: the same candidate can score differently
-depending on the current playlist state, so it cannot be calculated from
-the candidate in isolation.
+Diversity answers one question: **"Does adding this candidate contribute
+meaningful variation to the current edition, or does it increase
+concentration around one artist, era, or sound that's already heavily
+represented?"** It is not "make every track different" and it is not
+distance-maximization — Sound Continuum is built on musical bridges, and a
+diverse edition can still have continuity. A candidate is not rewarded for
+being radically different for its own sake, only for not deepening an
+existing concentration.
+
+**Contextual, not an isolated property.** The same candidate can be highly
+diverse in one edition and poorly diverse in another, depending on what's
+already there. `scoring.CalculateDiversity` therefore always takes a
+`*scoring.CurrentEditionContext` — the tracks currently being
+assembled/evaluated for the edition in progress. This is deliberately
+**not** `candidate.CandidateTrack`, **not** the candidate pool, and
+**not** the official historical Spotify playlist (that's Freshness's and
+the Recent Track Filter's domain, Cards #37/#42) — `CurrentEditionContext`
+is a small, transient, in-memory struct (`Tracks []scoring.EditionTrack`,
+each carrying `ArtistSpotifyIDs`, a coarse `Era`, and a `musicaldna.Profile`
+`Sound`), not a persisted Edition entity.
+
+**Three dimensions**, combined with equal fixed weight (1/3 each,
+renormalized over whichever are available — no `DiversityWeights` config
+struct, since v1 has no real configurable knob, mirroring the Discovery
+Bonus precedent):
+
+- **Artist Diversity** — concentration around the candidate's Spotify
+  artist identity (`candidate.CandidateArtist.SpotifyArtistID`, reused
+  directly — no second artist identity model) within
+  `CurrentEditionContext`, not the historical playlist. This is
+  deliberately **not** Repetition Penalty: Repetition Penalty asks "has
+  this been repeated enough to penalize, against playlist history?";
+  Artist Diversity asks "is this candidate adding another artist to the
+  edition being built right now, or deepening an existing one?" Different
+  question, different data source, different factor.
+- **Era Diversity** — concentration around a coarse decade (`"1990s"`-
+  style), extracted by `scoring.DiversityEra(releaseDate string) *string`
+  from whatever release-date precision the candidate's
+  `CandidateMetadata.Album.ReleaseDate` carries (first 4 digits as the
+  year — no history taxonomy, no genre/CandidateType/Category inference:
+  a `Past`-category candidate is not assumed old, and a `Discovery`-type
+  candidate is not assumed recent).
+- **Sound Diversity** — concentration around the candidate's explicit,
+  editorially-supplied `musicaldna.Profile` (Mood/Energy/Texture/
+  CulturalInfluence — the same vocabulary Fit, Card #41, already uses) *as
+  a population to concentrate against*, not a target-profile match. This is
+  an **independent calculation from Fit**: Fit's `compareProfiles` scores
+  one candidate against one project/weekly target; Sound Diversity scores
+  one candidate's concentration against every edition track's profile. No
+  genre-as-sound-proxy, no Spotify Audio Features/Analysis (unavailable to
+  this project — see the M3 decision in `docs/memory/decisions.md`), no
+  embeddings or ML.
+
+**The formula**, identical in shape for all three dimensions and for each
+Sound sub-dimension — deterministic, bounded, with no hardcoded
+per-occurrence thresholds:
+
+```
+contribution(occurrences) = 1 / (1 + occurrences)
+```
+
+0 existing occurrences of this artist/era/sound-value in the edition
+contributes the strongest signal (`1.0`); 1 occurrence contributes `0.5`;
+2 contribute `0.333`; monotonically decreasing, always in `(0,1]`. One
+additional track by an artist is never treated as automatically invalid —
+Sound Continuum does not enforce "one track per artist."
+
+**Missing dimensions.** A dimension is `Available: false` and excluded
+from the combination — never treated as `0` — when the candidate itself
+doesn't supply it (no artist IDs, no era, no sound dimension at all): the
+same missing-data renormalization idiom `Calculate`/`CalculateFit` already
+use, reapplied here rather than duplicated.
+
+**Empty edition vs. missing context — both `nil`, for different reasons.**
+A `nil` `*CurrentEditionContext` means no context was supplied at all:
+`Diversity = nil`. A non-nil context with zero tracks means the edition
+has no existing concentration to diversify against — this is **not**
+automatically `1.0`: "there is no concentration yet" is not the same claim
+as "this candidate was evaluated as maximally diverse," so `Diversity` is
+`nil` here too. `DiversityResult.ContextProvided`/`EditionEmpty` make the
+two cases independently inspectable rather than collapsing them into one
+unexplained `nil`.
+
+**Independence from the other five factors.** `CalculateDiversity` takes
+only plain artist-ID/era/`musicaldna.Profile`/`CurrentEditionContext`
+values — never a `candidate.CandidateTrack`, `CandidateType`, `Category`,
+`Source`, `DiscoveryProvenance`/Last.fm match, release date as a Freshness
+input, Fit, Discovery Bonus, Repetition Penalty, or Playlist Fit — so none
+of them can affect Diversity by construction, the same independence
+guarantee Fit/Freshness/Discovery Bonus already give.
+
+**Explainability.** `scoring.DiversityResult` carries the overall `Value`,
+`ContextProvided`/`EditionSize`/`EditionEmpty`, and each of
+`Artist`/`Era`/`Sound` as independently inspectable fields (each with
+`Available`, `Occurrences`, and its own `Value`; `Sound` additionally
+carries one `DiversitySoundDimensionResult` per Mood/Energy/Texture/
+CulturalInfluence) — never an opaque number.
+
+**Integration and weight.** `scoring.CalculateDiversity`'s `Value
+*float64` threads into `Factors.Diversity` exactly as the other four
+positive factors thread into their own `Factors` field — `score.go` needed
+no changes. The existing `Weights.Diversity = 0.15` (Card #40) is
+unchanged.
 
 ### Playlist Fit
 
@@ -498,11 +595,11 @@ would misleadingly look like "weakest possible candidate."
 A missing `RepetitionPenalty` is treated as `0.0` (no discount): silence
 about repetition history is not evidence of repetition.
 
-Since M5 implements factors one card at a time, Fit and Freshness are the
-only positive factors with an implemented algorithm as of Card #42 —
-`scoring.Calculate` handles all six factors, but Discovery Bonus,
-Diversity, Repetition Penalty, and Playlist Fit have no production code
-path constructing real values yet.
+Since M5 implements factors one card at a time, Fit, Freshness, Discovery
+Bonus, and Diversity are the only positive factors with an implemented
+algorithm as of Card #44 — `scoring.Calculate` handles all six factors,
+but Repetition Penalty and Playlist Fit have no production code path
+constructing real values yet.
 
 ## Explainability
 
