@@ -1644,3 +1644,133 @@ renormalization already handled it generically since Card #40. Like
 into `pool.go`/`main.go`/any handler — it remains a pure, tested library
 function until a future ranking/orchestration card connects it, consistent
 with M5's "implement one factor at a time" precedent.
+
+---
+
+**Decision:** Implement Diversity (Card #44) entirely inside the existing
+`backend/internal/scoring` package (`diversity.go`), not a new package and
+not a new persisted Edition entity.
+
+**Context:** Card #44 needs Diversity to be evaluated against "the current
+edition being assembled" — context distinct from `candidate.CandidateTrack`,
+the candidate pool, and the official historical Spotify playlist — while
+explicitly forbidding persistence or a new Edition domain model at this
+stage.
+
+**Reason:** Same reasoning already recorded for Fit/Freshness/Discovery
+Bonus: `scoring` is the one package whose job is defining how editorial
+signals combine into a score, and Diversity needs nothing `scoring` doesn't
+already have access to (`musicaldna.Profile` is already an import via
+`fit.go`). A `CurrentEditionContext{Tracks []EditionTrack}` struct,
+constructed by the caller for one scoring call, satisfies "the smallest
+appropriate function-level/context-level representation" the card asks
+for — introducing a database table or a `candidate`/`discovery`-level
+Edition type now would be exactly the ahead-of-need architecture this
+project's MVP discipline avoids everywhere else.
+
+**Consequences:** `EditionTrack` carries only what Diversity needs
+(`ArtistSpotifyIDs []string`, `Era *string`, `Sound musicaldna.Profile`) —
+not a copy of `CandidateTrack`. A future persistence/Edition-assembly card
+can build real Edition state and map it into `CurrentEditionContext` at the
+call site without this package needing to change.
+
+---
+
+**Decision:** Reuse `musicaldna.Profile` (Card #41's shared vocabulary) for
+Diversity's Sound dimension, but compute Sound Diversity with an
+independent formula from `CalculateFit`'s `compareProfiles`, rather than
+inventing a separate `DiversityProfile` type or calling into Fit.
+
+**Context:** Card #44 explicitly requires Sound Diversity to use an
+explicit, editorially-supplied sound representation — never genre, never
+Spotify Audio Features — and explicitly forbids reusing Fit's calculated
+score as Diversity, while allowing reuse of an existing representation "if
+it can be reused without coupling Diversity to Fit."
+
+**Reason:** `musicaldna.Profile` already is exactly the representation the
+card describes — explicit, deterministic, editorially supplied,
+independent of genre/Audio Features — so defining a second,
+structurally-identical `DiversityProfile` type would be the "second artist
+identity model" kind of duplication the card warns against elsewhere,
+applied to sound instead. Sharing the *type* is safe because Diversity and
+Fit use it for structurally different comparisons: Fit's
+`compareProfiles` scores one candidate against one fixed target
+(ProjectDNA or WeeklyDirection); Diversity's `soundDiversity` scores one
+candidate's concentration against a population of edition tracks' profiles
+using the `1/(1+occurrences)` formula below. Neither function calls the
+other, and `CalculateDiversity` never receives a `FitResult` or `Fit`
+value as input.
+
+**Consequences:** Adding a fifth `musicaldna.Profile` dimension in a future
+card updates both Fit's and Diversity's dimension lists automatically with
+no cross-package coordination needed beyond the shared type.
+
+---
+
+**Decision:** Use `contribution(occurrences) = 1 / (1 + occurrences)` as
+the one deterministic diminishing-concentration formula for all three
+Diversity dimensions (and each Sound sub-dimension), instead of hardcoded
+per-occurrence thresholds (e.g. "first appearance = 1.0, second = 0.5,
+third = 0.0").
+
+**Reason:** Card #44 explicitly requires "a simple deterministic
+diminishing-concentration calculation" and explicitly forbids arbitrary
+hardcoded thresholds. `1/(1+n)` is the simplest function satisfying
+"0 occurrences is strongest, monotonically decreasing, bounded `(0,1]`,
+never treats one additional track by an artist as automatically invalid" —
+one formula, reused for Artist, Era, and each Sound sub-dimension, rather
+than three separate hand-tuned curves.
+
+**Consequences:** The curve cannot reach exactly `0`, by design — "no
+meaningful diversity" and "this candidate hasn't contributed any diversity
+yet" are different claims than "there is literally zero value"; a future
+card revisiting this formula should preserve the bounded-`(0,1]`,
+monotonically-decreasing, no-hard-threshold properties the card requires.
+
+---
+
+**Decision:** An empty `CurrentEditionContext` (non-nil, zero tracks) and
+a `nil` `CurrentEditionContext` both yield `Diversity = nil`, distinguished
+via `DiversityResult.ContextProvided`/`EditionEmpty` — neither
+automatically returns `1.0`.
+
+**Context:** Card #44 explicitly warns that "there is no concentration
+yet" is not the same claim as "this candidate has been evaluated as
+maximally diverse," and separately requires missing context to yield
+`nil`, never a fabricated maximum or minimum.
+
+**Reason:** The two cases have genuinely different meanings (no context
+supplied vs. an edition that's legitimately just getting started) and the
+card asks for both to be documented explicitly — collapsing them into one
+unexplained `nil` would lose that distinction, so both fields are carried
+on `DiversityResult` rather than only a bare `nil` `Value`.
+
+**Consequences:** A caller that wants to special-case "first track of a
+new edition" differently from "no context was wired up yet" can do so from
+`DiversityResult` alone, without re-deriving the distinction.
+
+---
+
+**Decision:** No `DiversityWeights` config struct; the three aspect
+weights (Artist/Era/Sound, 1/3 each) are fixed constants in
+`CalculateDiversity`, and `CalculateDiversity` returns no `error`.
+
+**Context:** Card #44 explicitly says "do not invent a complex hierarchy
+of diversity weights" and specifies equal 1/3 weighting as the first
+version. Unlike `FitWeights`/`FreshnessConfig`, nothing about Diversity's
+inputs is a caller-supplied float or struct that could be out of range.
+
+**Reason:** Same reasoning already recorded for Discovery Bonus's lack of
+a weights struct: a config type for a value with no real caller and no
+planned variation is exactly the ahead-of-need complexity this project's
+MVP discipline avoids. Since there is no `Weights`/`Config` to validate and
+no caller-supplied numeric value needing a range check (occurrences are
+computed internally from edition data, never passed in directly),
+`CalculateDiversity` has no error path to report — unlike
+`CalculateFit`/`CalculateFreshness`/`CalculateDiscoveryBonus`, which all
+validate a caller-supplied `Weights`/`Config`/editorial value.
+
+**Consequences:** If a future card needs configurable Artist/Era/Sound
+weighting, add a `DiversityWeights` struct (and the matching `error`
+return) then, following `FitWeights`'s `Validate()` pattern — not ahead of
+a real need.

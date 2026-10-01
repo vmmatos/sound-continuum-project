@@ -839,6 +839,73 @@
   Discovery Bonus model and [`decisions.md`](decisions.md) for the
   exclusion-list and parameter-vs-field reasoning.
 
+- M5 continues with Card #44 (Define Diversity):
+  `backend/internal/scoring/diversity.go` implements the Diversity factor —
+  does a candidate contribute meaningful variation to the *current edition
+  being assembled*, across Artist/Era/Sound concentration, discouraging
+  concentration without rewarding difference for its own sake. All new code
+  stays inside the existing `scoring` package — no new package, no new
+  persisted Edition entity. `CurrentEditionContext{Tracks []EditionTrack}`
+  (each `EditionTrack`: `ArtistSpotifyIDs []string`, `Era *string`,
+  `Sound musicaldna.Profile`) is a small, transient, in-memory,
+  function-level input distinct from `candidate.CandidateTrack`, the
+  candidate pool, and the official historical Spotify playlist (Freshness's
+  and the Recent Track Filter's domain, Cards #37/#42) — Diversity is
+  contextual to the edition in progress, never calculated from a candidate
+  in isolation. `scoring.CalculateDiversity(candidateArtistSpotifyIDs
+  []string, candidateEra *string, candidateSound musicaldna.Profile, ctx
+  *CurrentEditionContext) DiversityResult` takes no
+  `candidate.CandidateTrack`/`CandidateType`/`Category`/`Source`/
+  `DiscoveryProvenance`/other-factor value, so it is independent of all of
+  them by construction — the same guarantee Fit/Freshness/Discovery Bonus
+  already give; unlike those three it returns no error, since nothing it
+  accepts is a caller-supplied float or config needing range validation.
+  Artist Diversity reuses the candidate's existing Spotify artist identity
+  (`candidate.CandidateArtist.SpotifyArtistID`) against edition-context
+  concentration only — deliberately not Repetition Penalty, which uses
+  playlist history instead. Era Diversity uses a coarse decade
+  (`scoring.DiversityEra(releaseDate string) *string`, first 4 digits as
+  year) with no CandidateType/Category/genre inference. Sound Diversity
+  reuses `musicaldna.Profile` (Card #41's vocabulary) but computes
+  independently from `CalculateFit`: concentration against the edition's
+  population of profiles, not a target match — no genre-as-sound-proxy, no
+  Spotify Audio Features. All three dimensions and each Sound sub-dimension
+  share one deterministic, bounded formula,
+  `contribution(occurrences) = 1 / (1 + occurrences)` — no hardcoded
+  per-occurrence thresholds. Missing dimensions are excluded and the
+  remaining ones renormalized (never treated as `0`), the same idiom
+  `Calculate`/`CalculateFit` already use. A `nil` context and a non-nil
+  context with zero tracks both yield `Diversity = nil`, for two different,
+  independently inspectable reasons
+  (`DiversityResult.ContextProvided`/`EditionEmpty`) — an empty edition is
+  explicitly never read as "maximally diverse." `DiversityResult` exposes
+  `Value`, `ContextProvided`/`EditionSize`/`EditionEmpty`, and each of
+  `Artist`/`Era`/`Sound` (with per-dimension `Available`/`Occurrences`/
+  `Value`, and Sound additionally breaking out all four
+  Mood/Energy/Texture/CulturalInfluence sub-dimensions) for explainability.
+  `Factors.Diversity`/`Weights.Diversity = 0.15`/`score.go` are unchanged —
+  a caller threads `DiversityResult.Value` into `Factors.Diversity` exactly
+  as the other positive factors already do. 27 new unit/integration tests
+  across `scoring/diversity_test.go` and
+  `scoring/diversity_integration_test.go` cover every case Card #44 lists:
+  new/repeated/increasingly-concentrated artist, different/concentrated
+  era, different/similar sound, empty edition vs. missing context (both
+  nil, distinguishable), missing-dimension renormalization,
+  explicit-availability-vs-unavailable distinction, normalization bounds,
+  determinism, `CandidateScore` integration, the unchanged `0.15` weight,
+  missing-factor renormalization, per-dimension independence from each
+  other, and independence from `CandidateType`/`Category`/provenance/
+  Last.fm match/the other four factors — one integration test builds a
+  real `candidate.CandidateTrack` through metadata enrichment and
+  provenance exactly like Cards #38/#39 produce, with no live Spotify/
+  Last.fm call. `candidate`, `musicaldna`, `discovery`, and `score.go` are
+  all unchanged; no ranking, selection, persistence, or HTTP/API wiring —
+  `CalculateDiversity` stays exactly as unwired from any pipeline/handler
+  as `CalculateFit`/`CalculateFreshness`/`CalculateDiscoveryBonus` are
+  today. See [`docs/scoring-model.md`](../scoring-model.md) for the full
+  Diversity model and [`decisions.md`](decisions.md) for the
+  package-reuse, context-representation, and formula-choice reasoning.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

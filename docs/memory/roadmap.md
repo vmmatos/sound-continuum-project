@@ -44,9 +44,12 @@ of future implementation requirements.
   `scoring.CalculateDiscoveryBonus` — eligible only for `CategoryEmerging`
   candidates, and only when an explicit editorial discovery value is
   supplied; never derived from discovery provenance, Last.fm similarity,
-  or popularity) — see [`docs/scoring-model.md`](../scoring-model.md);
-  Diversity, Repetition Penalty, Playlist Fit, ranking, and automatic
-  selection remain open)
+  or popularity), and the Diversity factor's algorithm is implemented
+  (Card #44, `scoring.CalculateDiversity` — Artist/Era/Sound concentration
+  evaluated against an explicit, transient `CurrentEditionContext`, never
+  the official playlist or candidate pool) — see
+  [`docs/scoring-model.md`](../scoring-model.md); Repetition Penalty,
+  Playlist Fit, ranking, and automatic selection remain open)
 - **M6 — Curator Experience** — Planned
 - **M7 — Weekly Editorial Workflow** — Planned
 - **M8 — Feedback & Evolution** — Planned
