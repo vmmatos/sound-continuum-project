@@ -906,6 +906,73 @@
   Diversity model and [`decisions.md`](decisions.md) for the
   package-reuse, context-representation, and formula-choice reasoning.
 
+- M5 continues with Card #45 (Define Repetition Penalty), M5's sixth and
+  final scoring factor:
+  `backend/internal/scoring/repetition_penalty.go` implements
+  `CalculateRepetitionPenalty(trackLastUsedAt, artistLastUsedAt *time.Time,
+  now time.Time, config RepetitionPenaltyConfig) (RepetitionPenaltyResult,
+  error)` — a soft scoring signal for recent track/artist reuse, distinct
+  from the Card #37 hard 28-day Recent Track Filter and the Card #42
+  Freshness factor, following the M1 repetition philosophy that repetition
+  is never an absolute prohibition. Two dimensions, each a linear decay
+  from severity `1.0` at 0 days since last use (consecutive reuse, the
+  strongest case) to exactly `0` at a 90-day horizon
+  (`DefaultRepetitionHorizonDays`, its own constant — deliberately distinct
+  from both the 28-day filter and Freshness's 60-day half-life), combined
+  as `max(TrackRepetition, ArtistRepetition)` rather than summed, since a
+  track repetition event is already an artist repetition event and summing
+  would double-count it. Track identity is the Spotify track ID (reusing
+  `scoring.FreshnessLastUsedAt`, Card #42's lookup helper, directly — no
+  new track lookup needed); artist identity reuses
+  `candidate.CandidateMetadata.Artists[].SpotifyArtistID` via a new
+  `scoring.RepetitionArtistLastUsedAt(artistHistory map[string]time.Time,
+  spotifyArtistIDs []string) *time.Time`, which returns the most recent
+  occurrence across all of a candidate's artists — the same identity
+  Diversity (Card #44) already reuses, no second artist-identity model.
+  `backend/internal/discovery/recent_track_filter.go` gained
+  `Service.PlaylistArtistHistory(ctx) (map[string]time.Time, error)`,
+  built from the same single pagination walk as Card #37/#42's
+  `PlaylistTrackHistory` (refactored into `recentTrackAndArtistIndex`,
+  with `recentTrackIndex`'s own return value unchanged and re-verified by
+  a new test) — no second playlist-history retrieval mechanism, no extra
+  Spotify calls beyond what `PlaylistTrackHistory` already makes. A
+  genuinely empty official playlist yields `RepetitionPenalty = 0` for
+  every candidate; an unavailable playlist (not configured, Spotify
+  API/connection failure) propagates as an error from both
+  `PlaylistTrackHistory` and `PlaylistArtistHistory`, never a silent `0`.
+  `now` is always an explicit parameter, never the system clock, and clock
+  skew clamps to 0 days, mirroring `CalculateFreshness`.
+  `scoring.Factors.RepetitionPenalty`/`scoring.Weights.RepetitionWeight =
+  0.30`/`scoring.Calculate`'s multiplicative combination formula are all
+  unchanged — a caller threads `RepetitionPenaltyResult.Value` into
+  `Factors.RepetitionPenalty` exactly as the five positive factors already
+  do; `RepetitionPenalty = 1.0` still produces `FinalScore = BaseScore ×
+  0.70`, confirmed by a deterministic fixture test. 30 new unit/integration
+  tests across `scoring/repetition_penalty_test.go`,
+  `scoring/repetition_penalty_integration_test.go`,
+  `discovery/recent_track_filter_test.go` (new `PlaylistArtistHistory`
+  cases), and `discovery/repetition_penalty_integration_test.go` cover
+  every case Card #45 lists: never-used track/artist, recently-used track,
+  older-than-the-hard-filter-but-inside-the-horizon track, outside-horizon
+  track, new track by a recently-used artist, new track by a never-used
+  artist, both recent (max combination, no double-count), consecutive
+  reuse, duplicate playlist entries, empty playlist, missing/unavailable
+  history, clock-skew clamping, normalization bounds, determinism, Spotify
+  track/artist identity, independence from the other five factors (proven
+  by construction — the function accepts no `CandidateTrack`), the
+  `CandidateScore`/`0.30`-weight/`FinalScore` integration, and that a high
+  penalty never itself rejects a candidate. `candidate`, `musicaldna`,
+  `scoring.Factors`/`Weights`/`Calculate`, and `discovery.
+  FilterRecentTracks`'s own behavior are all unchanged — like Fit,
+  Freshness, Discovery Bonus, and Diversity before it,
+  `CalculateRepetitionPenalty` stays unwired from any
+  pipeline/handler/`main.go`. M5 now has five of its six factors
+  implemented (Fit, Freshness, Discovery Bonus, Diversity, Repetition
+  Penalty); only Playlist Fit, ranking, and automatic selection remain
+  open. See [`docs/scoring-model.md`](../scoring-model.md) for the full
+  Repetition Penalty model and [`decisions.md`](decisions.md) for the
+  max-vs-sum, horizon-choice, and playlist-history-extension reasoning.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

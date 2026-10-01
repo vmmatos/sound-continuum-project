@@ -458,3 +458,148 @@ func TestFilterRecentTracksNoMatches(t *testing.T) {
 		t.Errorf("result = %+v, want the candidate eligible (no matching playlist track)", result)
 	}
 }
+
+// --- PlaylistArtistHistory (Card #45) ---
+
+// trackItemWithArtists builds a playlist track item carrying one or more
+// Spotify artist IDs, for PlaylistArtistHistory tests — PlaylistTrackHistory's
+// own tests use the simpler trackItem helper, since they don't need artists.
+func trackItemWithArtists(trackID, addedAt string, artistIDs ...string) spotify.PlaylistItem {
+	artists := make([]spotify.Artist, len(artistIDs))
+	for i, id := range artistIDs {
+		artists[i] = spotify.Artist{ID: id}
+	}
+	return spotify.PlaylistItem{AddedAt: addedAt, ItemType: "track", Track: &spotify.Track{ID: trackID, Artists: artists}}
+}
+
+func TestPlaylistArtistHistoryBuildsIndexFromTrackArtists(t *testing.T) {
+	f := &fakeCatalogue{
+		officialPlaylist: &spotify.OfficialPlaylist{SpotifyPlaylistID: testPlaylistID},
+		playlistItems: map[string][]spotify.PlaylistItem{
+			testPlaylistID: {trackItemWithArtists("track-1", rfc3339(fixedNow.AddDate(0, 0, -5)), "artist-1", "artist-2")},
+		},
+	}
+	svc := newTestSvcRecentTrackFilter(f, 28)
+
+	history, err := svc.PlaylistArtistHistory(context.Background())
+	if err != nil {
+		t.Fatalf("PlaylistArtistHistory: %v", err)
+	}
+	want := fixedNow.AddDate(0, 0, -5)
+	for _, artistID := range []string{"artist-1", "artist-2"} {
+		got, ok := history[artistID]
+		if !ok {
+			t.Fatalf("history[%q] missing, want %v", artistID, want)
+		}
+		if !got.Equal(want) {
+			t.Errorf("history[%q] = %v, want %v", artistID, got, want)
+		}
+	}
+}
+
+func TestPlaylistArtistHistoryDuplicateEntriesKeepMostRecent(t *testing.T) {
+	f := &fakeCatalogue{
+		officialPlaylist: &spotify.OfficialPlaylist{SpotifyPlaylistID: testPlaylistID},
+		playlistItems: map[string][]spotify.PlaylistItem{
+			testPlaylistID: {
+				trackItemWithArtists("track-old", rfc3339(fixedNow.AddDate(0, 0, -40)), "artist-1"),
+				trackItemWithArtists("track-new", rfc3339(fixedNow.AddDate(0, 0, -2)), "artist-1"),
+			},
+		},
+	}
+	svc := newTestSvcRecentTrackFilter(f, 28)
+
+	history, err := svc.PlaylistArtistHistory(context.Background())
+	if err != nil {
+		t.Fatalf("PlaylistArtistHistory: %v", err)
+	}
+	want := fixedNow.AddDate(0, 0, -2)
+	if got := history["artist-1"]; !got.Equal(want) {
+		t.Errorf("history[%q] = %v, want the most recent occurrence %v", "artist-1", got, want)
+	}
+}
+
+func TestPlaylistArtistHistoryIgnoresEpisodesAndUnavailableItems(t *testing.T) {
+	f := &fakeCatalogue{
+		officialPlaylist: &spotify.OfficialPlaylist{SpotifyPlaylistID: testPlaylistID},
+		playlistItems: map[string][]spotify.PlaylistItem{
+			testPlaylistID: {
+				{AddedAt: rfc3339(fixedNow.AddDate(0, 0, -1)), ItemType: "episode", Episode: &spotify.Episode{ID: "ep-1"}},
+				{ItemType: "unavailable"},
+				trackItemWithArtists("track-1", rfc3339(fixedNow.AddDate(0, 0, -1)), "artist-1"),
+			},
+		},
+	}
+	svc := newTestSvcRecentTrackFilter(f, 28)
+
+	history, err := svc.PlaylistArtistHistory(context.Background())
+	if err != nil {
+		t.Fatalf("PlaylistArtistHistory: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("history = %+v, want exactly one entry (episode/unavailable items ignored)", history)
+	}
+	if _, ok := history["artist-1"]; !ok {
+		t.Errorf("history = %+v, want an entry for artist-1", history)
+	}
+}
+
+func TestPlaylistArtistHistoryEmptyPlaylist(t *testing.T) {
+	f := &fakeCatalogue{officialPlaylist: &spotify.OfficialPlaylist{SpotifyPlaylistID: testPlaylistID}}
+	svc := newTestSvcRecentTrackFilter(f, 28)
+
+	history, err := svc.PlaylistArtistHistory(context.Background())
+	if err != nil {
+		t.Fatalf("PlaylistArtistHistory: %v", err)
+	}
+	if len(history) != 0 {
+		t.Errorf("history = %+v, want empty", history)
+	}
+}
+
+func TestPlaylistArtistHistoryPropagatesRetrievalFailure(t *testing.T) {
+	f := &fakeCatalogue{
+		officialPlaylist: &spotify.OfficialPlaylist{SpotifyPlaylistID: testPlaylistID},
+		playlistItemsErr: map[string]error{testPlaylistID: spotify.ErrAPIFailure},
+	}
+	svc := newTestSvcRecentTrackFilter(f, 28)
+
+	_, err := svc.PlaylistArtistHistory(context.Background())
+	if !errors.Is(err, spotify.ErrAPIFailure) {
+		t.Fatalf("err = %v, want ErrAPIFailure", err)
+	}
+}
+
+func TestPlaylistArtistHistoryNotConfigured(t *testing.T) {
+	f := &fakeCatalogue{}
+	svc := newTestSvcRecentTrackFilter(f, 28)
+
+	_, err := svc.PlaylistArtistHistory(context.Background())
+	if !errors.Is(err, spotify.ErrOfficialPlaylistNotConfigured) {
+		t.Fatalf("err = %v, want ErrOfficialPlaylistNotConfigured", err)
+	}
+}
+
+// TestPlaylistTrackHistoryUnaffectedByArtistExtension re-confirms
+// PlaylistTrackHistory's own behavior is unchanged by the Card #45
+// playlistHistoryIndexes refactor — same assertion style as the existing
+// TestRecentTrackIndexDuplicateEntries-style tests above, now also
+// covering a multi-artist track.
+func TestPlaylistTrackHistoryUnaffectedByArtistExtension(t *testing.T) {
+	f := &fakeCatalogue{
+		officialPlaylist: &spotify.OfficialPlaylist{SpotifyPlaylistID: testPlaylistID},
+		playlistItems: map[string][]spotify.PlaylistItem{
+			testPlaylistID: {trackItemWithArtists("track-1", rfc3339(fixedNow.AddDate(0, 0, -5)), "artist-1", "artist-2")},
+		},
+	}
+	svc := newTestSvcRecentTrackFilter(f, 28)
+
+	history, err := svc.PlaylistTrackHistory(context.Background())
+	if err != nil {
+		t.Fatalf("PlaylistTrackHistory: %v", err)
+	}
+	want := fixedNow.AddDate(0, 0, -5)
+	if got, ok := history["track-1"]; !ok || !got.Equal(want) {
+		t.Errorf("history[%q] = %v, %v, want %v, true", "track-1", got, ok, want)
+	}
+}

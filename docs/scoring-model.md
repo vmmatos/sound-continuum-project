@@ -488,6 +488,108 @@ musical-similarity algorithm, Audio Features, or Spotify Recommendations
 are used for this factor, now or in any planned future card (see
 `docs/memory/decisions.md`'s M3 Audio Features decision).
 
+### Repetition Penalty (Card #45, `backend/internal/scoring/repetition_penalty.go`)
+
+Repetition Penalty answers one question: **"Does selecting this candidate
+create too much recent repetition within Sound Continuum?"** Per the M1
+repetition philosophy, repetition is not inherently bad — a track or artist
+appearing again can be editorially justified when it adds something
+meaningful to the journey. This factor is a soft scoring signal, never a
+blacklist: it never rejects, excludes, or mutates `Status`. It only
+discounts a score when recent reuse makes selecting a candidate *right now*
+less valuable.
+
+**Two dimensions, evaluated independently then combined.**
+
+- **Track repetition** — has this exact Spotify track ID appeared recently
+  in the official playlist?
+- **Artist repetition** — has any track by this candidate's Spotify artist
+  ID(s) appeared recently? A candidate can carry artist repetition with
+  zero track repetition (a brand-new track by a recently-used artist) —
+  this is an expected, explicitly supported case, not an edge case to
+  suppress.
+
+**Source of truth and identity**, reused rather than reinvented: the
+official Sound Continuum playlist's `added_at` history, Spotify track ID
+for track identity, Spotify artist ID
+(`candidate.CandidateMetadata.Artists[].SpotifyArtistID`) for artist
+identity — the same identifiers Freshness and the Recent Track Filter
+already use. No title/artist-name/fuzzy matching, no second
+playlist-history mechanism, no second artist-identity model.
+
+**The formula** — linear decay to zero at a configurable horizon, per
+dimension:
+
+```
+severity(t) = 1 - t/HorizonDays   for 0 <= t < HorizonDays
+severity(t) = 0                   for t >= HorizonDays
+```
+
+where `t` is days since the track's (or artist's) most recent playlist
+appearance. `t = 0` (consecutive reuse — the strongest case the M1
+philosophy specifically calls out) yields `severity = 1.0`; `t` at or
+beyond the horizon yields exactly `0`. A track/artist that has never
+appeared yields `severity = 0` directly, with no history lookup needed.
+
+**Horizon: `DefaultRepetitionHorizonDays = 90`**, a plain constant. This is
+deliberately distinct from both of the other two recency constants already
+in this codebase: the 28-day Recent Track Filter (Card #37, a hard
+eligibility cutoff, not a penalty horizon — reusing it as the full model
+would make Repetition Penalty redundant with the filter) and Freshness's
+60-day half-life (Card #42, an asymptotic curve that never reaches zero —
+Repetition Penalty needs a horizon where the penalty reaches exactly zero,
+which an asymptotic curve structurally cannot do). 90 days gives repetition
+memory real reach beyond the hard filter (a track used 45 days ago still
+carries a real, if weaker-than-day-10, penalty) while staying bounded, so
+old reuse is never penalized indefinitely.
+
+**Combining track and artist repetition: `max`, not sum.**
+
+```
+RepetitionPenalty = max(TrackRepetitionSeverity, ArtistRepetitionSeverity)
+```
+
+A track repetition event is already an artist repetition event — summing
+both would double-count the same historical fact and could push the
+penalty higher than either dimension alone justifies. `max` keeps the
+result bounded in `[0,1]` by construction and reflects "the strongest
+single reason this is a repetition concern," not an accumulated score.
+
+**Explainability.** `RepetitionPenaltyResult` carries the overall `Value`
+plus independent `Track`/`Artist` `RepetitionComponentResult`s, each with
+`Used` (appeared before, regardless of severity), `LastUsedAt`,
+`TimeSinceLastUse`, and its own `Value` — so a penalty is always
+traceable to a specific track or artist appearance, never an opaque
+number. `Used: true` with `Value: 0` is a real, distinguishable state:
+"it appeared, just outside the soft horizon."
+
+**Empty vs. missing playlist history.** A successfully retrieved but
+genuinely empty official playlist means there is no historical repetition
+at all — `RepetitionPenalty = 0` for every candidate, the clean baseline.
+An *unavailable* playlist (not configured, Spotify API/connection failure)
+must never silently read as "no repetition" — it propagates as an error,
+exactly like Card #37/#42's existing convention; this project does not
+introduce a second fallback behavior for this factor.
+
+**Deterministic evaluation time.** `now` is always an explicit parameter to
+`CalculateRepetitionPenalty`, never read from the system clock, mirroring
+`CalculateFreshness`. Clock skew (`now` before `lastUsedAt`) clamps `t` to
+0 rather than producing a negative duration.
+
+**Integration and weight.** `CalculateRepetitionPenalty`'s `Value`
+threads into `Factors.RepetitionPenalty` exactly as the five positive
+factors thread into their own `Factors` fields — `score.go` needed no
+changes. The existing `Weights.RepetitionWeight = 0.30` (Card #40) is
+unchanged, and the multiplicative combination formula
+(`FinalScore = BaseScore × (1 − RepetitionPenalty × RepetitionWeight)`)
+is unchanged: `RepetitionPenalty = 1.0` still produces
+`FinalScore = BaseScore × 0.70`, the maximum defined discount.
+
+**Not wired into any pipeline/handler**, consistent with every other M5
+factor to date (Fit, Freshness, Discovery Bonus, Diversity) — a pure,
+tested library function until a future ranking/orchestration card connects
+it.
+
 ### Repetition Penalty vs. the Recent Track Filter (Card #37)
 
 These answer different questions and must not be conflated:
@@ -597,9 +699,9 @@ about repetition history is not evidence of repetition.
 
 Since M5 implements factors one card at a time, Fit, Freshness, Discovery
 Bonus, and Diversity are the only positive factors with an implemented
-algorithm as of Card #44 — `scoring.Calculate` handles all six factors,
-but Repetition Penalty and Playlist Fit have no production code path
-constructing real values yet.
+algorithm as of Card #44, and Repetition Penalty's algorithm is implemented
+as of Card #45 — `scoring.Calculate` handles all six factors, but Playlist
+Fit has no production code path constructing real values yet.
 
 ## Explainability
 
