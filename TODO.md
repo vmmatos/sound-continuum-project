@@ -873,6 +873,38 @@
 - [x] Project memory updated (`current-state.md`, `decisions.md`,
       `roadmap.md`)
 
+## Done (Card #49 — Rank Candidate Tracks)
+
+- [x] `backend/internal/scoring/rank.go` — `CandidateScoreEntry`,
+      `RankedCandidate`, `Rank`, added to the existing `scoring` package
+      (no new package)
+- [x] `Rank` sorts already-computed `CandidateScore`s `FinalScore`
+      descending — reuses Card #40's `Calculate` weighting/renormalization
+      unchanged, never recomputes a score
+- [x] Nil `FinalScore` sorts last (weakest state, never a fabricated
+      zero); tie-break is `Candidate.ID` ascending, deterministic across
+      repeated runs
+- [x] Ranking is curation assistance only: no `Status` mutation, no
+      filtering/dropping of entries, `Rank 1` never means `Selected`
+- [x] No knowledge of discovery/the candidate pool/the Recent Track
+      Filter — a caller only ever builds entries from
+      `RecentTrackFilterResult.EligibleCandidates`
+- [x] No HTTP endpoint, no persistence, no caching, no background worker,
+      no new dependency — confirmed with the curator that real end-to-end
+      ranking needs editorial inputs (musicaldna profiles, edition
+      context, discovery values) that don't exist until M6
+- [x] 10 new unit tests (`backend/internal/scoring/rank_test.go`): basic
+      ordering, weight integration, missing-factor renormalization +
+      explicit-zero preservation, repetition-penalty ordering,
+      deterministic tie-breaking, candidate metadata (and status, as part
+      of it) preservation, empty pool, single candidate, independence
+      from popularity/release-date/genre/Last.fm similarity,
+      nil-`FinalScore` ordering
+- [x] `go build ./...`, `go vet ./...`, `go test ./...` verified clean
+- [x] `docs/scoring-model.md` — new "Ranking" section
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+
 ## In progress
 
 - Nothing currently in progress.
@@ -888,7 +920,8 @@
       (#44), Repetition Penalty (#45), and Playlist Fit (#46) factors
       implemented; musical similarity investigated (#47, no engine built);
       Potential Bridge Detection implemented (#48, standalone, non-
-      weighted); ranking and editorial selection remain open
+      weighted); candidate ranking implemented (#49, `scoring.Rank`);
+      automatic editorial selection remains open
 - M6: Curator experience
 - M7: Weekly editorial workflow
 - M8: Feedback & evolution
