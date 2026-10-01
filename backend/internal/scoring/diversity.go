@@ -1,6 +1,7 @@
 package scoring
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -195,15 +196,10 @@ func artistDiversity(candidateArtistSpotifyIDs []string, tracks []EditionTrack) 
 		return DiversityAspectResult{Available: false}
 	}
 
-	candidateIDs := make(map[string]bool, len(candidateArtistSpotifyIDs))
-	for _, id := range candidateArtistSpotifyIDs {
-		candidateIDs[id] = true
-	}
-
 	occurrences := 0
 	for _, t := range tracks {
 		for _, id := range t.ArtistSpotifyIDs {
-			if candidateIDs[id] {
+			if slices.Contains(candidateArtistSpotifyIDs, id) {
 				occurrences++
 				break
 			}
