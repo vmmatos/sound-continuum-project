@@ -1039,6 +1039,12 @@
   mismatch-baseline, energy-vocabulary, context-reuse, and
   nil-case-representation reasoning.
 
+- Card #47 (Explore Musical Similarity) is complete — investigation only,
+  no production code. A musical similarity engine is not justified now and
+  stays deferred. See [`decisions.md`](decisions.md) for the reasoning and
+  [`docs/research/musical-similarity.md`](../research/musical-similarity.md)
+  for the full investigation.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

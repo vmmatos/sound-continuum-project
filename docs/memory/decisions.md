@@ -2017,3 +2017,38 @@ other two fields already carry.
 design, not oversight — a future reader diffing the two types should not
 "fix" this by adding a matching `EditionEmpty` field without a new,
 independently-justified reason.
+
+---
+
+**Decision:** Do not build a musical similarity engine now; no scored or
+ranked track-to-track similarity signal is introduced.
+
+**Context:** Card #47 investigated whether available Spotify/Last.fm
+metadata (shared artist identity, Spotify artist genres, Last.fm artist
+similarity, release era) could provide useful evidence of musical
+similarity between two tracks, distinct from Card #46's editorial Playlist
+Fit model. See [`docs/research/musical-similarity.md`](../research/musical-similarity.md)
+for the full investigation.
+
+**Reason:** None of the available signals are strong or precise enough to
+justify automated similarity scoring without misrepresenting their
+reliability: shared artist identity doesn't imply musically similar
+tracks, Spotify genres are artist-level/optional/deprecated with no
+taxonomy, Last.fm's `artist.getsimilar` match score reflects listening
+co-occurrence rather than acoustic similarity (and `track.getSimilar` is
+unintegrated), and release era is contextual only. The manifesto's own
+bridge philosophy (§4, and the "deliberate contrast" principle already
+encoded in Card #46's Playlist Fit) explicitly includes relationships
+(cross-genre rhythm match, vocal-character match, contrast-into-release)
+that no available metadata signal can detect — consistent with M3's
+Card 23 conclusion that musical bridges are editorial-first, not
+API-computable.
+
+**Consequences:** A future curator-facing UI (M6+) may *display* these
+signals as supporting context next to a candidate (e.g. "same artist,"
+"Last.fm similarity: 0.82," "same decade") — but no scoring factor,
+ranking logic, or API endpoint should consume any of them as a similarity
+score without a new, separately justified decision. `scoring.
+CalculatePlaylistFit` (Card #46) and `musicaldna.Profile` are unchanged by
+this investigation. No new package, Last.fm client method, or dependency
+was added.

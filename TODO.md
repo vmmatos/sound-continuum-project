@@ -822,6 +822,21 @@
 - [x] Project memory updated (`current-state.md`, `decisions.md`,
       `roadmap.md`)
 
+## Done (Card #47 — Explore Musical Similarity)
+
+- [x] `docs/research/musical-similarity.md` — investigation of Spotify/
+      Last.fm signals for track-to-track musical similarity (audio
+      attributes confirmed unavailable, artist overlap, genre metadata,
+      Last.fm similarity, release/era, simple heuristics, editorial
+      similarity, recommendation)
+- [x] Project memory updated (`current-state.md`, `decisions.md`)
+- [x] No similarity engine, ranking logic, API endpoint, or persistence
+      added; no changes to `scoring`, `musicaldna`, `candidate`, or
+      `discovery` packages
+- [x] No new Last.fm client methods — `track.getSimilar`/`tag.*` noted as
+      available but unintegrated
+- [x] No tests (no production code introduced)
+
 ## In progress
 
 - Nothing currently in progress.
