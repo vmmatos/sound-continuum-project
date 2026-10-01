@@ -26,4 +26,8 @@ var (
 	// CalculateDiscoveryBonus is given a non-nil editorial discovery value
 	// outside [0,1].
 	ErrDiscoveryBonusValueOutOfRange = errors.New("scoring: editorial discovery value must be in [0,1]")
+
+	// ErrRepetitionHorizonOutOfRange is returned when
+	// RepetitionPenaltyConfig's HorizonDays is not a positive number.
+	ErrRepetitionHorizonOutOfRange = errors.New("scoring: repetition horizon days must be a positive number")
 )

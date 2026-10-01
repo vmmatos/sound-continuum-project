@@ -1774,3 +1774,120 @@ validate a caller-supplied `Weights`/`Config`/editorial value.
 weighting, add a `DiversityWeights` struct (and the matching `error`
 return) then, following `FitWeights`'s `Validate()` pattern — not ahead of
 a real need.
+
+---
+
+**Decision:** Implement Repetition Penalty (Card #45, M5's final factor) as
+`max(TrackRepetitionSeverity, ArtistRepetitionSeverity)`, with each
+dimension a linear decay to zero at a 90-day horizon
+(`DefaultRepetitionHorizonDays`), rather than summing the two dimensions or
+reusing the Recent Track Filter's 28-day window or Freshness's 60-day
+half-life as the horizon.
+
+**Context:** Card #45 needs a soft scoring signal for recent track/artist
+reuse, distinct from the Card #37 hard 28-day eligibility filter and the
+Card #42 Freshness factor, following the M1 repetition philosophy that
+repetition is never an absolute prohibition.
+
+**Reason — max over sum:** A track repetition event is already an artist
+repetition event (the track has an artist). Summing both severities would
+double-count the same historical fact and could push a candidate's penalty
+higher than either dimension alone justifies; `max` reflects "the
+strongest single reason this is a repetition concern" and keeps the result
+bounded in `[0,1]` by construction, with no clamping needed.
+
+**Reason — linear decay, not half-life:** The card explicitly recommends a
+simple deterministic linear decay over a complex decay function for a
+first version. Unlike Freshness, which deliberately never reaches exactly
+0/1 for a used track (to stay visibly distinct from "never used"),
+Repetition Penalty needs a horizon where the penalty reaches exactly zero
+— an asymptotic curve structurally cannot do that, so half-life was not
+reused here even though it was the right choice for Freshness.
+
+**Reason — a horizon independent of both existing recency constants:**
+Reusing the 28-day hard-filter window as the full penalty model would make
+Repetition Penalty redundant with the Recent Track Filter — a track used
+29 days ago is eligible but would carry almost no soft memory if the
+horizon were also ~28 days. Reusing Freshness's 60-day half-life would
+conflate two different curves for two different purposes (asymptotic
+recovery vs. a bounded penalty). 90 days is its own simple, explainable
+constant: long enough to give repetition memory real reach past the hard
+filter (a 45-day-old use still carries a real, weaker-than-day-10
+penalty), short enough that reuse is never penalized indefinitely.
+
+**Consequences:** `backend/internal/scoring/repetition_penalty.go` adds
+`RepetitionPenaltyConfig`, `DefaultRepetitionPenaltyConfig`/
+`DefaultRepetitionHorizonDays` (90), `RepetitionComponentResult`,
+`RepetitionPenaltyResult`, `CalculateRepetitionPenalty`, and
+`RepetitionArtistLastUsedAt`. `errors.go` gains
+`ErrRepetitionHorizonOutOfRange`. `CalculateRepetitionPenalty` takes only
+`*time.Time`/`time.Time`/config — never a `candidate.CandidateTrack` — so
+it is independent of `CandidateType`/`Category`/the other five factors by
+construction, the same guarantee Fit/Freshness/Discovery Bonus/Diversity
+already give. Like those four, it is not wired into
+`pool.go`/`main.go`/any handler — a pure, tested library function until a
+future ranking/orchestration card connects it. No change to
+`scoring.Factors`, `scoring.Weights` (`RepetitionWeight` stays `0.30`), or
+`scoring.Calculate`.
+
+---
+
+**Decision:** Extend `discovery`'s existing playlist-history walk
+(`recentTrackIndex`, Card #37) to also build a Spotify-artist-ID history
+index in the same pagination pass, exposed as a new
+`Service.PlaylistArtistHistory`, rather than writing a second
+playlist-retrieval mechanism for Repetition Penalty's artist dimension.
+
+**Context:** Card #45 explicitly forbids a second playlist-history source
+and requires artist repetition to use a stable Spotify artist identity.
+`recentTrackIndex`'s existing walk already iterates every playlist item's
+decoded `spotify.Track`, which already carries `Artists []spotify.Artist`
+(each with `ID`) — the data needed for an artist index was already being
+read and discarded on every call.
+
+**Reason:** This is the same category of change Card #42 already made to
+this file (extracting `PlaylistTrackHistory` out of the private walk
+without altering Card #37's behavior or tests) — a small, in-place
+extension, not a rewrite. `recentTrackIndex` is refactored into a thin
+wrapper over a new `recentTrackAndArtistIndex`, which builds both maps
+(track ID -> max `added_at`, artist ID -> max `added_at` across any of
+that artist's tracks) from one pagination pass instead of two, so
+`PlaylistArtistHistory` costs no extra Spotify calls beyond what
+`PlaylistTrackHistory` already makes. `recentTrackIndex`'s own return
+value and every existing Card #37/#42 test are unchanged — this is proven
+by a new test
+(`TestPlaylistTrackHistoryUnaffectedByArtistExtension`), not just
+asserted.
+
+**Consequences:** `backend/internal/discovery/recent_track_filter.go`
+gains `Service.PlaylistArtistHistory(ctx) (map[string]time.Time, error)`,
+`playlistHistoryIndexes`, and `recentTrackAndArtistIndex` (private).
+Episode/unavailable-item skipping and duplicate-entry max-`added_at`
+handling are identical for both dimensions, inherited from the single
+shared walk. `FilterRecentTracks`'s signature, `RecentTrackFilterResult`,
+and `DefaultRecentTrackLookbackDays` are all untouched.
+
+---
+
+**Decision:** Reuse `candidate.CandidateMetadata.Artists[].SpotifyArtistID`
+for Repetition Penalty's artist identity — the same field Diversity (Card
+#44) already reuses for its Artist dimension — rather than introducing a
+second artist-identity representation.
+
+**Context:** Card #45 requires artist repetition to use a stable Spotify
+artist ID when available, not an artist name, and explicitly forbids a
+second artist-identity model.
+
+**Reason:** `CandidateArtist.SpotifyArtistID` is already this project's one
+stable artist identity, established by Card #38 and already reused by
+Diversity. A candidate can carry more than one artist, so
+`RepetitionArtistLastUsedAt(artistHistory, spotifyArtistIDs []string)`
+takes every one of a candidate's artist IDs and returns the single most
+recent occurrence across all of them — not just the first — so a
+multi-artist candidate's repetition reflects whichever of its artists was
+actually used most recently.
+
+**Consequences:** No new artist-identity field or type was added anywhere.
+A future caller wiring Repetition Penalty into a real pipeline passes
+`candidate.Metadata.Artists`' `SpotifyArtistID` values directly, exactly as
+a future Diversity caller would.
