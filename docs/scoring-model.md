@@ -833,6 +833,56 @@ or the formula change in a way that makes scores across versions
 incomparable. There is no score history, persistence, or version
 migration — this is a label, not an infrastructure feature.
 
+## Ranking (Card #49, `backend/internal/scoring/rank.go`)
+
+Ranking turns a set of already-scored candidates into one deterministic,
+explainable, sorted view for curator review. It is the final pure step in
+the pipeline `Candidate Pool → Evaluate factors → CandidateScore → Sort →
+Ranked View → Curator review`, and it is **curation assistance, not
+selection**: ranking never chooses, accepts, rejects, or auto-publishes a
+candidate, and `Rank 1` does not mean `Selected`.
+
+**Input, not computation.** `Rank(entries []CandidateScoreEntry)
+[]RankedCandidate` takes candidates already paired with a `CandidateScore`
+built by `Calculate` — ranking never computes a score itself, so Card
+#40's weighting and missing-factor renormalization are reused exactly,
+never duplicated.
+
+**Sort key: `FinalScore` descending.** An entry whose `FinalScore` is
+`nil` (no positive factor was available yet — see "Missing factors"
+above) sorts after every entry with a non-nil `FinalScore`: "nothing to
+report yet" is treated as the weakest state, never a fabricated zero that
+would outrank a genuinely low-scoring candidate.
+
+**Tie-breaker: `Candidate.ID` ascending** (including among nil-`FinalScore`
+entries, so the full ordering is always deterministic and repeatable).
+`ID` is used rather than `SpotifyTrackID` because every valid
+`CandidateTrack` has a non-empty `ID` regardless of `Source`, while
+`SpotifyTrackID` is only guaranteed non-empty when `Source ==
+SourceSpotify`.
+
+**What ranking preserves.** Each `RankedCandidate` carries the original,
+untouched `CandidateTrack` (metadata, provenance, category, type, source,
+status) alongside its full `CandidateScore` (every factor, the weights,
+`FinalScore`) and its 1-based `Rank` — nothing is dropped, summarized away,
+or mutated. `Rank` never reads or writes `Status`: a highly ranked
+candidate stays `discovered`, available for editorial review like any
+other.
+
+**Scope.** `Rank` has no knowledge of discovery, the candidate pool, or
+the Recent Track Filter — a caller only ever builds entries from
+`RecentTrackFilterResult.EligibleCandidates` (Card #37's hard exclusion),
+so a recently-used candidate never reaches `Rank` at all; `Rank` does not
+re-implement or soften that exclusion. It takes no popularity, release
+date, genre, or Last.fm-similarity input — ordering tracks `FinalScore`
+and nothing else, by construction.
+
+**Not wired into any pipeline or HTTP endpoint**, consistent with every
+other M5 factor: real end-to-end ranking of live pool candidates needs
+per-candidate `musicaldna.Profile` tags, a `CurrentEditionContext`, and
+editorial discovery values, none of which any workflow collects yet — that
+is M6 "Curator Experience" territory, not this card's scope.
+
 ## What this is not
 
 - Not ranking: nothing here sorts a candidate pool.

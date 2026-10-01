@@ -1084,6 +1084,47 @@
   and [`decisions.md`](decisions.md) for the standalone-vs-weighted
   reasoning.
 
+- Card #49 (Rank Candidate Tracks) is implemented:
+  `scoring.Rank(entries []scoring.CandidateScoreEntry)
+  []scoring.RankedCandidate` (`backend/internal/scoring/rank.go`), added
+  to the existing `scoring` package — no new package. It is the final
+  pure step in `Candidate Pool → Evaluate factors → CandidateScore → Sort
+  → Ranked View → Curator review`: `Rank` takes candidates already paired
+  with a `CandidateScore` built by the existing `Calculate` (Card #40's
+  weighting/renormalization is reused unchanged, never duplicated) and
+  sorts them `FinalScore` descending, with a nil `FinalScore` sorting
+  last (treated as the weakest state, never a fabricated zero) and a
+  `Candidate.ID`-ascending tie-breaker (chosen over `SpotifyTrackID`
+  because `ID` is guaranteed non-empty for every valid `CandidateTrack`
+  regardless of `Source`). `RankedCandidate` carries the original,
+  untouched `CandidateTrack` (metadata/provenance/status preserved) plus
+  the full `CandidateScore` and a 1-based `Rank` — ranking is curation
+  assistance only: it never mutates `Status`, never calls `Calculate`
+  itself, never filters or drops an entry, and `Rank 1` never means
+  `Selected`. `Rank` has no knowledge of discovery, the candidate pool,
+  or the Recent Track Filter — a caller only ever builds entries from
+  `RecentTrackFilterResult.EligibleCandidates`, so a recently-used
+  candidate structurally never reaches `Rank`. Like every other M5
+  factor, `Rank` stays unwired from any pipeline or HTTP endpoint: real
+  end-to-end ranking of live pool candidates needs per-candidate
+  `musicaldna.Profile` tags, a `CurrentEditionContext`, and editorial
+  discovery values, none of which any workflow collects yet (M6
+  "Curator Experience" territory, out of this card's scope — confirmed
+  with the curator during planning). 15 new unit tests
+  (`scoring/rank_test.go`) cover basic ordering, weight integration via
+  real `Calculate` output, missing-factor renormalization and
+  explicit-zero preservation, repetition-penalty-reduced ordering,
+  deterministic tie-breaking across repeated runs, the
+  eligible-candidates-only caller contract, full candidate metadata/
+  status preservation, empty pool, single candidate, independence from
+  popularity/release-date/genre/Last.fm-similarity, and nil-`FinalScore`
+  ordering. No changes to `candidate`/`discovery`/any other `scoring`
+  file; `scoring` still does not import `discovery`. M5 now only has
+  automatic selection remaining open. See
+  [`docs/scoring-model.md`](../scoring-model.md) for the full ranking
+  model and [`decisions.md`](decisions.md) for the package-placement and
+  tie-breaker reasoning.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

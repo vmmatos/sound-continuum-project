@@ -2098,3 +2098,54 @@ Penalty/Playlist Fit/popularity. See
 [`docs/bridge-detection.md`](../bridge-detection.md) for the full model.
 No HTTP endpoint, no persistence, no frontend, and no change to any
 existing `scoring`/`candidate`/`discovery`/`lastfm` behavior.
+
+---
+
+**Decision:** Add `scoring.Rank` (Card #49) to the existing `scoring`
+package (`rank.go`), not a new `ranking` package; have it take
+already-computed `CandidateScore`s rather than computing scores itself;
+tie-break on `candidate.ID`; and leave it unwired from any HTTP endpoint.
+
+**Context:** Card #49 needed to turn a set of candidates into a
+deterministic, explainable ranked view. Every prior M5 factor calculator
+(Fit, Freshness, Discovery Bonus, Diversity, Repetition Penalty, Playlist
+Fit) was deliberately left "unwired from any pipeline/handler... until a
+future ranking/orchestration card connects them" (see the Card #42/#45
+entries above) — this is that card. Confirmed with the curator during
+planning: package placement and HTTP wiring were presented as explicit
+choices, not assumed.
+
+**Reason:** `scoring` already owns `CandidateScore`/`Factors`/`Weights`
+and, since Card #48, already holds one standalone-but-related concept
+(`bridge.go`) rather than spinning up a package for it — a small
+sort-and-wrap function over `CandidateScore` has the same shape of
+decision, and a new package would only duplicate the dependency on
+`candidate` that `scoring` already has, with no new import edge gained.
+Taking `CandidateScore` as input (not a `candidate.CandidateTrack` plus
+raw inputs) means `Rank` reuses Card #40's weighting/renormalization
+exactly rather than duplicating it, per the card's explicit instruction.
+`candidate.ID` was chosen over `SpotifyTrackID` for the tie-breaker
+because `ID` is guaranteed non-empty for every valid `CandidateTrack`
+regardless of `Source` (`CandidateTrack.Validate`), while
+`SpotifyTrackID` is only guaranteed non-empty when `Source ==
+SourceSpotify` — `ID` is the more general, always-available identity.
+No HTTP endpoint was added because real end-to-end ranking of live pool
+candidates needs per-candidate `musicaldna.Profile` tags, a
+`CurrentEditionContext`, and editorial discovery values — none of which
+any workflow in this repo collects yet (that's M6 "Curator Experience"
+scope); wiring an endpoint today would mean ranking real candidates with
+almost every factor nil, which is legitimate per the renormalization rule
+but not a meaningful curator-facing feature yet, and would be scope this
+card's Definition of Done does not require.
+
+**Consequences:** `scoring.CandidateScoreEntry`/`RankedCandidate`/`Rank`
+live in `backend/internal/scoring/rank.go`; `scoring` still does not
+import `discovery`, preserving the existing one-way dependency. A future
+card wiring ranking into `POST /api/candidates/pool` (or a new endpoint)
+would build `CandidateScoreEntry` values from
+`RecentTrackFilterResult.EligibleCandidates` plus per-candidate
+`Calculate` calls — `Rank` itself needs no changes to support that. If a
+future card needs ranking to recompute scores internally (e.g. a
+single-call "rank this pool" convenience function), add that as a new,
+separate function rather than changing `Rank`'s existing pure-sort
+contract.

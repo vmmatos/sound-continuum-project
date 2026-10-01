@@ -65,7 +65,12 @@ of future implementation requirements.
   standalone, non-weighted, evidence-counting editorial signal for a
   candidate pair, deliberately kept outside `scoring.Factors`/
   `CandidateScore` — see [`docs/bridge-detection.md`](../bridge-detection.md)).
-  M5 now only has ranking and automatic selection remaining open)
+  Candidate ranking is implemented (Card #49, `scoring.Rank` — a
+  deterministic, `FinalScore`-descending sort over already-scored
+  candidates; curation assistance only, never selection, and not wired
+  into any pipeline/endpoint since the editorial inputs needed to score
+  real pool candidates end-to-end don't exist until M6). M5 now only has
+  automatic selection remaining open)
 - **M6 — Curator Experience** — Planned
 - **M7 — Weekly Editorial Workflow** — Planned
 - **M8 — Feedback & Evolution** — Planned
