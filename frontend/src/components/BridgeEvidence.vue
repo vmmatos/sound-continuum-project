@@ -15,16 +15,10 @@ const dimensionLabel: Record<BridgeDimension, string> = {
   cultural_influence: 'Cultural influence',
 }
 
-const signalLabel: Record<BridgeSignal, string> = {
-  shared_artist: 'Shared artist',
-  lastfm_artist_similarity: 'Context',
-  release_era: 'Release era',
-}
-
-const signalValue: Record<BridgeSignal, string> = {
-  shared_artist: 'Shared artist between tracks',
-  lastfm_artist_similarity: 'Related artist (Last.fm)',
-  release_era: 'Similar release era',
+const signalInfo: Record<BridgeSignal, { label: string; value: string }> = {
+  shared_artist: { label: 'Shared artist', value: 'Shared artist between tracks' },
+  lastfm_artist_similarity: { label: 'Context', value: 'Related artist (Last.fm)' },
+  release_era: { label: 'Release era', value: 'Similar release era' },
 }
 
 const rows = computed(() => [
@@ -32,10 +26,7 @@ const rows = computed(() => [
     label: dimensionLabel[d.Dimension],
     value: d.Relationship,
   })),
-  ...props.bridge.Signals.filter((s) => s.Present).map((s) => ({
-    label: signalLabel[s.Signal],
-    value: signalValue[s.Signal],
-  })),
+  ...props.bridge.Signals.filter((s) => s.Present).map((s) => signalInfo[s.Signal]),
 ])
 </script>
 
