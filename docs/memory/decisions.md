@@ -2481,3 +2481,81 @@ matching `review.ReviewPool` exactly. If a future card introduces a real
 "current edition" concept (e.g. a persisted edition-in-progress), it can
 reintroduce an edition label then, backed by real data — not as a
 frontend-only placeholder.
+
+---
+
+**Decision:** `review.ReviewPool` carries `discovery.WorkflowError`/
+`discovery.Failure` through to `/api/candidates/review` directly, reusing
+both types unchanged, instead of inventing a new failure/summary type.
+
+**Context:** Card #126 found that an empty Candidate Review
+(`{"Entries": []}`) was indistinguishable between "Discovery ran clean,
+nothing eligible this week" and "Discovery hit failures along the way"
+(e.g. Spotify Development Mode's recurring `429` on
+`GET /artists/{id}/albums`, already documented for Cards #36/#37/#39/#53).
+`discovery.Service.DiscoverPool` already returns this information on
+`CandidatePool.WorkflowErrors` and each workflow's own `Result.Failures`
+(`ClassicResult`/`CurrentResult`/`EmergingResult`) — `review.Service.
+ReviewPool` already held the full `CandidatePool` in scope (`pool :=
+s.discovery.DiscoverPool(ctx)`) and was simply not including any of it in
+its return value.
+
+**Reason:** The smallest fix was also the correct one: no interface
+change (`candidatePoolSource.DiscoverPool` already returns the full
+`CandidatePool`), no new Discovery call, and no new failure-hierarchy
+type — `discovery.Failure{Artist, Stage, Err}` and
+`discovery.WorkflowError{Workflow, Err}` already say everything the
+Review response needs to say. Per-item `Failures` from the three
+workflows are merged into one slice on `ReviewPool` (Review doesn't need
+per-workflow attribution — that detail is still fully available via
+`POST /api/candidates/pool` for deeper debugging). `EnrichCandidateMetadata`'s
+own `EnrichmentFailure`s are deliberately excluded: an enrichment failure
+keeps the candidate in `Entries` with `Metadata: nil` rather than removing
+it, so it can never cause the empty-vs-degraded ambiguity this card
+exists to fix.
+
+**Consequences:** `review.ReviewPool` gained two fields,
+`WorkflowErrors []discovery.WorkflowError` and
+`Failures []discovery.Failure`, populated on both success return paths
+(empty-eligible-pool and the full scored/ranked path) — never on the
+error-propagating paths (`FilterRecentTracks`/`EnrichCandidateMetadata`/
+playlist-history failures), which already surface as HTTP errors, not an
+empty `ReviewPool`. They are purely informational: a non-empty `Entries`
+is never gated, hidden, or reordered by their presence. The frontend
+(`CandidateReviewView.vue`) gained one new status, `'degraded'`, shown
+only when `Entries` is empty and at least one of the two fields is
+non-empty, with generic copy ("discovery is degraded or temporarily
+failing") — it does not name Spotify or "rate limited" specifically,
+since the backend contract carries `Artist`/`Stage`/`Err` strings, not a
+structured failure category the frontend could safely narrate. No
+automated frontend test was added for this (see the companion decision
+below); verified live instead, end to end, including in a real browser
+against the real Spotify-connected backend (see `current-state.md`).
+
+---
+
+**Decision:** Do not add a frontend test runner (Vitest or otherwise) as
+part of Card #126, despite the card asking for frontend tests of the new
+empty/degraded states.
+
+**Context:** This repo has had zero frontend test infrastructure since
+Card 22 ("no frontend test target — no test runner is configured"), a
+deliberate choice re-affirmed by that card's own decision entry ("add the
+corresponding `frontend-test` target then, not before"). Card #126 is a
+small, corrective diagnostics card, not a testing-infrastructure card.
+
+**Reason:** Presented with the choice, the user explicitly chose not to
+introduce Vitest/`@vue/test-utils` for this card — new dev tooling
+(`package.json`, config, the repo's first frontend test file) is a bigger
+diff than this card's own "minimal" framing, and conflicts with the
+existing MVP discipline of adding infrastructure only once a concrete,
+repeated need exists.
+
+**Consequences:** Frontend verification for this card was manual: a real
+Chromium browser (via a one-off, project-independent `npx -p playwright`
+invocation — no `playwright` dependency was added to `frontend/
+package.json`) driven against both the real dev server with mocked
+`fetch` responses for all three states, and separately against the real,
+live, Spotify-connected backend for the degraded state. If a future card
+adopts a real frontend test runner, this card's two new states (`empty`/
+`degraded` in `CandidateReviewView.vue`) are natural first test cases.

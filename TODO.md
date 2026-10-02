@@ -1042,6 +1042,36 @@
 - [x] Project memory updated (`current-state.md`, `decisions.md`,
       `TODO.md`)
 
+## Done (Card #126 — Candidate Review failure diagnostics)
+
+- [x] `backend/internal/review/review.go` — `ReviewPool` gained
+      `WorkflowErrors []discovery.WorkflowError` and
+      `Failures []discovery.Failure`, reused directly from the
+      `discovery.CandidatePool` already in scope (no new Discovery call,
+      no interface change, no new failure type); populated on both
+      success return paths, never on the error-propagating ones
+- [x] `frontend/src/types/candidateReview.ts` — matching
+      `WorkflowError`/`DiscoveryFailure` interfaces, both `| null`
+- [x] `frontend/src/views/CandidateReviewView.vue` — new `'degraded'`
+      status, shown only when `Entries` is empty and a failure/workflow
+      error is present, with generic (non-Spotify-specific) copy distinct
+      from "No candidates available for review."
+- [x] 8 new Go tests (`backend/internal/review`): clean empty pool, empty
+      pool with `WorkflowErrors` only, empty pool with `Failures` only,
+      failures alongside valid candidates (still rank/display normally),
+      and the JSON contract (clean + populated) via the real HTTP handler
+- [x] `go build ./...`, `go vet ./...`, `go test ./...`, `npm run build`
+      all verified clean
+- [x] Real Spotify-connected verification, end to end, in a real browser
+      (one-off `npx -p playwright`, no new project dependency): confirmed
+      the live dev backend was actually hitting the known Spotify
+      Development Mode `429` rate limit (Cards #36/#37/#39/#53) plus a
+      stale missing-Last.fm-key `WorkflowError`, and `/api/candidates/review`
+      now correctly surfaces both instead of a silent `{"Entries": []}`
+- [x] No automated frontend test added (explicit user decision — no
+      frontend test runner exists in this repo, see `decisions.md`)
+- [x] Project memory updated (`current-state.md`, `decisions.md`, `TODO.md`)
+
 ## In progress
 
 - Nothing currently in progress.
