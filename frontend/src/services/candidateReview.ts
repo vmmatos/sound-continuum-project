@@ -11,11 +11,7 @@ import type { CandidateReviewPool } from '../types/candidateReview'
 // Nothing else in this file or CandidateReviewView.vue needs to change —
 // the function signature and return type already match.
 export async function getCandidateReviewPool(): Promise<CandidateReviewPool | null> {
-  try {
-    return mockCandidateReviewPool
-  } catch {
-    return null
-  }
+  return mockCandidateReviewPool
 }
 
 const mockCandidateReviewPool: CandidateReviewPool = {

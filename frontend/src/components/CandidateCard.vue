@@ -7,17 +7,17 @@ const props = defineProps<{
   entry: CandidateReviewEntry
 }>()
 
-const candidate = computed(() => props.entry.Ranked.Candidate)
-const score = computed(() => props.entry.Ranked.Score)
-
-const factorRows = computed(() => [
-  { label: 'Fit', value: score.value.Factors.Fit },
-  { label: 'Playlist Fit', value: score.value.Factors.PlaylistFit },
-  { label: 'Discovery Bonus', value: score.value.Factors.DiscoveryBonus },
-  { label: 'Diversity', value: score.value.Factors.Diversity },
-  { label: 'Freshness', value: score.value.Factors.Freshness },
-  { label: 'Repetition Penalty', value: score.value.Factors.RepetitionPenalty },
-])
+const factorRows = computed(() => {
+  const factors = props.entry.Ranked.Score.Factors
+  return [
+    { label: 'Fit', value: factors.Fit },
+    { label: 'Playlist Fit', value: factors.PlaylistFit },
+    { label: 'Discovery Bonus', value: factors.DiscoveryBonus },
+    { label: 'Diversity', value: factors.Diversity },
+    { label: 'Freshness', value: factors.Freshness },
+    { label: 'Repetition Penalty', value: factors.RepetitionPenalty },
+  ]
+})
 
 const bridgeDimensions = computed(
   () => props.entry.Bridge?.Dimensions.filter((d) => d.Evidence) ?? [],
@@ -27,7 +27,7 @@ const bridgeSignals = computed(
 )
 
 const provenance = computed(
-  () => candidate.value.Provenance.find((p) => p.Method !== 'manual') ?? null,
+  () => props.entry.Ranked.Candidate.Provenance.find((p) => p.Method !== 'manual') ?? null,
 )
 </script>
 
@@ -37,19 +37,19 @@ const provenance = computed(
       <div class="identity">
         <span class="rank">#{{ entry.Ranked.Rank }}</span>
         <div>
-          <h3>{{ candidate.TrackTitle }}</h3>
-          <p class="artist">{{ candidate.TrackArtist }}</p>
-          <p v-if="candidate.Metadata" class="album">{{ candidate.Metadata.Album.Name }}</p>
+          <h3>{{ entry.Ranked.Candidate.TrackTitle }}</h3>
+          <p class="artist">{{ entry.Ranked.Candidate.TrackArtist }}</p>
+          <p v-if="entry.Ranked.Candidate.Metadata" class="album">{{ entry.Ranked.Candidate.Metadata.Album.Name }}</p>
         </div>
       </div>
       <div class="tags">
-        <span class="tag">{{ candidate.Category }}</span>
-        <span class="tag">{{ candidate.Type }}</span>
+        <span class="tag">{{ entry.Ranked.Candidate.Category }}</span>
+        <span class="tag">{{ entry.Ranked.Candidate.Type }}</span>
       </div>
     </header>
 
     <p class="score">
-      <template v-if="score.FinalScore !== null">Score: {{ score.FinalScore.toFixed(2) }}</template>
+      <template v-if="entry.Ranked.Score.FinalScore !== null">Score: {{ entry.Ranked.Score.FinalScore.toFixed(2) }}</template>
       <template v-else>Not yet scored</template>
     </p>
 
@@ -61,7 +61,7 @@ const provenance = computed(
 
     <section v-if="entry.Bridge?.PotentialBridge" class="bridge">
       <h4>Potential bridge</h4>
-      <p v-if="entry.BridgeTrack">{{ entry.BridgeTrack }} → {{ candidate.TrackTitle }}</p>
+      <p v-if="entry.BridgeTrack">{{ entry.BridgeTrack }} → {{ entry.Ranked.Candidate.TrackTitle }}</p>
       <ul>
         <li v-for="dim in bridgeDimensions" :key="dim.Dimension">{{ dim.Dimension }}: {{ dim.Relationship }}</li>
         <li v-for="sig in bridgeSignals" :key="sig.Signal">{{ sig.Signal.replace(/_/g, ' ') }}</li>
@@ -76,7 +76,7 @@ const provenance = computed(
     </p>
 
     <footer>
-      <button type="button" @click="() => console.log('Open details', candidate.ID)">Open details</button>
+      <button type="button" @click="() => console.log('Open details', entry.Ranked.Candidate.ID)">Open details</button>
     </footer>
   </article>
 </template>
