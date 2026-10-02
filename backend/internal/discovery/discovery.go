@@ -51,6 +51,36 @@ func referenceArtistProvenance(method candidate.DiscoveryMethod, artistID, name 
 	}}
 }
 
+// candidateGate is what checkCandidateGate decides for one track.
+type candidateGate int
+
+const (
+	gateProceed candidateGate = iota // build a candidate from this track
+	gateSkip                         // skip this track, keep scanning
+	gateStop                         // stop the whole discovery run
+)
+
+// checkCandidateGate applies the one rule DiscoverClassic, DiscoverCurrent,
+// and DiscoverEmerging each enforce before building a candidate from a
+// track: stop once maxTotal candidates have already been collected, skip a
+// track with no Spotify ID, skip a track ID already seen (counted on
+// duplicatesSkipped). seen is marked only on gateProceed, matching every
+// caller's prior inline behavior exactly.
+func checkCandidateGate(candidateCount, maxTotal int, trackID string, seen map[string]bool, duplicatesSkipped *int) candidateGate {
+	if candidateCount >= maxTotal {
+		return gateStop
+	}
+	if trackID == "" {
+		return gateSkip
+	}
+	if seen[trackID] {
+		*duplicatesSkipped++
+		return gateSkip
+	}
+	seen[trackID] = true
+	return gateProceed
+}
+
 // recentCatalogueParams bounds one recentTracksForArtist call. Embedded in
 // both CurrentConfig and EmergingConfig, which share this exact bound set,
 // so a caller passes its config's embedded value straight through instead
@@ -307,17 +337,12 @@ artists:
 			result.TracksInspected += len(tracks)
 
 			for _, track := range tracks {
-				if len(result.Candidates) >= s.classicCfg.MaxTotalCandidates {
+				switch checkCandidateGate(len(result.Candidates), s.classicCfg.MaxTotalCandidates, track.ID, seen, &result.DuplicatesSkipped) {
+				case gateStop:
 					break artists
-				}
-				if track.ID == "" {
+				case gateSkip:
 					continue
 				}
-				if seen[track.ID] {
-					result.DuplicatesSkipped++
-					continue
-				}
-				seen[track.ID] = true
 
 				c, err := candidate.NewCandidateTrack(candidate.NewCandidateTrackParams{
 					ID:             candidate.ID(track.ID),
@@ -396,17 +421,12 @@ artists:
 		}
 
 		for _, track := range rc.Tracks {
-			if len(result.Candidates) >= s.currentCfg.MaxTotalCandidates {
+			switch checkCandidateGate(len(result.Candidates), s.currentCfg.MaxTotalCandidates, track.ID, seen, &result.DuplicatesSkipped) {
+			case gateStop:
 				break artists
-			}
-			if track.ID == "" {
+			case gateSkip:
 				continue
 			}
-			if seen[track.ID] {
-				result.DuplicatesSkipped++
-				continue
-			}
-			seen[track.ID] = true
 
 			c, err := candidate.NewCandidateTrack(candidate.NewCandidateTrackParams{
 				ID:             candidate.ID(track.ID),
@@ -595,17 +615,12 @@ seeds:
 			}
 
 			for _, track := range rc.Tracks {
-				if len(result.Candidates) >= s.emergingCfg.MaxTotalCandidates {
+				switch checkCandidateGate(len(result.Candidates), s.emergingCfg.MaxTotalCandidates, track.ID, seenTracks, &result.DuplicatesSkipped) {
+				case gateStop:
 					break seeds
-				}
-				if track.ID == "" {
+				case gateSkip:
 					continue
 				}
-				if seenTracks[track.ID] {
-					result.DuplicatesSkipped++
-					continue
-				}
-				seenTracks[track.ID] = true
 
 				match := sim.Match
 				c, err := candidate.NewCandidateTrack(candidate.NewCandidateTrackParams{

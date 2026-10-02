@@ -163,7 +163,7 @@ func CalculatePlaylistFit(candidateSound musicaldna.Profile, ctx *CurrentEdition
 	}
 
 	dimResults := make([]PlaylistFitDimensionResult, 0, len(dims))
-	var weightedSum, availableWeight float64
+	items := make([]weightedValue, 0, len(dims))
 	for _, d := range dims {
 		if d.a == nil || d.b == nil {
 			dimResults = append(dimResults, PlaylistFitDimensionResult{Dimension: d.name, Available: false})
@@ -171,14 +171,9 @@ func CalculatePlaylistFit(candidateSound musicaldna.Profile, ctx *CurrentEdition
 		}
 		v := d.score(*d.a, *d.b)
 		dimResults = append(dimResults, PlaylistFitDimensionResult{Dimension: d.name, Available: true, Value: &v})
-		weightedSum += v * playlistFitDimensionWeight
-		availableWeight += playlistFitDimensionWeight
+		items = append(items, weightedValue{&v, playlistFitDimensionWeight})
 	}
 	result.Dimensions = dimResults
-
-	if availableWeight > 0 {
-		value := weightedSum / availableWeight
-		result.Value = &value
-	}
+	result.Value, _ = weightedAverage(items)
 	return result
 }
