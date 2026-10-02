@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { CandidateReviewEntry, DiscoveryMethod } from '../types/candidateReview'
 import CandidateFactors from './CandidateFactors.vue'
 import BridgeEvidence from './BridgeEvidence.vue'
+import CandidateTrackMetadata from './CandidateTrackMetadata.vue'
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -43,11 +44,11 @@ const provenanceText = computed(() => {
     <CardHeader>
       <div class="flex items-start justify-between gap-4">
         <div class="min-w-0">
-          <h3 class="truncate text-xl font-semibold tracking-tight">{{ entry.Ranked.Candidate.TrackTitle }}</h3>
-          <p class="text-sm font-medium text-muted-foreground">{{ entry.Ranked.Candidate.TrackArtist }}</p>
-          <p v-if="entry.Ranked.Candidate.Metadata" class="text-xs text-muted-foreground/70">
-            {{ entry.Ranked.Candidate.Metadata.Album.Name }}
-          </p>
+          <CandidateTrackMetadata
+            :title="entry.Ranked.Candidate.TrackTitle"
+            :artist="entry.Ranked.Candidate.TrackArtist"
+            :album="entry.Ranked.Candidate.Metadata?.Album ?? null"
+          />
           <div class="mt-2 flex gap-1">
             <Badge variant="outline" class="text-[0.65rem] uppercase tracking-wide">{{ entry.Ranked.Candidate.Category }}</Badge>
             <Badge variant="outline" class="text-[0.65rem] uppercase tracking-wide">{{ entry.Ranked.Candidate.Type }}</Badge>
