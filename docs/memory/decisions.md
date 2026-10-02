@@ -2216,3 +2216,91 @@ work is required.") does not call for.
 ranked.Score})` directly (and, where a bridge was separately computed for
 that pair, passing it too) — no change to `rank.go` is needed to support
 that.
+
+---
+
+**Decision:** Mirror `candidate.*`/`scoring.*` Go struct field names
+exactly (PascalCase) in the new frontend TypeScript types
+(`frontend/src/types/candidateReview.ts`), rather than following
+`spotify.ts`'s existing snake_case/camelCase convention.
+
+**Context:** Card #51 designs a Candidate Review screen against
+`CandidateTrack`, `CandidateMetadata`, `DiscoveryProvenance`,
+`scoring.Factors`/`CandidateScore`/`RankedCandidate`,
+`scoring.BridgeResult`, and `scoring.CandidateExplanation` — none of which
+carry JSON tags, unlike the small handler-local structs `spotify.ts`
+already mirrors (`SpotifyStatus`, `OfficialPlaylist`), which do use
+snake_case tags.
+
+**Reason:** Go's default `encoding/json` marshaling of an untagged struct
+emits its exact field names. Choosing camelCase here would require either
+adding JSON tags to every one of these domain/scoring structs (an
+unrelated backend change this design-only card doesn't make) or hand-
+translating every field in a future real fetch call. Matching the real
+future response exactly means the eventual swap from mock data to a real
+endpoint (see the next decision) touches only one function body, with zero
+field renaming.
+
+**Consequences:** `frontend/src/types/candidateReview.ts` is the first
+frontend type file with PascalCase fields, intentionally inconsistent with
+`spotify.ts` — this is a deliberate, documented exception tied to the
+absence of JSON tags on these specific backend structs, not a new
+repo-wide frontend naming convention.
+
+---
+
+**Decision:** No backend endpoint combines `Rank` + `GenerateExplanation`
++ `DetectPotentialBridge` yet, so the Candidate Review screen (Card #51)
+ships with static mock data in `frontend/src/services/candidateReview.ts`
+behind a `getCandidateReviewPool()` function with the same shape a real
+service call would have.
+
+**Context:** Confirmed by reading `backend/cmd/server/main.go`: the only
+candidate-related route is `POST /api/candidates/pool`, which returns raw,
+unscored `CandidateTrack`s from discovery. `scoring.Rank` and
+`scoring.GenerateExplanation` are both still unwired from any endpoint
+(see the Card #49/#50 decisions above) — wiring them, plus
+`DetectPotentialBridge`, into a real combined endpoint needs the
+per-candidate editorial inputs (`musicaldna.Profile` tags,
+`CurrentEditionContext`, editorial discovery values) that don't exist in
+any workflow yet, which is exactly the M6 scope this card is the first
+step of, not Card #51 itself (a design/layout card that explicitly must
+not add new scoring logic or a fabricated backend endpoint).
+
+**Reason:** The card's own Definition of Done allows "a representative
+mock/static state if real API integration is not yet available." A mock
+function with the real future function's signature and return type is the
+smallest way to satisfy that without inventing backend code this card
+isn't scoped to write.
+
+**Consequences:** `frontend/src/services/candidateReview.ts` carries a
+TODO documenting the exact one-function-body swap (a `fetch` call
+replacing the mock return) once a real
+`GET /api/candidates/review`-shaped endpoint exists; no other frontend
+file needs to change at that point. A future M6 card should design and
+wire that real endpoint, informed by this screen's confirmed data
+requirements.
+
+---
+
+**Decision:** `App.vue` renders the new `CandidateReviewView` as a second
+section alongside the existing `HomeView`, with no Vue Router reinstated.
+
+**Context:** Card #51 adds the first second "screen" to the frontend since
+Vue Router was removed (see the Card 16 removal decision above) for having
+exactly one route. The user was asked directly whether to stack both
+views on one page or have `CandidateReviewView` replace `HomeView`
+entirely.
+
+**Reason:** The user chose to keep `HomeView`'s Spotify-connect/health-check
+UI visible rather than hide it. Stacking both as sibling sections of one
+page needs no routing decision at all, consistent with the existing
+no-router convention; reaching for Vue Router for what is really "two
+sections on one page," not two navigable routes, would be the same kind of
+ahead-of-need complexity the Card 16 removal decision already rejected
+once.
+
+**Consequences:** `frontend/src/App.vue` renders `<HomeView />` followed by
+`<CandidateReviewView />`. If a future card needs independent navigation
+between curator workflows, Vue Router should be reinstated then, with a
+real second route — not before.

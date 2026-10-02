@@ -1173,6 +1173,46 @@
   Candidate Explanations model and [`decisions.md`](decisions.md) for the
   Factors-vs-full-result-structs and stays-unwired reasoning.
 
+- M6 (Curator Experience) begins with the Candidate Review screen (Card #51,
+  a design/layout card — see [`decisions.md`](decisions.md)): a new frontend
+  screen, `frontend/src/views/CandidateReviewView.vue`, rendered alongside
+  the existing `HomeView` in `App.vue` (no Vue Router reinstated — still one
+  flat page). `frontend/src/components/CandidateCard.vue` and
+  `FactorBar.vue` are the first components under `frontend/src/components/`
+  (previously nonexistent — everything lived in `HomeView.vue`).
+  `frontend/src/types/candidateReview.ts` defines TypeScript types mirroring
+  `candidate.CandidateTrack`/`CandidateMetadata`/`DiscoveryProvenance` and
+  `scoring.Factors`/`CandidateScore`/`RankedCandidate`/`BridgeResult`/
+  `CandidateExplanation` field-for-field in PascalCase, since those backend
+  structs carry no JSON tags and would marshal with exact Go field names —
+  unlike `spotify.ts`'s existing snake_case types, which mirror
+  tagged handler-local structs. No backend endpoint combines
+  Rank+GenerateExplanation+DetectPotentialBridge yet (only
+  `POST /api/candidates/pool`, returning raw unscored candidates, exists),
+  so `frontend/src/services/candidateReview.ts` exposes
+  `getCandidateReviewPool()` returning realistic static mock data today,
+  with a documented TODO describing the one-function swap to a real `fetch`
+  once that endpoint exists — no other file needs to change when that
+  happens. The screen shows rank, title/artist/album, `FinalScore` as a
+  plain number (never stars or a judgement label; "Not yet scored" when
+  `null`), the Card #50 explanation text, the six scoring factors as
+  compact value+bar rows (skipping `null` factors), a potential-bridge
+  section (only when `Bridge.PotentialBridge` is true, listing only
+  dimensions/signals the result actually marks as evidence), and a
+  provenance line for non-manual discovery methods. Candidates render in
+  the order the mock data provides — no `.sort()`/`.reorder()` of any kind
+  in the new code, matching the card's requirement that ranking stay
+  backend-owned. The only action is a non-destructive "Open details"
+  placeholder (console.log only) — no Select/Reject/Publish/Approve. Loading/
+  empty/error states follow `HomeView.vue`'s existing typed-ref +
+  `v-if`/`v-else-if` convention, no spinner/toast library. No new dependency
+  (no UI kit, Tailwind, chart library, Pinia, or Vue Router), no backend
+  change, no persistence. Verified in a real browser (Playwright CLI
+  screenshot against the Vite dev server) at desktop and ~400px widths —
+  renders correctly, no horizontal scroll, bridge/provenance sections
+  appear only where mock data supplies them, the unscored mock candidate
+  shows "Not yet scored" and stays in its original (last) position.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

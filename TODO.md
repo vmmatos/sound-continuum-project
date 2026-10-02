@@ -936,6 +936,37 @@
 - [x] Project memory updated (`current-state.md`, `decisions.md`,
       `roadmap.md`)
 
+## Done (Card #51 — Design Candidate Review Interface)
+
+- [x] `frontend/src/views/CandidateReviewView.vue` — single candidate
+      review screen, rendered alongside `HomeView` in `App.vue` (no Vue
+      Router reinstated)
+- [x] `frontend/src/components/CandidateCard.vue` /
+      `FactorBar.vue` — first frontend components (`components/` didn't
+      exist before this card)
+- [x] `frontend/src/types/candidateReview.ts` — TS types mirroring
+      `candidate.*`/`scoring.*` Go structs field-for-field (PascalCase,
+      since those structs carry no JSON tags)
+- [x] `frontend/src/services/candidateReview.ts` — mock
+      `getCandidateReviewPool()` with the real future service's shape,
+      TODO documenting the one-function swap once a combined ranking
+      endpoint exists
+- [x] Rank, title/artist/album, `FinalScore` (plain number, never
+      stars/labels), #50 explanation text, six scoring factors as
+      value+bar rows, potential-bridge section, and provenance line all
+      shown where available
+- [x] Loading/empty/error states, following `HomeView.vue`'s existing
+      typed-ref convention
+- [x] No scoring/ranking logic in TypeScript, no frontend-side
+      reordering, no selection/publish actions (placeholder "Open
+      details" only), no persistence, no Spotify mutation, no new
+      dependency
+- [x] Verified in a real browser (Playwright CLI screenshot against the
+      Vite dev server) at desktop and ~400px widths
+- [x] `npm run build` (`vue-tsc -b && vite build`) verified clean
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+
 ## In progress
 
 - Nothing currently in progress.
@@ -946,14 +977,13 @@
       current, emerging discovery, the Candidate Pool, the Recent Track
       Filter, Metadata Enrichment, and discovery provenance are all done,
       see Cards 33-39 above); candidate persistence remains open for M5+
-- M5: Musical ranking & bridges — Candidate Scoring Model defined (Card
-      #40); Fit (#41), Freshness (#42), Discovery Bonus (#43), Diversity
-      (#44), Repetition Penalty (#45), and Playlist Fit (#46) factors
-      implemented; musical similarity investigated (#47, no engine built);
-      Potential Bridge Detection implemented (#48, standalone, non-
-      weighted); candidate ranking implemented (#49, `scoring.Rank`);
-      Candidate Explanations implemented (#50, `scoring.GenerateExplanation`,
-      M5's final card); automatic editorial selection remains open
-- M6: Curator experience
+- M5: Musical ranking & bridges — feature-complete as of Card #50 (all six
+      scoring factors, Potential Bridge Detection, candidate ranking, and
+      Candidate Explanations are implemented, see Cards 40-50 above);
+      automatic editorial selection remains open
+- M6: Curator experience — in progress (Candidate Review screen designed
+      and built, Card #51); a real backend endpoint combining ranking,
+      explanations, and bridge detection, plus the selection/publishing
+      workflow, remain open
 - M7: Weekly editorial workflow
 - M8: Feedback & evolution
