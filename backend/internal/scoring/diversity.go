@@ -166,27 +166,11 @@ func CalculateDiversity(candidateArtistSpotifyIDs []string, candidateEra *string
 	result.Era = eraDiversity(candidateEra, ctx.Tracks)
 	result.Sound = soundDiversity(candidateSound, ctx.Tracks)
 
-	type weighted struct {
-		value  *float64
-		weight float64
-	}
-	aspects := []weighted{
+	result.Value, _ = weightedAverage([]weightedValue{
 		{result.Artist.Value, 1.0 / 3},
 		{result.Era.Value, 1.0 / 3},
 		{result.Sound.Value, 1.0 / 3},
-	}
-
-	var weightedSum, availableWeight float64
-	for _, a := range aspects {
-		if a.value != nil {
-			weightedSum += *a.value * a.weight
-			availableWeight += a.weight
-		}
-	}
-	if availableWeight > 0 {
-		value := weightedSum / availableWeight
-		result.Value = &value
-	}
+	})
 
 	return result
 }

@@ -1,7 +1,6 @@
 package scoring
 
 import (
-	"math"
 	"strings"
 
 	"github.com/vmmatos/sound-continuum-project/internal/musicaldna"
@@ -80,13 +79,11 @@ func DefaultFitWeights() FitWeights {
 // Mood+Energy+Texture+CulturalInfluence sum to 1.0 — both within
 // weightSumTolerance.
 func (w FitWeights) Validate() error {
-	for _, v := range []float64{
+	if err := validateUnitRange(ErrWeightOutOfRange,
 		w.ProjectWeight, w.WeeklyWeight,
 		w.Mood, w.Energy, w.Texture, w.CulturalInfluence,
-	} {
-		if math.IsNaN(v) || v < 0 || v > 1 {
-			return ErrWeightOutOfRange
-		}
+	); err != nil {
+		return err
 	}
 	if diff := (w.ProjectWeight + w.WeeklyWeight) - 1.0; diff < -weightSumTolerance || diff > weightSumTolerance {
 		return ErrFitComponentWeightSumInvalid
@@ -149,27 +146,11 @@ func CalculateFit(candidateProfile musicaldna.Profile, project musicaldna.Projec
 
 	dims := append(projectDims, weeklyDims...)
 
-	components := []struct {
-		value  *float64
-		weight float64
-	}{
+	value, _ := weightedAverage([]weightedValue{
 		{projectValue, weights.ProjectWeight},
 		{weeklyValue, weights.WeeklyWeight},
-	}
-
-	var weightedSum, availableWeight float64
-	for _, c := range components {
-		if c.value != nil {
-			weightedSum += *c.value * c.weight
-			availableWeight += c.weight
-		}
-	}
-
-	if availableWeight == 0 {
-		return FitResult{Dimensions: dims}, nil
-	}
-	value := weightedSum / availableWeight
-	return FitResult{Value: &value, Dimensions: dims}, nil
+	})
+	return FitResult{Value: value, Dimensions: dims}, nil
 }
 
 // compareProfiles compares candidate against target across all four

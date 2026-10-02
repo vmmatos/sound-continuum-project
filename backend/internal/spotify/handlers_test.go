@@ -218,7 +218,7 @@ func TestStatusHandlerDisconnected(t *testing.T) {
 
 func TestStatusHandlerConnected(t *testing.T) {
 	svc := newTestService(t, "")
-	err := svc.store.Upsert(newTestContext(), Connection{
+	err := svc.store.Upsert(context.Background(), Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
 	})
@@ -237,7 +237,7 @@ func TestStatusHandlerConnected(t *testing.T) {
 
 func TestStatusHandlerAuthorizationRequired(t *testing.T) {
 	svc := newTestService(t, "")
-	ctx := newTestContext()
+	ctx := context.Background()
 	err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -267,7 +267,7 @@ func TestStatusHandlerRefreshesExpiredToken(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "stale-access", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(-time.Minute), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -299,7 +299,7 @@ func TestStatusHandlerInvalidGrantOnRefresh(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "stale-access", RefreshToken: "revoked-refresh", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(-time.Minute), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -338,7 +338,7 @@ func TestServiceMeRefreshesOnUnauthorizedThenSucceeds(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "stale-access", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -373,7 +373,7 @@ func TestServiceMeRefreshFailsWithInvalidGrantNoRetryLoop(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "stale-access", RefreshToken: "revoked-refresh", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -401,7 +401,7 @@ func TestServiceMeRefreshFailsWithInvalidGrantNoRetryLoop(t *testing.T) {
 func TestServiceMeReturnsErrNotConnectedWhenNeverConnected(t *testing.T) {
 	svc := newTestService(t, "")
 
-	_, err := svc.Me(newTestContext())
+	_, err := svc.Me(context.Background())
 	if !errors.Is(err, ErrNotConnected) {
 		t.Fatalf("expected ErrNotConnected, got %v", err)
 	}
@@ -413,7 +413,7 @@ func TestMeHandlerWritesProfileJSON(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -458,7 +458,7 @@ func TestPlaylistsHandlerPassesQueryParams(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -488,7 +488,7 @@ func TestPlaylistHandlerUsesPathID(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -527,7 +527,7 @@ func TestPlaylistHandlerForbidden(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -557,7 +557,7 @@ func TestPlaylistItemsHandlerUsesPathID(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -581,7 +581,7 @@ func TestPlaylistItemsHandlerUsesPathID(t *testing.T) {
 
 func TestSearchHandlerRejectsLimitAboveTen(t *testing.T) {
 	svc := newTestService(t, "")
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -608,7 +608,7 @@ func TestTrackHandlerUsesPathID(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -647,7 +647,7 @@ func TestTrackHandlerForbidden(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -668,7 +668,7 @@ func TestTrackHandlerForbidden(t *testing.T) {
 
 func TestTrackHandlerEmptyID(t *testing.T) {
 	svc := newTestService(t, "")
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -698,7 +698,7 @@ func TestArtistHandlerUsesPathID(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -737,7 +737,7 @@ func TestArtistHandlerForbidden(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -758,7 +758,7 @@ func TestArtistHandlerForbidden(t *testing.T) {
 
 func TestArtistHandlerEmptyID(t *testing.T) {
 	svc := newTestService(t, "")
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -791,7 +791,7 @@ func TestServiceArtistAlbumsPassesArgs(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -827,7 +827,7 @@ func TestServiceAlbumTracksPassesArgs(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -861,7 +861,7 @@ func TestInitializeOfficialPlaylistCreatesOnFirstCall(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -904,7 +904,7 @@ func TestInitializeOfficialPlaylistRequestBody(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -941,7 +941,7 @@ func TestInitializeOfficialPlaylistIdempotentReturnsCachedWithoutCallingSpotify(
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -981,7 +981,7 @@ func TestInitializeOfficialPlaylistCalledTwiceCreatesOnlyOnce(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -1007,7 +1007,7 @@ func TestInitializeOfficialPlaylistCalledTwiceCreatesOnlyOnce(t *testing.T) {
 
 func TestOfficialPlaylistReturnsPersistedPlaylist(t *testing.T) {
 	svc := newTestService(t, "")
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.SaveOfficialPlaylist(ctx, OfficialPlaylist{
 		SpotifyPlaylistID: "pl-existing", Name: "Sound Continuum — Weekly Journey",
 		URL: "https://open.spotify.com/playlist/pl-existing",
@@ -1027,7 +1027,7 @@ func TestOfficialPlaylistReturnsPersistedPlaylist(t *testing.T) {
 func TestOfficialPlaylistNotConfigured(t *testing.T) {
 	svc := newTestService(t, "")
 
-	_, err := svc.OfficialPlaylist(newTestContext())
+	_, err := svc.OfficialPlaylist(context.Background())
 	if !errors.Is(err, ErrOfficialPlaylistNotConfigured) {
 		t.Fatalf("err = %v, want ErrOfficialPlaylistNotConfigured", err)
 	}
@@ -1036,7 +1036,7 @@ func TestOfficialPlaylistNotConfigured(t *testing.T) {
 func TestInitializeOfficialPlaylistNotConnected(t *testing.T) {
 	svc := newTestService(t, "")
 
-	_, err := svc.InitializeOfficialPlaylist(newTestContext())
+	_, err := svc.InitializeOfficialPlaylist(context.Background())
 	if !errors.Is(err, ErrNotConnected) {
 		t.Fatalf("expected ErrNotConnected, got %v", err)
 	}
@@ -1044,7 +1044,7 @@ func TestInitializeOfficialPlaylistNotConnected(t *testing.T) {
 
 func TestInitializeOfficialPlaylistAuthorizationRequired(t *testing.T) {
 	svc := newTestService(t, "")
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -1071,7 +1071,7 @@ func TestInitializeOfficialPlaylistSpotifyErrorNotPersisted(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -1105,7 +1105,7 @@ func TestInitializePlaylistHandlerHTTP(t *testing.T) {
 	defer server.Close()
 
 	svc := newTestService(t, server.URL)
-	ctx := newTestContext()
+	ctx := context.Background()
 	if err := svc.store.Upsert(ctx, Connection{
 		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
@@ -1160,8 +1160,4 @@ func decodeStatus(t *testing.T, rec *httptest.ResponseRecorder) statusResponse {
 		t.Fatalf("failed to decode status response: %v", err)
 	}
 	return body
-}
-
-func newTestContext() context.Context {
-	return context.Background()
 }

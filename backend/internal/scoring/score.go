@@ -57,15 +57,55 @@ type Factors struct {
 // NaN. A nil value is always valid — "not yet available" is never an
 // error.
 func (f Factors) Validate() error {
+	var present []float64
 	for _, v := range []*float64{
 		f.Fit, f.Freshness, f.DiscoveryBonus, f.Diversity,
 		f.PlaylistFit, f.RepetitionPenalty,
 	} {
-		if v != nil && (math.IsNaN(*v) || *v < 0 || *v > 1) {
-			return ErrFactorOutOfRange
+		if v != nil {
+			present = append(present, *v)
+		}
+	}
+	return validateUnitRange(ErrFactorOutOfRange, present...)
+}
+
+// validateUnitRange returns err if any value is NaN or outside [0,1], the
+// range every scoring factor/weight in this package must satisfy — shared
+// by Factors.Validate, Weights.Validate, and FitWeights.Validate.
+func validateUnitRange(err error, values ...float64) error {
+	for _, v := range values {
+		if math.IsNaN(v) || v < 0 || v > 1 {
+			return err
 		}
 	}
 	return nil
+}
+
+// weightedValue pairs a possibly-missing factor/aspect/dimension value with
+// the weight it would contribute if present.
+type weightedValue struct {
+	value  *float64
+	weight float64
+}
+
+// weightedAverage computes sum(value*weight)/sum(weight) over only the
+// present (non-nil) items — the renormalize-over-what's-available idiom
+// used throughout this package (Calculate, CalculateFit,
+// CalculateDiversity, CalculatePlaylistFit). avg is nil, never a fabricated
+// 0.0, when availableWeight is 0.
+func weightedAverage(items []weightedValue) (avg *float64, availableWeight float64) {
+	var sum float64
+	for _, it := range items {
+		if it.value != nil {
+			sum += *it.value * it.weight
+			availableWeight += it.weight
+		}
+	}
+	if availableWeight == 0 {
+		return nil, 0
+	}
+	a := sum / availableWeight
+	return &a, availableWeight
 }
 
 // Weights are Sound Continuum's initial editorial assumptions about how
@@ -128,13 +168,11 @@ func DefaultWeights() Weights {
 // that the five positive factor weights (Fit, Freshness, DiscoveryBonus,
 // Diversity, PlaylistFit) sum to 1.0 within weightSumTolerance.
 func (w Weights) Validate() error {
-	for _, v := range []float64{
+	if err := validateUnitRange(ErrWeightOutOfRange,
 		w.Fit, w.Freshness, w.DiscoveryBonus, w.Diversity,
 		w.PlaylistFit, w.RepetitionWeight,
-	} {
-		if math.IsNaN(v) || v < 0 || v > 1 {
-			return ErrWeightOutOfRange
-		}
+	); err != nil {
+		return err
 	}
 	sum := w.Fit + w.Freshness + w.DiscoveryBonus + w.Diversity + w.PlaylistFit
 	diff := sum - 1.0
@@ -213,25 +251,13 @@ func Calculate(id candidate.ID, f Factors, w Weights) (CandidateScore, error) {
 		return CandidateScore{}, err
 	}
 
-	type weighted struct {
-		value  *float64
-		weight float64
-	}
-	positive := []weighted{
+	base, availableWeight := weightedAverage([]weightedValue{
 		{f.Fit, w.Fit},
 		{f.Freshness, w.Freshness},
 		{f.DiscoveryBonus, w.DiscoveryBonus},
 		{f.Diversity, w.Diversity},
 		{f.PlaylistFit, w.PlaylistFit},
-	}
-
-	var weightedSum, availableWeight float64
-	for _, p := range positive {
-		if p.value != nil {
-			weightedSum += *p.value * p.weight
-			availableWeight += p.weight
-		}
-	}
+	})
 
 	score := CandidateScore{
 		CandidateID:     id,
@@ -241,13 +267,12 @@ func Calculate(id candidate.ID, f Factors, w Weights) (CandidateScore, error) {
 		AvailableWeight: availableWeight,
 	}
 
-	if availableWeight > 0 {
-		base := weightedSum / availableWeight
+	if base != nil {
 		penalty := 0.0
 		if f.RepetitionPenalty != nil {
 			penalty = *f.RepetitionPenalty
 		}
-		final := base * (1 - penalty*w.RepetitionWeight)
+		final := *base * (1 - penalty*w.RepetitionWeight)
 		score.FinalScore = &final
 	}
 
