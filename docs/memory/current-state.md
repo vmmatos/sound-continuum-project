@@ -1280,6 +1280,80 @@
   committed. `npm run build` (`vue-tsc -b && vite build`) passes. No
   backend tests were run since no backend file changed.
 
+- The Candidate Review screen now consumes a real backend endpoint (Card
+  #53, see [`decisions.md`](decisions.md)) for the two scoring factors
+  with genuine production inputs today — Freshness and Repetition
+  Penalty. A new package, `backend/internal/review`, composes the
+  existing `discovery` and `scoring` packages (`review -> discovery,
+  scoring`; `scoring` still imports neither `discovery` nor `review`).
+  `review.Service.ReviewPool` runs the real production pipeline —
+  `discovery.Service.DiscoverPool` -> `FilterRecentTracks` ->
+  `EnrichCandidateMetadata` -> per-candidate `scoring.CalculateFreshness`/
+  `CalculateRepetitionPenalty` (playlist track/artist history fetched
+  once per request via `PlaylistTrackHistory`/`PlaylistArtistHistory`,
+  never per candidate) -> `scoring.Calculate` -> `scoring.Rank` ->
+  `scoring.GenerateExplanation` — with no discovery/scoring algorithm
+  duplicated, modified, or bypassed. `Fit`, `DiscoveryBonus`, `Diversity`,
+  and `PlaylistFit` stay nil: their inputs (`musicaldna.Profile` tags,
+  `CurrentEditionContext`, an editorial discovery value) don't exist in
+  any production workflow yet, and none is fabricated. `Bridge`/
+  `BridgeTrack` are always nil — Card #48's pairwise bridge detection has
+  no caller here. `GET /api/candidates/review` exposes it
+  (`cmd/server/main.go`); an empty eligible pool returns `200` with no
+  entries, matching `PoolHandler`'s own "zero candidates is not an error"
+  precedent. `review.Service` depends on `*discovery.Service` through a
+  small unexported interface seam (`candidatePoolSource`), the same
+  one-off pattern `discovery.spotifyCatalogue` already established (Card
+  #33), needed because `discovery.Service`'s fields are unexported and
+  its only constructor takes a concrete `*spotify.Service` — production
+  callers (`main.go`) are unaffected. 17 new Go tests
+  (`backend/internal/review`) cover every case Card #53 lists: no-history
+  candidate, recently-played track, previously-used-artist-different-
+  track, empty eligible pool, deterministic ranking, `AvailableWeight`
+  exactly equal to Freshness's weight (`0.10` — the only positive factor
+  this card populates), explanation sourced only from
+  `scoring.GenerateExplanation`, and `Bridge` always nil, plus one HTTP
+  handler integration test.
+
+  `frontend/src/services/candidateReview.ts`'s mock
+  `getCandidateReviewPool()` is replaced with the real `fetch` the file's
+  own Card #51 TODO already specified — no other frontend file needed to
+  change for that swap. One real contract mismatch was found and fixed:
+  `CandidateReviewPool.EditionContext` had no real backend source (it
+  would mean fabricating `CurrentEditionContext`/`WeeklyDirection`-style
+  editorial content, an explicit non-goal), so it was removed from
+  `frontend/src/types/candidateReview.ts` and
+  `CandidateReviewView.vue` (the existing "Candidate Review" label and
+  candidate count already identify the screen). `CandidateCard.vue` gains
+  a small partial-score UI: when a scored candidate's `AvailableWeight`
+  is below ~1.0 (every real candidate from this card, since Freshness
+  alone is `0.10` of the five-factor weight pool), the score now shows a
+  "Partial · N% signal" caption and an updated tooltip, distinct from
+  both a fully-evaluated score and "Not yet scored" — `AvailableWeight`/
+  `FinalScore` stay the literal source of truth, no new metric invented.
+
+  Real Spotify-connected verification: the locally-recorded official
+  playlist had again been deleted outside the app (a recurrence of the
+  known Card #30/#37/#39 idempotency limitation), so a fresh one was
+  created through the existing, unmodified `InitializeOfficialPlaylist`
+  flow before testing. Against that fresh playlist, `GET
+  /api/candidates/review` returned `200` with zero entries — all three
+  discovery workflows hit the same long-lived Spotify Development Mode
+  `GET /artists/{id}/albums` rate limit already documented for Cards
+  #36/#37/#39 (confirmed via `POST /api/candidates/pool`'s own
+  `Failures`), so the populated-candidate path could not be exercised
+  against live data this session — a pre-existing provider quota state,
+  not a Card #53 defect. The empty-pool path was confirmed for real, end
+  to end, including in a real browser (no mock data, "No candidates
+  available for review." rendered correctly at desktop and ~390px
+  widths). The populated-card path (artwork, partial-score caption,
+  factors, explanation, no bridge section) was confirmed in a real
+  browser via a temporary, uncommitted local fixture swap in
+  `candidateReview.ts`, restored immediately after — the same verification
+  pattern Card #52 already established for a case live data couldn't
+  reach this session. `npm run build` and `go build ./...`/`go vet
+  ./...`/`go test ./...` all pass.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

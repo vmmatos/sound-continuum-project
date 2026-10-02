@@ -2389,3 +2389,95 @@ shadcn's `:root`/`.dark`-class CSS variable tokens (`@layer base` applies
 rounded corners" look. If a future card wants a light mode or a different
 accent, it should revisit this decision explicitly rather than layering a
 toggle on top of it.
+
+---
+
+**Decision:** Introduce `backend/internal/review` as a new, flat,
+feature-named package (sibling to `discovery`/`scoring`/`candidate`) that
+composes `discovery` + `scoring` into the real Candidate Review pipeline,
+rather than adding this orchestration to `discovery` or `scoring`
+directly.
+
+**Context:** Card #53 needed to wire Freshness + Repetition Penalty into a
+real `GET /api/candidates/review` endpoint. `discovery` already depends on
+`candidate`/`spotify`/`lastfm`; `scoring` depends only on `candidate`/
+`musicaldna` and must never import `discovery` (an explicit, repeatedly
+documented invariant since Card #42/#45). Neither package is the right
+home for code that depends on both.
+
+**Reason:** Same reasoning already recorded for `discovery` itself (Cards
+#33/#36/#37): a new, flat, feature-named package is this repo's existing
+convention for "the one place that legitimately depends on both
+upstream packages," not a new layering concept. Putting the orchestration
+in `discovery` would create exactly the `scoring`-importing-`discovery`
+direction the project has protected since Card #40 reversed.
+
+**Consequences:** `review.Service` holds a small unexported interface
+seam (`candidatePoolSource`) over `*discovery.Service`'s
+`DiscoverPool`/`FilterRecentTracks`/`EnrichCandidateMetadata`/
+`PlaylistTrackHistory`/`PlaylistArtistHistory` methods — the same one-off
+testing seam `discovery.spotifyCatalogue` already established (Card #33's
+decision above), needed because `discovery.Service`'s fields are
+unexported and its only constructor takes a concrete `*spotify.Service`.
+`review.NewService` still takes a concrete `*discovery.Service` in
+production; only `review`'s own tests use a fake. A future package
+composing `review` with something else should follow the same pattern,
+not generalize this one.
+
+---
+
+**Decision:** `review.Service.ReviewPool` fetches
+`PlaylistTrackHistory`/`PlaylistArtistHistory` once per request (two full
+playlist pagination walks), rather than adding a combined accessor to
+`discovery` that would return both from a single walk.
+
+**Context:** `discovery.Service` already has an internal
+`recentTrackAndArtistIndex` that builds both maps from one pagination
+walk, but it is unexported and only reachable today through
+`PlaylistTrackHistory` and `PlaylistArtistHistory` separately — each of
+which independently re-fetches `OfficialPlaylist` and re-walks every
+page. Card #53 explicitly forbids modifying `discovery`'s behavior.
+
+**Reason:** Adding a combined, exported accessor would be a `discovery`
+change for one caller's convenience — exactly the kind of ahead-of-need
+API surface this project avoids elsewhere (see the Card #27/#28
+precedents of not threading unused configuration speculatively). Two
+playlist walks per `ReviewPool` call is a real but bounded, per-request
+cost (not a per-candidate one, which is what the card actually forbids),
+acceptable at the project's current scale.
+
+**Consequences:** `ReviewPool` makes three total playlist pagination
+walks in the worst case per request (one inside `FilterRecentTracks`, one
+each for track/artist history) whenever the eligible pool is non-empty. If
+this becomes a real performance concern, `discovery` should expose a
+combined accessor then, with a real caller justifying it — not ahead of
+need.
+
+---
+
+**Decision:** Remove `CandidateReviewPool.EditionContext` from the
+frontend contract (`frontend/src/types/candidateReview.ts`,
+`CandidateReviewView.vue`) rather than inventing backend data to populate
+it.
+
+**Context:** Card #51's mock `CandidateReviewPool` included
+`EditionContext: string` (displayed as the screen's heading) as a
+plausible-looking field of a future real response. Card #53 built that
+real response (`review.ReviewPool`) and found no production data source
+for it — populating it would mean fabricating
+`CurrentEditionContext`/`WeeklyDirection`-style editorial content, an
+explicit non-goal of this card and of M5/M6 so far (`CurrentEditionContext`
+remains a transient, caller-supplied scoring input with no durable
+"current edition" concept anywhere in the codebase).
+
+**Reason:** Card #53 explicitly allows (and the manifesto's "no fabricated
+editorial inputs" discipline requires) fixing a contract mismatch found
+during implementation rather than inventing data to satisfy a mock-era
+type. The screen's existing "Candidate Review" label and candidate count
+already identify the screen without a second, unsourced heading.
+
+**Consequences:** `CandidateReviewPool` now has only an `Entries` field,
+matching `review.ReviewPool` exactly. If a future card introduces a real
+"current edition" concept (e.g. a persisted edition-in-progress), it can
+reintroduce an edition label then, backed by real data — not as a
+frontend-only placeholder.

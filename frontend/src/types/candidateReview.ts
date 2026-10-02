@@ -138,9 +138,10 @@ export interface CandidateExplanation {
   Reasons: string[]
 }
 
-// CandidateReviewEntry/Pool are NOT real backend structs — no endpoint
-// combines Rank + GenerateExplanation + DetectPotentialBridge today. See
-// the TODO in services/candidateReview.ts.
+// CandidateReviewEntry/Pool mirror backend/internal/review.ReviewEntry/
+// ReviewPool exactly (GET /api/candidates/review). No EditionContext field —
+// there is no real backend source for it (it would mean fabricating
+// CurrentEditionContext/WeeklyDirection-style editorial content).
 export interface CandidateReviewEntry {
   Ranked: RankedCandidate
   Explanation: CandidateExplanation
@@ -149,6 +150,5 @@ export interface CandidateReviewEntry {
 }
 
 export interface CandidateReviewPool {
-  EditionContext: string
   Entries: CandidateReviewEntry[]
 }

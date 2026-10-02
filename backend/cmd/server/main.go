@@ -13,6 +13,7 @@ import (
 	"github.com/vmmatos/sound-continuum-project/internal/discovery"
 	"github.com/vmmatos/sound-continuum-project/internal/health"
 	"github.com/vmmatos/sound-continuum-project/internal/lastfm"
+	"github.com/vmmatos/sound-continuum-project/internal/review"
 	"github.com/vmmatos/sound-continuum-project/internal/spotify"
 )
 
@@ -61,6 +62,8 @@ func main() {
 		recentTrackLookbackDays,
 	)
 
+	reviewService := review.NewService(discoveryService)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.Handler)
 	mux.HandleFunc("GET /api/spotify/auth", spotifyService.AuthHandler)
@@ -78,6 +81,7 @@ func main() {
 	mux.HandleFunc("POST /api/discovery/current", discoveryService.CurrentHandler)
 	mux.HandleFunc("POST /api/discovery/emerging", discoveryService.EmergingHandler)
 	mux.HandleFunc("POST /api/candidates/pool", discoveryService.PoolHandler)
+	mux.HandleFunc("GET /api/candidates/review", reviewService.Handler)
 
 	addr := ":" + port
 	log.Printf("sound-continuum server listening on %s", addr)

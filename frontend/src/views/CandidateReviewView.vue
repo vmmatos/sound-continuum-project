@@ -7,7 +7,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
 const status = ref<'loading' | 'ok' | 'empty' | 'error'>('loading')
-const editionContext = ref('')
 const entries = ref<CandidateReviewEntry[]>([])
 
 onMounted(async () => {
@@ -16,7 +15,6 @@ onMounted(async () => {
     status.value = 'error'
     return
   }
-  editionContext.value = pool.EditionContext
   entries.value = pool.Entries
   status.value = pool.Entries.length === 0 ? 'empty' : 'ok'
 })
@@ -37,7 +35,6 @@ onMounted(async () => {
     <p v-else-if="status === 'error'" class="mt-6 text-sm text-muted-foreground">Could not load the candidate pool.</p>
     <p v-else-if="status === 'empty'" class="mt-6 text-sm text-muted-foreground">No candidates available for review.</p>
     <template v-else>
-      <h2 class="mt-1 text-2xl font-semibold tracking-tight">{{ editionContext }}</h2>
       <p class="mt-1 text-xs text-muted-foreground">{{ entries.length }} candidates</p>
       <TooltipProvider>
         <div class="mt-4 flex flex-col gap-4">
