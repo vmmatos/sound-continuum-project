@@ -77,10 +77,14 @@ of future implementation requirements.
   never wired into `Rank`/any endpoint). M5 now only has automatic
   selection remaining open)
 - **M6 — Curator Experience** — In progress (the Candidate Review screen
-  is designed and built — Card #51, see
+  is designed and built — Cards #51/#52, see
   [`docs/memory/decisions.md`](decisions.md) — a minimal, ranked candidate
-  review layout with score/explanation/factors/bridge/provenance display,
-  backed by static mock data pending a real combined ranking endpoint; no
+  review layout with score/explanation/factors/bridge/provenance/artwork
+  display; Card #53 wired it to a real backend endpoint,
+  `GET /api/candidates/review`, for the two scoring factors with genuine
+  production inputs today — Freshness and Repetition Penalty. Fit,
+  DiscoveryBonus, Diversity, and PlaylistFit remain nil until their
+  editorial inputs exist; no bridge detection is wired in yet; no
   selection/publish workflow yet)
 - **M7 — Weekly Editorial Workflow** — Planned
 - **M8 — Feedback & Evolution** — Planned

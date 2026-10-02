@@ -14,6 +14,14 @@ const props = defineProps<{
   entry: CandidateReviewEntry
 }>()
 
+// AvailableWeight is the sum of weights of scoring factors actually
+// evaluated for this candidate — a low value (e.g. only Freshness, 0.10)
+// means the score reflects a sliver of the full model, not a weak
+// candidate. Distinguishing this from a fully-evaluated score is required
+// so a curator never reads a partial score as a complete evaluation.
+const isFullyScored = computed(() => props.entry.Ranked.Score.AvailableWeight >= 0.999)
+const availablePercent = computed(() => Math.round(props.entry.Ranked.Score.AvailableWeight * 100))
+
 const provenanceLabel: Record<DiscoveryMethod, string> = {
   classic_reference_artist: 'Discovered via classic reference artists',
   current_reference_artist: 'Discovered via current reference artists',
@@ -60,9 +68,18 @@ const provenanceText = computed(() => {
             <TooltipTrigger as-child>
               <p class="text-lg font-semibold text-primary tabular-nums">{{ entry.Ranked.Score.FinalScore.toFixed(2) }}</p>
             </TooltipTrigger>
-            <TooltipContent>Internal ranking signal — not a quality rating.</TooltipContent>
+            <TooltipContent>
+              {{
+                isFullyScored
+                  ? 'Internal ranking signal — not a quality rating.'
+                  : `Partial score — only ${availablePercent}% of the scoring signal is available.`
+              }}
+            </TooltipContent>
           </Tooltip>
-          <p v-else class="text-xs text-muted-foreground">Not yet scored</p>
+          <p v-if="entry.Ranked.Score.FinalScore !== null && !isFullyScored" class="text-[10px] text-muted-foreground">
+            Partial · {{ availablePercent }}% signal
+          </p>
+          <p v-else-if="entry.Ranked.Score.FinalScore === null" class="text-xs text-muted-foreground">Not yet scored</p>
         </div>
       </div>
     </CardHeader>

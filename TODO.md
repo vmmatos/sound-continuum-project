@@ -995,6 +995,53 @@
 - [x] `npm run build` (`vue-tsc -b && vite build`) verified clean
 - [x] Project memory updated (`current-state.md`, `decisions.md`)
 
+## Done (Card #53 — Wire Freshness + Repetition Penalty into a real Candidate Review endpoint)
+
+- [x] `backend/internal/review` — new orchestration package composing
+      `discovery` + `scoring` (`review -> discovery, scoring`; `scoring`
+      still has zero dependency on `discovery`)
+- [x] `Service.ReviewPool` runs the real production pipeline:
+      `DiscoverPool -> FilterRecentTracks -> EnrichCandidateMetadata ->
+      Freshness + RepetitionPenalty -> scoring.Calculate -> scoring.Rank
+      -> scoring.GenerateExplanation` — no discovery/scoring algorithm
+      duplicated or modified
+- [x] Only Freshness and RepetitionPenalty are calculated (genuine
+      production inputs today, from the official playlist's track/artist
+      history, fetched once per request, never per candidate); Fit,
+      DiscoveryBonus, Diversity, and PlaylistFit stay nil — no fabricated
+      `musicaldna.Profile`, `CurrentEditionContext`, or editorial discovery
+      value
+- [x] `GET /api/candidates/review` exposes it (`cmd/server/main.go`); an
+      empty eligible pool returns `200` with no entries, never an error
+- [x] `frontend/src/services/candidateReview.ts` — real `fetch`, mock data
+      removed, exactly per the function's own pre-existing TODO
+- [x] Frontend contract fix: `CandidateReviewPool.EditionContext` removed
+      (no real backend source without fabricating editorial content) from
+      the TS type and `CandidateReviewView.vue`
+- [x] `CandidateCard.vue` — partial-score UI: a candidate whose
+      `AvailableWeight` is below ~1.0 now shows a "Partial · N% signal"
+      caption and an updated tooltip, distinct from a fully-evaluated
+      score and from "Not yet scored"; `AvailableWeight`/`FinalScore`
+      unchanged as the source of truth
+- [x] 17 new Go tests (`backend/internal/review`) covering no-history,
+      recently-played-track, artist-history, empty-pool,
+      deterministic-ranking, `AvailableWeight`, explanation-sourcing, and
+      Bridge-stays-nil cases, plus an HTTP handler integration test
+- [x] `go build ./...`, `go vet ./...`, `go test ./...` and
+      `npm run build` all verified clean
+- [x] Real Spotify-connected verification: `GET /api/candidates/review`
+      returns `200`; 0 live candidates because of the same pre-existing
+      Spotify Development Mode `GET /artists/{id}/albums` rate limit
+      already documented for Cards #36/#37/#39 (confirmed via
+      `POST /api/candidates/pool`'s own `Failures`, not a Card #53 defect)
+      — the empty-pool path was confirmed for real, end to end, including
+      in a real browser; the populated-card path (artwork, partial-score
+      caption, factors, explanation) was confirmed in a real browser via a
+      temporary, uncommitted local fixture swap, matching Card #52's own
+      precedent
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `TODO.md`)
+
 ## In progress
 
 - Nothing currently in progress.
@@ -1010,8 +1057,9 @@
       Candidate Explanations are implemented, see Cards 40-50 above);
       automatic editorial selection remains open
 - M6: Curator experience — in progress (Candidate Review screen designed
-      and built, Card #51); a real backend endpoint combining ranking,
-      explanations, and bridge detection, plus the selection/publishing
-      workflow, remain open
+      and built, Card #51/#52; Card #53 wires it to a real endpoint for
+      Freshness + Repetition Penalty); Fit/DiscoveryBonus/Diversity/
+      PlaylistFit wiring (once their editorial inputs exist) and the
+      selection/publishing workflow remain open
 - M7: Weekly editorial workflow
 - M8: Feedback & evolution
