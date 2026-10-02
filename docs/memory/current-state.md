@@ -1173,6 +1173,83 @@
   Candidate Explanations model and [`decisions.md`](decisions.md) for the
   Factors-vs-full-result-structs and stays-unwired reasoning.
 
+- M6 (Curator Experience) begins with the Candidate Review screen (Card #51,
+  a design/layout card — see [`decisions.md`](decisions.md)): a new frontend
+  screen, `frontend/src/views/CandidateReviewView.vue`, rendered alongside
+  the existing `HomeView` in `App.vue` (no Vue Router reinstated — still one
+  flat page). `frontend/src/components/CandidateCard.vue` and
+  `FactorBar.vue` are the first components under `frontend/src/components/`
+  (previously nonexistent — everything lived in `HomeView.vue`).
+  `frontend/src/types/candidateReview.ts` defines TypeScript types mirroring
+  `candidate.CandidateTrack`/`CandidateMetadata`/`DiscoveryProvenance` and
+  `scoring.Factors`/`CandidateScore`/`RankedCandidate`/`BridgeResult`/
+  `CandidateExplanation` field-for-field in PascalCase, since those backend
+  structs carry no JSON tags and would marshal with exact Go field names —
+  unlike `spotify.ts`'s existing snake_case types, which mirror
+  tagged handler-local structs. No backend endpoint combines
+  Rank+GenerateExplanation+DetectPotentialBridge yet (only
+  `POST /api/candidates/pool`, returning raw unscored candidates, exists),
+  so `frontend/src/services/candidateReview.ts` exposes
+  `getCandidateReviewPool()` returning realistic static mock data today,
+  with a documented TODO describing the one-function swap to a real `fetch`
+  once that endpoint exists — no other file needs to change when that
+  happens. The screen shows rank, title/artist/album, `FinalScore` as a
+  plain number (never stars or a judgement label; "Not yet scored" when
+  `null`), the Card #50 explanation text, the six scoring factors as
+  compact value+bar rows (skipping `null` factors), a potential-bridge
+  section (only when `Bridge.PotentialBridge` is true, listing only
+  dimensions/signals the result actually marks as evidence), and a
+  provenance line for non-manual discovery methods. Candidates render in
+  the order the mock data provides — no `.sort()`/`.reorder()` of any kind
+  in the new code, matching the card's requirement that ranking stay
+  backend-owned. The only action is a non-destructive "Open details"
+  placeholder (console.log only) — no Select/Reject/Publish/Approve. Loading/
+  empty/error states follow `HomeView.vue`'s existing typed-ref +
+  `v-if`/`v-else-if` convention, no spinner/toast library. Initially shipped
+  with no new dependency; a follow-up commit (below) later adopted Tailwind
+  CSS v4 and seven shadcn-vue components for visual refinement — see
+  `decisions.md`. No backend change, no persistence. Verified in a real
+  browser (Playwright CLI screenshot against the Vite dev server) at
+  desktop and ~400px widths — renders correctly, no horizontal scroll,
+  bridge/provenance sections appear only where mock data supplies them,
+  the unscored mock candidate shows "Not yet scored" and stays in its
+  original (last) position.
+
+- Card #51's Candidate Review screen got its first real visual direction
+  (follow-up commit, see `decisions.md`) — Tailwind CSS v4 +
+  `@tailwindcss/vite` and seven shadcn-vue components (`Card`, `Badge`,
+  `Button`, `Progress`, `Separator`, `Tooltip`, `Skeleton`, style preset
+  `reka-mira`, base color `zinc`) are now the frontend's first UI-level
+  dependencies, scoped to this screen. `CandidateCard.vue` was rewritten
+  around these components and split into `CandidateFactors.vue` (the six
+  scoring-factor rows, now using shadcn `Progress`) and `BridgeEvidence.vue`
+  (the "Musical bridge" section); `FactorBar.vue` was deleted (fully
+  replaced by `CandidateFactors.vue`). The app is now dark-only
+  (`<html class="dark">` in `index.html`) — `HomeView.vue` also renders
+  dark, replacing its previous `prefers-color-scheme`-adaptive look, for one
+  consistent visual identity. The palette overrides shadcn's zinc defaults
+  with a near-black background and a warm amber/copper accent
+  (`--primary`), used only for the `FinalScore` number, active `Progress`
+  fill, and focus rings — never as a surface tint. Typography stays
+  system-font-only (no new font dependency), with hierarchy built from
+  weight/size/tracking alone: track title dominant, artist secondary, album
+  quiet. `FinalScore` keeps its compact `#1`/`0.87`-stacked treatment (a
+  `Tooltip` on the score clarifies "Internal ranking signal — not a quality
+  rating," directly reflecting the product rule that the score is never a
+  judgement). Provenance display was rewritten from raw
+  `Method.replace(/_/g, ' ')` to an explicit editorial-label mapping (e.g.
+  "Discovered via Last.fm · Related artist: ... (match 0.81)"). One mock
+  `Explanation.Text` was shortened to stop describing internal
+  not-yet-evaluated factor state ("Good diversity contribution and no
+  recent repetition concerns.") — no other mock field changed; candidate
+  ranks, order, `FinalScore` values, and the null-score entry are
+  unchanged. No icon library was added (`@lucide/vue`, installed by the
+  shadcn-vue CLI's init step, was removed again since none of the seven
+  components use it). No selection/publish/reject action was introduced —
+  "Open details" remains the only button on a candidate card. No backend
+  change. Verified in a real browser (Playwright CLI screenshots) at
+  desktop and ~400px widths.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

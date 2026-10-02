@@ -76,6 +76,11 @@ of future implementation requirements.
   optionally, a Card #48 `BridgeResult` — never a new scoring factor,
   never wired into `Rank`/any endpoint). M5 now only has automatic
   selection remaining open)
-- **M6 — Curator Experience** — Planned
+- **M6 — Curator Experience** — In progress (the Candidate Review screen
+  is designed and built — Card #51, see
+  [`docs/memory/decisions.md`](decisions.md) — a minimal, ranked candidate
+  review layout with score/explanation/factors/bridge/provenance display,
+  backed by static mock data pending a real combined ranking endpoint; no
+  selection/publish workflow yet)
 - **M7 — Weekly Editorial Workflow** — Planned
 - **M8 — Feedback & Evolution** — Planned

@@ -2216,3 +2216,176 @@ work is required.") does not call for.
 ranked.Score})` directly (and, where a bridge was separately computed for
 that pair, passing it too) — no change to `rank.go` is needed to support
 that.
+
+---
+
+**Decision:** Mirror `candidate.*`/`scoring.*` Go struct field names
+exactly (PascalCase) in the new frontend TypeScript types
+(`frontend/src/types/candidateReview.ts`), rather than following
+`spotify.ts`'s existing snake_case/camelCase convention.
+
+**Context:** Card #51 designs a Candidate Review screen against
+`CandidateTrack`, `CandidateMetadata`, `DiscoveryProvenance`,
+`scoring.Factors`/`CandidateScore`/`RankedCandidate`,
+`scoring.BridgeResult`, and `scoring.CandidateExplanation` — none of which
+carry JSON tags, unlike the small handler-local structs `spotify.ts`
+already mirrors (`SpotifyStatus`, `OfficialPlaylist`), which do use
+snake_case tags.
+
+**Reason:** Go's default `encoding/json` marshaling of an untagged struct
+emits its exact field names. Choosing camelCase here would require either
+adding JSON tags to every one of these domain/scoring structs (an
+unrelated backend change this design-only card doesn't make) or hand-
+translating every field in a future real fetch call. Matching the real
+future response exactly means the eventual swap from mock data to a real
+endpoint (see the next decision) touches only one function body, with zero
+field renaming.
+
+**Consequences:** `frontend/src/types/candidateReview.ts` is the first
+frontend type file with PascalCase fields, intentionally inconsistent with
+`spotify.ts` — this is a deliberate, documented exception tied to the
+absence of JSON tags on these specific backend structs, not a new
+repo-wide frontend naming convention.
+
+---
+
+**Decision:** No backend endpoint combines `Rank` + `GenerateExplanation`
++ `DetectPotentialBridge` yet, so the Candidate Review screen (Card #51)
+ships with static mock data in `frontend/src/services/candidateReview.ts`
+behind a `getCandidateReviewPool()` function with the same shape a real
+service call would have.
+
+**Context:** Confirmed by reading `backend/cmd/server/main.go`: the only
+candidate-related route is `POST /api/candidates/pool`, which returns raw,
+unscored `CandidateTrack`s from discovery. `scoring.Rank` and
+`scoring.GenerateExplanation` are both still unwired from any endpoint
+(see the Card #49/#50 decisions above) — wiring them, plus
+`DetectPotentialBridge`, into a real combined endpoint needs the
+per-candidate editorial inputs (`musicaldna.Profile` tags,
+`CurrentEditionContext`, editorial discovery values) that don't exist in
+any workflow yet, which is exactly the M6 scope this card is the first
+step of, not Card #51 itself (a design/layout card that explicitly must
+not add new scoring logic or a fabricated backend endpoint).
+
+**Reason:** The card's own Definition of Done allows "a representative
+mock/static state if real API integration is not yet available." A mock
+function with the real future function's signature and return type is the
+smallest way to satisfy that without inventing backend code this card
+isn't scoped to write.
+
+**Consequences:** `frontend/src/services/candidateReview.ts` carries a
+TODO documenting the exact one-function-body swap (a `fetch` call
+replacing the mock return) once a real
+`GET /api/candidates/review`-shaped endpoint exists; no other frontend
+file needs to change at that point. A future M6 card should design and
+wire that real endpoint, informed by this screen's confirmed data
+requirements.
+
+---
+
+**Decision:** `App.vue` renders the new `CandidateReviewView` as a second
+section alongside the existing `HomeView`, with no Vue Router reinstated.
+
+**Context:** Card #51 adds the first second "screen" to the frontend since
+Vue Router was removed (see the Card 16 removal decision above) for having
+exactly one route. The user was asked directly whether to stack both
+views on one page or have `CandidateReviewView` replace `HomeView`
+entirely.
+
+**Reason:** The user chose to keep `HomeView`'s Spotify-connect/health-check
+UI visible rather than hide it. Stacking both as sibling sections of one
+page needs no routing decision at all, consistent with the existing
+no-router convention; reaching for Vue Router for what is really "two
+sections on one page," not two navigable routes, would be the same kind of
+ahead-of-need complexity the Card 16 removal decision already rejected
+once.
+
+**Consequences:** `frontend/src/App.vue` renders `<HomeView />` followed by
+`<CandidateReviewView />`. If a future card needs independent navigation
+between curator workflows, Vue Router should be reinstated then, with a
+real second route — not before.
+
+---
+
+**Decision:** Adopt Tailwind CSS v4 and a scoped set of seven shadcn-vue
+components (`Card`, `Badge`, `Button`, `Progress`, `Separator`, `Tooltip`,
+`Skeleton`) as the frontend's first UI-level dependencies, limited to the
+Candidate Review screen's visual refinement.
+
+**Context:** No prior `decisions.md` entry formally restricted frontend UI
+dependencies — the only documented constraint was a line in Card #51's
+`current-state.md` snapshot ("No new dependency (no UI kit, Tailwind, chart
+library, Pinia, or Vue Router)"), written when Card #51 was a design/layout
+card building against mock data with plain scoped CSS. This follow-up
+revisits that snapshot statement deliberately, not silently: the Candidate
+Review card's visual hierarchy (title/artist/album/badges, a compact score,
+an editorial "musical bridge" section, six scoring factors, provenance)
+outgrew what hand-rolled scoped CSS could express cleanly once
+`CandidateCard.vue` needed real decomposition into `CandidateFactors.vue`
+and `BridgeEvidence.vue`.
+
+**Reason:** Hand-rolling a dark-editorial design system (elevated surfaces,
+thin progress bars, consistent spacing/typography tokens) from scratch
+duplicates what a small, headless component set already solves. shadcn-vue
+copies components into the repo rather than installing an opaque runtime UI
+library, which stays closest to this project's existing "own the code,
+minimal opaque dependencies" discipline compared to a full component
+library (Vuetify, PrimeVue, Element Plus — all still rejected). The `mira`
+style preset (small radius, minimal padding, no shadow) and `zinc` base
+color were chosen as the closest built-in starting point for a restrained,
+information-dense "editorial workspace" look, then the `.dark` palette was
+further customized (see the next decision).
+
+**Consequences:** `frontend/package.json` gains `tailwindcss`,
+`@tailwindcss/vite`, and shadcn-vue's own transitive additions (`reka-ui`,
+`class-variance-authority`, `clsx`, `tailwind-merge`, `tw-animate-css`).
+`frontend/src/components/ui/` now exists, generated and owned like any
+other repo code, not a black-box package. `frontend/components.json`
+records the CLI configuration (style `reka-mira`, base color `zinc`, CSS
+variables on) for any future `shadcn-vue add`. This decision does **not**
+reinstate Vue Router, does not add Pinia, and does not add any other
+component library. Extending beyond these seven components needs its own
+decision note. The shadcn-vue CLI's init step also installed an icon
+library (`@lucide/vue`) as part of its non-interactive setup; it was
+removed immediately since none of the seven adopted components render an
+icon — no icon library is part of this decision.
+
+---
+
+**Decision:** The app is dark-only (`<html class="dark">` in
+`frontend/index.html`), replacing `HomeView.vue`'s previous
+`prefers-color-scheme`-adaptive light/dark styling; the dark palette
+overrides shadcn's zinc defaults with a near-black background and a warm
+amber/copper `--primary` accent, and typography stays system-font-only.
+
+**Context:** Card #51's visual-refinement brief calls for "dark editorial,
+music-focused, sophisticated but restrained" as the Candidate Review
+screen's identity, with "one limited accent colour." `HomeView.vue` (the
+original Card 16-era screen, untouched by Card #51 otherwise) previously
+adapted to the system's light/dark preference via a `style.css` media
+query; the new Candidate Review screen's dark-only shadcn tokens would
+otherwise visually clash with a HomeView that could still render light.
+
+**Reason:** A single global visual identity for a one-page app is simpler
+and more consistent than maintaining two different light/dark behaviors on
+one page, and was confirmed with the user over maintaining HomeView's
+previous adaptive behavior. A warm amber/copper accent (`oklch(0.72 0.14
+55)`) was chosen over shadcn's default blue because blue reads as generic
+SaaS/dashboard, while amber against a near-black, slightly cool-neutral
+background evokes analog/vinyl warmth and VU-meter amber — fitting "music
+editorial" without literal skeuomorphism — and is confirmed with the user
+over a teal/cyan or muted red alternative. Typography stays system-font-only
+(no new font dependency, no FOUC risk), confirmed with the user over adding
+a single external display/serif face for track titles; hierarchy is built
+entirely from weight/size/tracking contrast within the existing
+`system-ui, 'Segoe UI', Roboto, sans-serif` stack.
+
+**Consequences:** `frontend/src/style.css`'s old `@media
+(prefers-color-scheme: dark)` block and hardcoded light `color`/
+`background`/`color-scheme: light dark` rules were deleted, superseded by
+shadcn's `:root`/`.dark`-class CSS variable tokens (`@layer base` applies
+`bg-background text-foreground` to `body`). `--radius` was tightened to
+`0.375rem` (from shadcn's `0.625rem` default) to avoid an "excessive
+rounded corners" look. If a future card wants a light mode or a different
+accent, it should revisit this decision explicitly rather than layering a
+toggle on top of it.
