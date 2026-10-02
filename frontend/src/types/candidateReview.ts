@@ -149,6 +149,26 @@ export interface CandidateReviewEntry {
   BridgeTrack: string | null
 }
 
+// WorkflowError/DiscoveryFailure mirror backend/internal/discovery's
+// WorkflowError/Failure, carried through unchanged on ReviewPool (Card
+// #126) so Entries == [] can be told apart from a genuinely empty pool
+// (both of these nil/empty) vs. a Discovery-degraded one (e.g. a Spotify
+// 429 recorded as a Failure). They're informational only — a non-empty
+// Entries list is unaffected by either field.
+export interface WorkflowError {
+  Workflow: string
+  Err: string
+}
+
+export interface DiscoveryFailure {
+  Artist: string
+  Stage: string
+  Err: string
+}
+
 export interface CandidateReviewPool {
   Entries: CandidateReviewEntry[]
+  // Go marshals a nil slice as null, not [] — both fields are nullable.
+  WorkflowErrors: WorkflowError[] | null
+  Failures: DiscoveryFailure[] | null
 }

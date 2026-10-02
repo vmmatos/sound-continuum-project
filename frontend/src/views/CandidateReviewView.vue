@@ -6,7 +6,7 @@ import CandidateCard from '../components/CandidateCard.vue'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
-const status = ref<'loading' | 'ok' | 'empty' | 'error'>('loading')
+const status = ref<'loading' | 'ok' | 'empty' | 'degraded' | 'error'>('loading')
 const entries = ref<CandidateReviewEntry[]>([])
 
 onMounted(async () => {
@@ -16,7 +16,12 @@ onMounted(async () => {
     return
   }
   entries.value = pool.Entries
-  status.value = pool.Entries.length === 0 ? 'empty' : 'ok'
+  if (pool.Entries.length > 0) {
+    status.value = 'ok'
+    return
+  }
+  const hasFailures = (pool.WorkflowErrors?.length ?? 0) > 0 || (pool.Failures?.length ?? 0) > 0
+  status.value = hasFailures ? 'degraded' : 'empty'
 })
 </script>
 
@@ -34,6 +39,9 @@ onMounted(async () => {
     </div>
     <p v-else-if="status === 'error'" class="mt-6 text-sm text-muted-foreground">Could not load the candidate pool.</p>
     <p v-else-if="status === 'empty'" class="mt-6 text-sm text-muted-foreground">No candidates available for review.</p>
+    <p v-else-if="status === 'degraded'" class="mt-6 text-sm text-muted-foreground">
+      Candidates could not be generated right now — discovery is degraded or temporarily failing. Try again later.
+    </p>
     <template v-else>
       <p class="mt-1 text-xs text-muted-foreground">{{ entries.length }} candidates</p>
       <TooltipProvider>

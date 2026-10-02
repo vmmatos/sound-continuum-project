@@ -338,6 +338,108 @@ func TestReviewPoolBridgeAlwaysNil(t *testing.T) {
 	}
 }
 
+// 9. Clean empty pool: no WorkflowErrors, no Failures, from either
+// Discovery or the per-workflow Results.
+func TestReviewPoolCleanEmptyPoolHasNoFailures(t *testing.T) {
+	f := &fakeDiscovery{}
+	svc := newTestService(f)
+
+	pool, err := svc.ReviewPool(context.Background())
+	if err != nil {
+		t.Fatalf("ReviewPool: %v", err)
+	}
+	if len(pool.Entries) != 0 {
+		t.Errorf("len(Entries) = %d, want 0", len(pool.Entries))
+	}
+	if len(pool.WorkflowErrors) != 0 {
+		t.Errorf("WorkflowErrors = %v, want empty", pool.WorkflowErrors)
+	}
+	if len(pool.Failures) != 0 {
+		t.Errorf("Failures = %v, want empty", pool.Failures)
+	}
+}
+
+// 10. Empty pool with a WorkflowError only (e.g. a Spotify connection
+// failure aborted one workflow) — surfaced on ReviewPool.WorkflowErrors.
+func TestReviewPoolEmptyPoolWithWorkflowErrorOnly(t *testing.T) {
+	f := &fakeDiscovery{
+		pool: discovery.CandidatePool{
+			WorkflowErrors: []discovery.WorkflowError{{Workflow: "classic", Err: "spotify: not connected"}},
+		},
+	}
+	svc := newTestService(f)
+
+	pool, err := svc.ReviewPool(context.Background())
+	if err != nil {
+		t.Fatalf("ReviewPool: %v", err)
+	}
+	if len(pool.Entries) != 0 {
+		t.Errorf("len(Entries) = %d, want 0", len(pool.Entries))
+	}
+	if len(pool.WorkflowErrors) != 1 || pool.WorkflowErrors[0].Workflow != "classic" {
+		t.Errorf("WorkflowErrors = %v, want one classic entry", pool.WorkflowErrors)
+	}
+	if len(pool.Failures) != 0 {
+		t.Errorf("Failures = %v, want empty", pool.Failures)
+	}
+}
+
+// 11. Empty pool with per-item Failures only (e.g. a Spotify 429 recorded
+// on a workflow's own Result, which never aborts the workflow) —
+// surfaced on ReviewPool.Failures, distinct from a clean empty pool.
+func TestReviewPoolEmptyPoolWithFailuresOnly(t *testing.T) {
+	f := &fakeDiscovery{
+		pool: discovery.CandidatePool{
+			ClassicResult: discovery.Result{
+				Failures: []discovery.Failure{{Artist: "Some Artist", Stage: "albums", Err: "429 Too Many Requests"}},
+			},
+		},
+	}
+	svc := newTestService(f)
+
+	pool, err := svc.ReviewPool(context.Background())
+	if err != nil {
+		t.Fatalf("ReviewPool: %v", err)
+	}
+	if len(pool.Entries) != 0 {
+		t.Errorf("len(Entries) = %d, want 0", len(pool.Entries))
+	}
+	if len(pool.WorkflowErrors) != 0 {
+		t.Errorf("WorkflowErrors = %v, want empty", pool.WorkflowErrors)
+	}
+	if len(pool.Failures) != 1 || pool.Failures[0].Stage != "albums" {
+		t.Errorf("Failures = %v, want one albums-stage entry", pool.Failures)
+	}
+}
+
+// 12. Failures present alongside valid candidates: the candidates still
+// rank/display normally, and the failure is still surfaced — failures are
+// informational, never a gate on Entries.
+func TestReviewPoolFailuresDoNotHideValidCandidates(t *testing.T) {
+	c := testCandidate(t, "c1", "track-1", "artist-1")
+	f := fakeWithEligible([]candidate.CandidateTrack{c})
+	f.pool = discovery.CandidatePool{
+		CurrentResult: discovery.Result{
+			Failures: []discovery.Failure{{Artist: "Other Artist", Stage: "albums", Err: "429 Too Many Requests"}},
+		},
+	}
+	svc := newTestService(f)
+
+	pool, err := svc.ReviewPool(context.Background())
+	if err != nil {
+		t.Fatalf("ReviewPool: %v", err)
+	}
+	if len(pool.Entries) != 1 {
+		t.Fatalf("len(Entries) = %d, want 1", len(pool.Entries))
+	}
+	if pool.Entries[0].Ranked.Candidate.ID != c.ID {
+		t.Errorf("Entries[0].Ranked.Candidate.ID = %q, want %q", pool.Entries[0].Ranked.Candidate.ID, c.ID)
+	}
+	if len(pool.Failures) != 1 || pool.Failures[0].Stage != "albums" {
+		t.Errorf("Failures = %v, want one albums-stage entry", pool.Failures)
+	}
+}
+
 // A recent-track-filter failure propagates instead of producing an empty
 // or partial review.
 func TestReviewPoolPropagatesFilterError(t *testing.T) {

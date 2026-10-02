@@ -1354,6 +1354,51 @@
   reach this session. `npm run build` and `go build ./...`/`go vet
   ./...`/`go test ./...` all pass.
 
+- Candidate Review can now tell apart a genuinely empty candidate pool from
+  a Discovery-degraded one (Card #126, see [`decisions.md`](decisions.md)) —
+  `review.ReviewPool` (`backend/internal/review/review.go`) gained
+  `WorkflowErrors []discovery.WorkflowError` and
+  `Failures []discovery.Failure`, both reused directly from
+  `discovery.CandidatePool` (already in scope via the existing
+  `DiscoverPool` call — no new Discovery call, no interface change, no new
+  failure type). `Failures` merges the three workflows'
+  (`ClassicResult`/`CurrentResult`/`EmergingResult`) own `Result.Failures`
+  into one slice; `WorkflowErrors` is `CandidatePool.WorkflowErrors`
+  unchanged. Both are informational only — a non-empty `Entries` list is
+  never gated or altered by their presence, matching the card's "valid
+  candidates still rank normally" requirement.
+  `frontend/src/views/CandidateReviewView.vue` gained one new status,
+  `'degraded'` (alongside the existing `'loading'`/`'ok'`/`'empty'`/
+  `'error'`), shown only when `Entries` is empty and either field is
+  non-empty, with generic copy that never names Spotify or "rate limited"
+  specifically — the backend contract carries raw `Artist`/`Stage`/`Err`
+  strings, not a structured failure category safe to narrate more
+  specifically. `frontend/src/types/candidateReview.ts` gained matching
+  `WorkflowError`/`DiscoveryFailure` interfaces (both array fields
+  `| null`, since Go marshals a nil slice as `null`). 8 new Go tests
+  (`backend/internal/review`) cover a clean empty pool, an empty pool with
+  `WorkflowErrors` only, an empty pool with per-item `Failures` only,
+  failures alongside valid candidates (which still rank/display
+  normally), and the JSON contract (clean + populated) through the real
+  HTTP handler — all existing review tests pass unmodified. No automated
+  frontend test was added (explicit user decision this session — see
+  `decisions.md`); the two new states were verified manually instead, in
+  a real Chromium browser (a one-off `npx -p playwright` run, no new
+  project dependency), both via mocked API responses for all three states
+  and live against the real, Spotify-connected dev backend — which, while
+  testing, was found still hitting the same long-lived Spotify Development
+  Mode `GET /artists/{id}/albums` rate limit documented for Cards
+  #36/#37/#39/#53 (confirmed via the response's own new `Failures` field,
+  plus a stale `lastfm: missing API key` `WorkflowErrors` entry for
+  Emerging in this session's environment) — exactly the scenario this card
+  exists to make visible, now correctly rendered as "degraded" rather than
+  a silent empty state. `go build ./...`/`go vet ./...`/`go test ./...`
+  and `npm run build` all pass. `discovery`, scoring, ranking, and
+  `EnrichCandidateMetadata`'s own `EnrichmentFailure`s are unchanged and
+  out of scope — an enrichment failure keeps its candidate in `Entries`
+  with `Metadata: nil`, so it can never cause the empty-vs-degraded
+  ambiguity this card addresses.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

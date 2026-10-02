@@ -79,6 +79,19 @@ type ReviewEntry struct {
 // ranked deterministically.
 type ReviewPool struct {
 	Entries []ReviewEntry
+
+	// WorkflowErrors and Failures are discovery.CandidatePool's own
+	// WorkflowErrors and each workflow Result's Failures (ClassicResult/
+	// CurrentResult/EmergingResult), carried through unchanged — reused
+	// directly, no new failure type (Failures is the three workflows'
+	// slices merged into one). They let a caller tell apart an empty
+	// Entries because Discovery ran clean and nothing was eligible (both
+	// empty) from an empty (or partial) Entries because Discovery hit
+	// failures along the way (e.g. a Spotify 429). They are purely
+	// informational: valid candidates in Entries still rank/display
+	// normally regardless of unrelated failures elsewhere in the pool.
+	WorkflowErrors []discovery.WorkflowError
+	Failures       []discovery.Failure
 }
 
 // ReviewPool runs the full production pipeline: DiscoverPool ->
@@ -88,9 +101,15 @@ type ReviewPool struct {
 // or playlist-history failure propagates as an error, matching
 // discovery.Service.PoolHandler's own precedent — a temporary Spotify
 // failure must never silently become an empty or partial review. An empty
-// eligible pool is not an error: it returns a ReviewPool with no entries.
+// eligible pool is not an error: it returns a ReviewPool with no entries,
+// carrying whatever WorkflowErrors/Failures DiscoverPool already recorded.
 func (s *Service) ReviewPool(ctx context.Context) (ReviewPool, error) {
 	pool := s.discovery.DiscoverPool(ctx)
+
+	var failures []discovery.Failure
+	failures = append(failures, pool.ClassicResult.Failures...)
+	failures = append(failures, pool.CurrentResult.Failures...)
+	failures = append(failures, pool.EmergingResult.Failures...)
 
 	filtered, err := s.discovery.FilterRecentTracks(ctx, pool.Candidates)
 	if err != nil {
@@ -104,7 +123,7 @@ func (s *Service) ReviewPool(ctx context.Context) (ReviewPool, error) {
 	eligible := enrichment.EnrichedCandidates
 
 	if len(eligible) == 0 {
-		return ReviewPool{Entries: []ReviewEntry{}}, nil
+		return ReviewPool{Entries: []ReviewEntry{}, WorkflowErrors: pool.WorkflowErrors, Failures: failures}, nil
 	}
 
 	// Playlist history is fetched once for the whole operation, never once
@@ -165,7 +184,7 @@ func (s *Service) ReviewPool(ctx context.Context) (ReviewPool, error) {
 		})
 	}
 
-	return ReviewPool{Entries: reviewEntries}, nil
+	return ReviewPool{Entries: reviewEntries, WorkflowErrors: pool.WorkflowErrors, Failures: failures}, nil
 }
 
 // Handler exposes GET /api/candidates/review. No request body, no query
