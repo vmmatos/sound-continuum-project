@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import type { CandidateAlbum } from '../types/candidateReview'
 
 const props = defineProps<{
@@ -8,22 +8,15 @@ const props = defineProps<{
   album: CandidateAlbum | null
 }>()
 
-const artworkUrl = () => props.album?.Artwork[0]?.URL ?? null
+const artworkUrl = computed(() => props.album?.Artwork[0]?.URL ?? null)
 const artworkFailed = ref(false)
-
-watch(
-  () => props.album,
-  () => {
-    artworkFailed.value = false
-  },
-)
 </script>
 
 <template>
   <div class="flex items-center gap-3">
     <img
-      v-if="artworkUrl() && !artworkFailed"
-      :src="artworkUrl()!"
+      v-if="artworkUrl && !artworkFailed"
+      :src="artworkUrl"
       :alt="`${title} album artwork`"
       class="h-14 w-14 shrink-0 rounded-md object-cover"
       @error="artworkFailed = true"
