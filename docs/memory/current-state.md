@@ -1250,6 +1250,36 @@
   change. Verified in a real browser (Playwright CLI screenshots) at
   desktop and ~400px widths.
 
+- Candidate Review cards now display album artwork (Card #52) — a
+  frontend-only presentation change, no backend code touched. Investigation
+  found the data already flowed end to end: `candidate.CandidateAlbum.Artwork
+  []CandidateImage` (Card #38) was already mapped from Spotify and already
+  serialized unfiltered through `POST /api/candidates/pool`, and the
+  frontend's `CandidateAlbum`/`CandidateImage` types
+  (`frontend/src/types/candidateReview.ts`) already matched it
+  field-for-field — `CandidateCard.vue` simply never read
+  `Metadata.Album.Artwork` in its template. A new presentational component,
+  `frontend/src/components/CandidateTrackMetadata.vue` (props: `title`,
+  `artist`, `album: CandidateAlbum | null`), renders a 56px (`h-14 w-14`)
+  square artwork thumbnail (`album.Artwork[0]?.URL`, `object-cover
+  rounded-md`) beside the existing title/artist/album-name text, matching
+  the existing `CandidateFactors.vue`/`BridgeEvidence.vue` sub-component
+  pattern. Missing or failed artwork (empty `Artwork` array, or an `@error`
+  on the `<img>`) falls back to a neutral `bg-muted`/`border-border` square
+  of the same footprint — never a broken image, never an external
+  placeholder, never fabricated artwork. Category/type badges stay exactly
+  where they were in `CandidateCard.vue`'s header; `CardContent`/
+  `CardFooter` (explanation, bridge, factors, provenance, "Open details")
+  are untouched. Verified both paths in a real browser (Playwright,
+  headless Chromium): the mock's three fake `i.scdn.co` artwork URLs and
+  one empty-`Artwork` entry all correctly render the fallback (4 placeholder
+  divs confirmed via DOM inspection); swapping one mock URL for a real
+  `data:` image URI confirmed the `<img>` success path renders at the
+  correct ~56-64px size (`complete: true`, correct `naturalWidth/Height`,
+  bounding box ~63×63px) — that swap was a temporary local-only test, not
+  committed. `npm run build` (`vue-tsc -b && vite build`) passes. No
+  backend tests were run since no backend file changed.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.
