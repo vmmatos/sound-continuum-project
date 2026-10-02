@@ -23,8 +23,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="mx-auto mt-12 max-w-3xl px-4 text-left">
-    <h2 class="text-2xl font-semibold tracking-tight">Candidate Review</h2>
+  <section class="mx-auto mt-8 max-w-3xl px-4 text-left">
+    <p class="text-xs font-medium uppercase tracking-widest text-muted-foreground">Candidate Review</p>
 
     <div v-if="status === 'loading'" class="mt-6 flex flex-col gap-4">
       <div v-for="i in 3" :key="i" class="flex flex-col gap-3 rounded-lg border border-border p-4">
@@ -37,8 +37,8 @@ onMounted(async () => {
     <p v-else-if="status === 'error'" class="mt-6 text-sm text-muted-foreground">Could not load the candidate pool.</p>
     <p v-else-if="status === 'empty'" class="mt-6 text-sm text-muted-foreground">No candidates available for review.</p>
     <template v-else>
-      <p class="mt-1 text-sm text-muted-foreground">{{ editionContext }}</p>
-      <p class="text-xs text-muted-foreground">{{ entries.length }} candidates</p>
+      <h2 class="mt-1 text-2xl font-semibold tracking-tight">{{ editionContext }}</h2>
+      <p class="mt-1 text-xs text-muted-foreground">{{ entries.length }} candidates</p>
       <TooltipProvider>
         <div class="mt-4 flex flex-col gap-4">
           <CandidateCard v-for="e in entries" :key="e.Ranked.Candidate.ID" :entry="e" />

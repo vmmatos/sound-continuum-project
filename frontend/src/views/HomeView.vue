@@ -35,12 +35,16 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main>
-    <h1>Sound Continuum</h1>
-    <p>Foundation for the weekly music curation workflow.</p>
-    <p class="backend-status">Backend: {{ backendStatus }}</p>
+  <header class="border-b border-border px-4 py-3">
+    <div class="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-x-6 gap-y-1">
+      <div>
+        <h1 class="text-base font-semibold tracking-tight">Sound Continuum</h1>
+        <p class="text-xs text-muted-foreground">Weekly music curation</p>
+      </div>
+      <p class="text-xs text-muted-foreground">Backend: {{ backendStatus }}</p>
+    </div>
 
-    <section class="spotify">
+    <div class="mx-auto mt-2 max-w-3xl text-xs text-muted-foreground">
       <template v-if="spotifyRedirectOutcome === 'denied'">
         <p>Spotify authorization was cancelled.</p>
       </template>
@@ -50,7 +54,12 @@ onMounted(async () => {
 
       <template v-if="spotifyStatus?.status === 'connected'">
         <p>Spotify connected{{ spotifyStatus.display_name ? ` as ${spotifyStatus.display_name}` : '' }}.</p>
-        <button @click="createOfficialPlaylist">Initialize official playlist</button>
+        <button
+          class="mt-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground"
+          @click="createOfficialPlaylist"
+        >
+          Initialize official playlist
+        </button>
         <p v-if="officialPlaylist">
           Official playlist: <a :href="officialPlaylist.url" target="_blank">{{ officialPlaylist.name }}</a>
         </p>
@@ -58,27 +67,21 @@ onMounted(async () => {
       </template>
       <template v-else-if="spotifyStatus?.status === 'authorization_required'">
         <p>Spotify authorization expired.</p>
-        <button @click="startSpotifyAuth">Reconnect Spotify</button>
+        <button
+          class="mt-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground"
+          @click="startSpotifyAuth"
+        >
+          Reconnect Spotify
+        </button>
       </template>
       <template v-else-if="spotifyStatus?.status === 'disconnected'">
-        <button @click="startSpotifyAuth">Connect Spotify</button>
+        <button
+          class="mt-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground"
+          @click="startSpotifyAuth"
+        >
+          Connect Spotify
+        </button>
       </template>
-    </section>
-  </main>
+    </div>
+  </header>
 </template>
-
-<style scoped>
-main {
-  text-align: center;
-  padding: 4rem 1rem;
-}
-
-.backend-status {
-  color: var(--text-h, #666);
-  font-size: 0.9rem;
-}
-
-.spotify {
-  margin-top: 2rem;
-}
-</style>

@@ -40,10 +40,10 @@ const rows = computed(() => [
 </script>
 
 <template>
-  <section>
+  <section class="rounded-md border border-border bg-card/60 p-3">
     <p class="text-[0.65rem] font-semibold uppercase tracking-widest text-muted-foreground">Musical bridge</p>
-    <p v-if="bridgeTrack" class="mt-1 text-sm">
-      {{ bridgeTrack }} <span class="text-muted-foreground">→</span> {{ candidateTitle }}
+    <p v-if="bridgeTrack" class="mt-1.5 text-sm font-medium">
+      {{ bridgeTrack }} <span class="text-primary">→</span> {{ candidateTitle }}
     </p>
     <div class="mt-2 flex flex-col gap-1">
       <div v-for="row in rows" :key="row.label" class="flex justify-between text-xs">

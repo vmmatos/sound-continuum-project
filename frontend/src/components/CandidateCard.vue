@@ -69,14 +69,12 @@ const provenanceText = computed(() => {
     <CardContent class="flex flex-col gap-3">
       <p class="text-sm leading-relaxed text-foreground/90">{{ entry.Explanation.Text }}</p>
 
-      <template v-if="entry.Bridge?.PotentialBridge">
-        <Separator />
-        <BridgeEvidence
-          :bridge-track="entry.BridgeTrack"
-          :candidate-title="entry.Ranked.Candidate.TrackTitle"
-          :bridge="entry.Bridge"
-        />
-      </template>
+      <BridgeEvidence
+        v-if="entry.Bridge?.PotentialBridge"
+        :bridge-track="entry.BridgeTrack"
+        :candidate-title="entry.Ranked.Candidate.TrackTitle"
+        :bridge="entry.Bridge"
+      />
 
       <Separator />
       <CandidateFactors :factors="entry.Ranked.Score.Factors" />
@@ -87,11 +85,11 @@ const provenanceText = computed(() => {
     <CardFooter class="justify-end">
       <Button
         type="button"
-        variant="outline"
+        variant="ghost"
         size="sm"
         @click="() => console.log('Open details', entry.Ranked.Candidate.ID)"
       >
-        Open details
+        Open details <span aria-hidden="true">→</span>
       </Button>
     </CardFooter>
   </Card>
