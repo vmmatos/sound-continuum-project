@@ -3,6 +3,8 @@ import { onMounted, ref } from 'vue'
 import { getCandidateReviewPool } from '../services/candidateReview'
 import type { CandidateReviewEntry } from '../types/candidateReview'
 import CandidateCard from '../components/CandidateCard.vue'
+import { Skeleton } from '@/components/ui/skeleton'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 const status = ref<'loading' | 'ok' | 'empty' | 'error'>('loading')
 const editionContext = ref('')
@@ -21,44 +23,27 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="candidate-review">
-    <h2>Candidate Review</h2>
+  <section class="mx-auto mt-12 max-w-3xl px-4 text-left">
+    <h2 class="text-2xl font-semibold tracking-tight">Candidate Review</h2>
 
-    <p v-if="status === 'loading'">Loading candidate pool...</p>
-    <p v-else-if="status === 'error'">Could not load the candidate pool.</p>
-    <p v-else-if="status === 'empty'">No candidates available for review.</p>
-    <template v-else>
-      <p class="context">{{ editionContext }}</p>
-      <p class="count">{{ entries.length }} candidates</p>
-      <div class="list">
-        <CandidateCard v-for="e in entries" :key="e.Ranked.Candidate.ID" :entry="e" />
+    <div v-if="status === 'loading'" class="mt-6 flex flex-col gap-4">
+      <div v-for="i in 3" :key="i" class="flex flex-col gap-3 rounded-lg border border-border p-4">
+        <Skeleton class="h-5 w-48" />
+        <Skeleton class="h-3 w-32" />
+        <Skeleton class="mt-2 h-2 w-full" />
+        <Skeleton class="h-2 w-full" />
       </div>
+    </div>
+    <p v-else-if="status === 'error'" class="mt-6 text-sm text-muted-foreground">Could not load the candidate pool.</p>
+    <p v-else-if="status === 'empty'" class="mt-6 text-sm text-muted-foreground">No candidates available for review.</p>
+    <template v-else>
+      <p class="mt-1 text-sm text-muted-foreground">{{ editionContext }}</p>
+      <p class="text-xs text-muted-foreground">{{ entries.length }} candidates</p>
+      <TooltipProvider>
+        <div class="mt-4 flex flex-col gap-4">
+          <CandidateCard v-for="e in entries" :key="e.Ranked.Candidate.ID" :entry="e" />
+        </div>
+      </TooltipProvider>
     </template>
   </section>
 </template>
-
-<style scoped>
-.candidate-review {
-  max-width: 960px;
-  margin: 2rem auto 0;
-  padding: 0 1rem;
-  text-align: left;
-}
-
-.context {
-  color: var(--text-h, #666);
-  margin-bottom: 0.1rem;
-}
-
-.count {
-  color: var(--text-h, #666);
-  font-size: 0.9rem;
-  margin-top: 0;
-}
-
-.list {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-</style>

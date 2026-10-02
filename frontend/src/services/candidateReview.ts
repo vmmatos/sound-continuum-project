@@ -139,7 +139,7 @@ const mockCandidateReviewPool: CandidateReviewPool = {
         },
       },
       Explanation: {
-        Text: 'Good diversity contribution and no repetition concerns; playlist sequencing has not been evaluated yet.',
+        Text: 'Good diversity contribution and no recent repetition concerns.',
         Reasons: ['diversity_contribution', 'fresh_playlist_history'],
       },
       Bridge: null,

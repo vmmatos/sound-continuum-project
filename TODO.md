@@ -967,6 +967,34 @@
 - [x] Project memory updated (`current-state.md`, `decisions.md`,
       `roadmap.md`)
 
+### Follow-up — UI Refinement & shadcn-vue Foundation
+
+- [x] Tailwind CSS v4 + `@tailwindcss/vite` and seven shadcn-vue components
+      (`Card`, `Badge`, `Button`, `Progress`, `Separator`, `Tooltip`,
+      `Skeleton`; style `reka-mira`, base color `zinc`) adopted as the
+      frontend's first UI-level dependencies, scoped to this screen
+- [x] `CandidateCard.vue` rewritten on shadcn components; split into
+      `CandidateFactors.vue` and `BridgeEvidence.vue`; `FactorBar.vue`
+      deleted (fully replaced)
+- [x] App is dark-only (`<html class="dark">`); `HomeView.vue` now renders
+      dark too, replacing its previous light/dark-adaptive look
+- [x] Dark-editorial palette: near-black background, warm amber/copper
+      accent (`--primary`), tightened `--radius`; typography stays
+      system-font-only (no new font dependency)
+- [x] Provenance display rewritten from raw `Method.replace(/_/g, ' ')` to
+      an editorial-label mapping
+- [x] One mock `Explanation.Text` shortened to stop describing internal
+      not-yet-evaluated factor state; ranks/order/`FinalScore`/null-score
+      entry unchanged
+- [x] Unused `@lucide/vue` (added by the shadcn-vue CLI's init step)
+      removed — none of the seven components use an icon
+- [x] No selection/publish/reject action introduced — "Open details"
+      remains the only button on a candidate card
+- [x] Re-verified in a real browser (Playwright CLI screenshots) at
+      desktop and ~400px widths
+- [x] `npm run build` (`vue-tsc -b && vite build`) verified clean
+- [x] Project memory updated (`current-state.md`, `decisions.md`)
+
 ## In progress
 
 - Nothing currently in progress.
