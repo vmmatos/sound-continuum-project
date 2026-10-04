@@ -1467,6 +1467,19 @@
   but worth remembering before trusting a "nothing changed" result against
   `make docker-up`.
 
+  A second, later live check (same session, ~20 minutes after the first)
+  re-confirmed `maxRetryableWait` is doing its job — `POST
+  /api/discovery/classic` returned in ~1s and the real `Retry-After` had
+  counted down to `22h40m8s` (from `22h45m` at the first check) — and
+  surfaced that the Card #36 quota state has since widened to cover
+  `Search` too (`resolveArtist`'s own call), not just `ArtistAlbums`:
+  failures now read `Stage: "resolve"` instead of `Stage: "albums"`.
+  `GET /api/candidates/review` returned in ~12s with a `503` whose body is
+  `"Sound Continuum playlist is not initialized"` — the official playlist
+  was never created against this Docker instance's own SQLite volume
+  (same Card #30/#37 per-database limitation already noted above), not a
+  retry/backoff issue. No code changed in this check — confirmation only.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.
