@@ -57,7 +57,9 @@ func (s *Service) EnrichCandidateMetadata(ctx context.Context, candidates []cand
 			continue
 		}
 
-		track, err := s.spotify.Track(ctx, c.SpotifyTrackID)
+		track, err := retryOn429(s.sleep, func() (spotify.Track, error) {
+			return s.spotify.Track(ctx, c.SpotifyTrackID)
+		})
 		if isConnectionError(err) {
 			return result, err
 		}

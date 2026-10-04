@@ -1513,3 +1513,171 @@ func TestEmergingHandlerNotConnectedMapsTo503(t *testing.T) {
 		t.Fatalf("expected 503, got %d", rec.Code)
 	}
 }
+
+// --- retryOn429 (Card #129: self-inflicted burst backoff) ---
+//
+// A real *spotify.APIError wrapping spotify.ErrRateLimited can only be
+// constructed via package spotify's own (unexported) newAPIError, reached
+// through an actual HTTP round trip — so these tests point a real
+// spotify.Client at an httptest.Server rather than fakeCatalogue (whose
+// errors are caller-supplied values, not real APIErrors).
+
+// rateLimitedThenServer replies 429 (with the given Retry-After seconds) to
+// the first failCount requests, then 200 with an empty artist search result.
+func rateLimitedThenServer(t *testing.T, failCount int, retryAfterSeconds int) (*httptest.Server, *int) {
+	t.Helper()
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls <= failCount {
+			w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfterSeconds))
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"artists":{"items":[],"total":0,"limit":5,"offset":0}}`))
+	}))
+	t.Cleanup(server.Close)
+	return server, &calls
+}
+
+func searchViaClient(client *spotify.Client) (spotify.SearchResult, error) {
+	return client.Search(context.Background(), "token", "query", "artist", 5, 0)
+}
+
+func TestRetryOn429RecoversAfterBackoff(t *testing.T) {
+	server, calls := rateLimitedThenServer(t, 1, 2)
+	client := spotify.NewClient("id", "secret")
+	client.APIBaseURL = server.URL
+
+	var slept []time.Duration
+	sleep := func(d time.Duration) { slept = append(slept, d) }
+
+	_, err := retryOn429(sleep, func() (spotify.SearchResult, error) { return searchViaClient(client) })
+	if err != nil {
+		t.Fatalf("expected success after one retry, got %v", err)
+	}
+	if *calls != 2 {
+		t.Fatalf("expected 2 HTTP calls (1 failure + 1 retry), got %d", *calls)
+	}
+	if len(slept) != 1 || slept[0] != 2*time.Second {
+		t.Fatalf("expected one 2s sleep (from Retry-After), got %v", slept)
+	}
+}
+
+func TestRetryOn429DefaultsToOneSecondWithNoRetryAfter(t *testing.T) {
+	server, _ := rateLimitedThenServer(t, 1, 0)
+	client := spotify.NewClient("id", "secret")
+	client.APIBaseURL = server.URL
+
+	var slept []time.Duration
+	sleep := func(d time.Duration) { slept = append(slept, d) }
+
+	if _, err := retryOn429(sleep, func() (spotify.SearchResult, error) { return searchViaClient(client) }); err != nil {
+		t.Fatalf("expected success after one retry, got %v", err)
+	}
+	if len(slept) != 1 || slept[0] != time.Second {
+		t.Fatalf("expected one 1s default sleep, got %v", slept)
+	}
+}
+
+func TestRetryOn429GivesUpAfterMaxRetries(t *testing.T) {
+	server, calls := rateLimitedThenServer(t, maxRateLimitRetries+10, 0)
+	client := spotify.NewClient("id", "secret")
+	client.APIBaseURL = server.URL
+
+	var slept []time.Duration
+	sleep := func(d time.Duration) { slept = append(slept, d) }
+
+	_, err := retryOn429(sleep, func() (spotify.SearchResult, error) { return searchViaClient(client) })
+	if !errors.Is(err, spotify.ErrRateLimited) {
+		t.Fatalf("expected a rate-limited error after exhausting retries, got %v", err)
+	}
+	if *calls != maxRateLimitRetries+1 {
+		t.Fatalf("expected %d calls (1 initial + %d retries), got %d", maxRateLimitRetries+1, maxRateLimitRetries, *calls)
+	}
+	if len(slept) != maxRateLimitRetries {
+		t.Fatalf("expected %d sleeps, got %d", maxRateLimitRetries, len(slept))
+	}
+}
+
+func TestRetryOn429PassesThroughNonRateLimitErrorUnchanged(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+	client := spotify.NewClient("id", "secret")
+	client.APIBaseURL = server.URL
+
+	var slept []time.Duration
+	sleep := func(d time.Duration) { slept = append(slept, d) }
+
+	_, err := retryOn429(sleep, func() (spotify.SearchResult, error) { return searchViaClient(client) })
+	if !errors.Is(err, spotify.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound passed through, got %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("expected exactly 1 call for a non-retryable error, got %d", calls)
+	}
+	if len(slept) != 0 {
+		t.Fatalf("expected no sleeps for a non-retryable error, got %v", slept)
+	}
+}
+
+// TestDiscoverClassicRecoversFromSelfInflictedBurst is the integration-level
+// check for Card #129: resolveArtist's Search call — the first Spotify call
+// every reference artist makes — recovers from one 429 via retryOn429,
+// instead of the whole run reporting a "resolve" Failure for every artist.
+func TestDiscoverClassicRecoversFromSelfInflictedBurst(t *testing.T) {
+	server, calls := rateLimitedThenServer(t, 1, 1)
+	client := spotify.NewClient("id", "secret")
+	client.APIBaseURL = server.URL
+
+	svc := &Service{classicCfg: testConfig(), sleep: func(time.Duration) {}}
+	svc.spotify = &realSearchOnlyCatalogue{client: client}
+
+	result, err := svc.DiscoverClassic(context.Background())
+	if err != nil {
+		t.Fatalf("DiscoverClassic returned an error: %v", err)
+	}
+	if len(result.Failures) != 0 {
+		t.Fatalf("expected no failures once the burst recovers, got %v", result.Failures)
+	}
+	if *calls < 2 {
+		t.Fatalf("expected at least 2 HTTP calls (1 failure + 1 retry), got %d", *calls)
+	}
+}
+
+// realSearchOnlyCatalogue routes Search through a real spotify.Client
+// (needed to produce a real *spotify.APIError for retryOn429 to inspect)
+// while ArtistAlbums/AlbumTracks return empty results — this test only
+// exercises resolveArtist's backoff, not the full album/track walk.
+type realSearchOnlyCatalogue struct {
+	client *spotify.Client
+}
+
+func (f *realSearchOnlyCatalogue) Search(ctx context.Context, query, types string, limit, offset int) (spotify.SearchResult, error) {
+	return searchViaClient(f.client)
+}
+
+func (f *realSearchOnlyCatalogue) ArtistAlbums(ctx context.Context, artistID string, limit, offset int) (spotify.Paging[spotify.Album], error) {
+	return spotify.Paging[spotify.Album]{}, nil
+}
+
+func (f *realSearchOnlyCatalogue) AlbumTracks(ctx context.Context, albumID string, limit, offset int) (spotify.Paging[spotify.Track], error) {
+	return spotify.Paging[spotify.Track]{}, nil
+}
+
+func (f *realSearchOnlyCatalogue) PlaylistItems(ctx context.Context, playlistID string, limit, offset int) (spotify.Paging[spotify.PlaylistItem], error) {
+	return spotify.Paging[spotify.PlaylistItem]{}, nil
+}
+
+func (f *realSearchOnlyCatalogue) OfficialPlaylist(ctx context.Context) (*spotify.OfficialPlaylist, error) {
+	return nil, spotify.ErrOfficialPlaylistNotConfigured
+}
+
+func (f *realSearchOnlyCatalogue) Track(ctx context.Context, trackID string) (spotify.Track, error) {
+	return spotify.Track{}, spotify.ErrNotFound
+}
