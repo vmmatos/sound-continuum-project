@@ -100,7 +100,18 @@ const provenanceText = computed(() => {
       <p v-if="provenanceText" class="text-xs text-muted-foreground">{{ provenanceText }}</p>
     </CardContent>
 
-    <CardFooter class="justify-end">
+    <CardFooter class="justify-end gap-1">
+      <Button
+        v-if="entry.Ranked.Candidate.Metadata?.SpotifyURL"
+        as="a"
+        :href="entry.Ranked.Candidate.Metadata.SpotifyURL"
+        target="_blank"
+        rel="noopener noreferrer"
+        variant="ghost"
+        size="sm"
+      >
+        Listen on Spotify
+      </Button>
       <Button
         type="button"
         variant="ghost"
