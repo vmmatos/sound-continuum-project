@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1530,7 +1531,7 @@ func rateLimitedThenServer(t *testing.T, failCount int, retryAfterSeconds int) (
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		if calls <= failCount {
-			w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfterSeconds))
+			w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds))
 			w.WriteHeader(http.StatusTooManyRequests)
 			return
 		}
@@ -1636,7 +1637,7 @@ func TestDiscoverClassicRecoversFromSelfInflictedBurst(t *testing.T) {
 	client.APIBaseURL = server.URL
 
 	svc := &Service{classicCfg: testConfig(), sleep: func(time.Duration) {}}
-	svc.spotify = &realSearchOnlyCatalogue{client: client}
+	svc.spotify = &realClientCatalogue{client: client}
 
 	result, err := svc.DiscoverClassic(context.Background())
 	if err != nil {
@@ -1650,34 +1651,36 @@ func TestDiscoverClassicRecoversFromSelfInflictedBurst(t *testing.T) {
 	}
 }
 
-// realSearchOnlyCatalogue routes Search through a real spotify.Client
-// (needed to produce a real *spotify.APIError for retryOn429 to inspect)
-// while ArtistAlbums/AlbumTracks return empty results — this test only
-// exercises resolveArtist's backoff, not the full album/track walk.
-type realSearchOnlyCatalogue struct {
+// realClientCatalogue routes every spotifyCatalogue method a retryOn429
+// regression test might exercise through a real spotify.Client, needed to
+// produce a genuine *spotify.APIError for retryOn429 to inspect
+// (fakeCatalogue's errors are caller-supplied values, not real APIErrors).
+// Shared by discovery_test.go and metadata_enrichment_test.go.
+// PlaylistItems/OfficialPlaylist are stubbed — unused by either.
+type realClientCatalogue struct {
 	client *spotify.Client
 }
 
-func (f *realSearchOnlyCatalogue) Search(ctx context.Context, query, types string, limit, offset int) (spotify.SearchResult, error) {
-	return searchViaClient(f.client)
+func (f *realClientCatalogue) Search(ctx context.Context, query, types string, limit, offset int) (spotify.SearchResult, error) {
+	return f.client.Search(ctx, "token", query, types, limit, offset)
 }
 
-func (f *realSearchOnlyCatalogue) ArtistAlbums(ctx context.Context, artistID string, limit, offset int) (spotify.Paging[spotify.Album], error) {
-	return spotify.Paging[spotify.Album]{}, nil
+func (f *realClientCatalogue) ArtistAlbums(ctx context.Context, artistID string, limit, offset int) (spotify.Paging[spotify.Album], error) {
+	return f.client.ArtistAlbums(ctx, "token", artistID, limit, offset)
 }
 
-func (f *realSearchOnlyCatalogue) AlbumTracks(ctx context.Context, albumID string, limit, offset int) (spotify.Paging[spotify.Track], error) {
-	return spotify.Paging[spotify.Track]{}, nil
+func (f *realClientCatalogue) AlbumTracks(ctx context.Context, albumID string, limit, offset int) (spotify.Paging[spotify.Track], error) {
+	return f.client.AlbumTracks(ctx, "token", albumID, limit, offset)
 }
 
-func (f *realSearchOnlyCatalogue) PlaylistItems(ctx context.Context, playlistID string, limit, offset int) (spotify.Paging[spotify.PlaylistItem], error) {
+func (f *realClientCatalogue) PlaylistItems(ctx context.Context, playlistID string, limit, offset int) (spotify.Paging[spotify.PlaylistItem], error) {
 	return spotify.Paging[spotify.PlaylistItem]{}, nil
 }
 
-func (f *realSearchOnlyCatalogue) OfficialPlaylist(ctx context.Context) (*spotify.OfficialPlaylist, error) {
+func (f *realClientCatalogue) OfficialPlaylist(ctx context.Context) (*spotify.OfficialPlaylist, error) {
 	return nil, spotify.ErrOfficialPlaylistNotConfigured
 }
 
-func (f *realSearchOnlyCatalogue) Track(ctx context.Context, trackID string) (spotify.Track, error) {
-	return spotify.Track{}, spotify.ErrNotFound
+func (f *realClientCatalogue) Track(ctx context.Context, trackID string) (spotify.Track, error) {
+	return f.client.Track(ctx, "token", trackID)
 }

@@ -387,35 +387,6 @@ func TestEnrichCandidateMetadataMissingOptionalFieldsStaySafe(t *testing.T) {
 	}
 }
 
-// realTrackOnlyCatalogue routes Track through a real spotify.Client so a
-// 429 response produces a genuine *spotify.APIError for retryOn429 to
-// inspect (fakeCatalogue's errors are caller-supplied values, not real
-// APIErrors — see discovery_test.go's retryOn429 tests for the same
-// reasoning). The other spotifyCatalogue methods are unused by
-// EnrichCandidateMetadata.
-type realTrackOnlyCatalogue struct {
-	client *spotify.Client
-}
-
-func (f *realTrackOnlyCatalogue) Search(ctx context.Context, query, types string, limit, offset int) (spotify.SearchResult, error) {
-	return spotify.SearchResult{}, spotify.ErrNotFound
-}
-func (f *realTrackOnlyCatalogue) ArtistAlbums(ctx context.Context, artistID string, limit, offset int) (spotify.Paging[spotify.Album], error) {
-	return spotify.Paging[spotify.Album]{}, nil
-}
-func (f *realTrackOnlyCatalogue) AlbumTracks(ctx context.Context, albumID string, limit, offset int) (spotify.Paging[spotify.Track], error) {
-	return spotify.Paging[spotify.Track]{}, nil
-}
-func (f *realTrackOnlyCatalogue) PlaylistItems(ctx context.Context, playlistID string, limit, offset int) (spotify.Paging[spotify.PlaylistItem], error) {
-	return spotify.Paging[spotify.PlaylistItem]{}, nil
-}
-func (f *realTrackOnlyCatalogue) OfficialPlaylist(ctx context.Context) (*spotify.OfficialPlaylist, error) {
-	return nil, spotify.ErrOfficialPlaylistNotConfigured
-}
-func (f *realTrackOnlyCatalogue) Track(ctx context.Context, trackID string) (spotify.Track, error) {
-	return f.client.Track(ctx, "token", trackID)
-}
-
 // TestEnrichCandidateMetadataRetriesRateLimitedTrack is the Card #129
 // regression check for EnrichCandidateMetadata's own burst risk: it calls
 // Track once per eligible candidate, sequentially, with the same lack of
@@ -439,7 +410,7 @@ func TestEnrichCandidateMetadataRetriesRateLimitedTrack(t *testing.T) {
 	client.APIBaseURL = server.URL
 
 	svc := &Service{
-		spotify: &realTrackOnlyCatalogue{client: client},
+		spotify: &realClientCatalogue{client: client},
 		sleep:   func(time.Duration) {},
 	}
 
