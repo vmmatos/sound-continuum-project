@@ -766,22 +766,32 @@ func walkPages[T any](maxItems, maxPageSize int, fetch func(limit, offset int) (
 	return items, nil
 }
 
-// maxRateLimitRetries bounds retryOn429's attempts. A long-lived,
-// per-app quota state (hours-long Retry-After, see decisions.md's Card #36
-// note) is not retried away by this — it's meant for a self-inflicted
-// burst recovering within a few short waits, not an unbounded retry loop.
+// maxRateLimitRetries bounds retryOn429's attempts at the self-inflicted
+// burst this helper targets — a few short waits, not an unbounded retry
+// loop.
 const maxRateLimitRetries = 3
 
+// maxRetryableWait caps which Retry-After values retryOn429 will actually
+// sleep through. Spotify documents its own rate limit as a rolling
+// 30-second window (docs/spotify-api.md §2.9); a Retry-After past that
+// can only be the separate, long-lived per-app quota state (Card #36),
+// not the burst this package's own sequential calls can self-inflict.
+// Sleeping that out would tie up the request for hours for no benefit —
+// confirmed live during Card #129 verification (~22h45m Retry-After) — so
+// it's treated as non-retryable instead, same as any other error.
+const maxRetryableWait = 30 * time.Second
+
 // retryOn429 calls fn, retrying up to maxRateLimitRetries times whenever it
-// fails with spotify.ErrRateLimited, sleeping the response's Retry-After (or
-// 1s if Spotify sent none) between attempts. Every Spotify call this
-// package makes funnels through resolveArtist or a walkPages fetch
-// closure (plus EnrichCandidateMetadata's Track call) — wrapping each in
-// retryOn429 is what lets a self-inflicted burst of sequential calls,
-// which alone can exceed Spotify's rolling rate-limit window, recover
-// instead of cascading 429s through the rest of the run. Any other error
-// (including a 429 that still fails after the retry budget) is returned
-// unchanged.
+// fails with spotify.ErrRateLimited with a Retry-After within
+// maxRetryableWait, sleeping that Retry-After (or 1s if Spotify sent none)
+// between attempts. Every Spotify call this package makes funnels through
+// resolveArtist or a walkPages fetch closure (plus
+// EnrichCandidateMetadata's Track call) — wrapping each in retryOn429 is
+// what lets a self-inflicted burst of sequential calls, which alone can
+// exceed Spotify's rolling rate-limit window, recover instead of
+// cascading 429s through the rest of the run. Any other error (including
+// a 429 whose Retry-After is too long, or one that still fails after the
+// retry budget) is returned unchanged.
 func retryOn429[T any](sleep func(time.Duration), fn func() (T, error)) (T, error) {
 	for attempt := 0; ; attempt++ {
 		result, err := fn()
@@ -790,6 +800,17 @@ func retryOn429[T any](sleep func(time.Duration), fn func() (T, error)) (T, erro
 		}
 		var apiErr *spotify.APIError
 		if attempt >= maxRateLimitRetries || !errors.As(err, &apiErr) || !errors.Is(err, spotify.ErrRateLimited) {
+			return result, err
+		}
+		// A Retry-After beyond Spotify's own documented rolling window
+		// (docs/spotify-api.md §2.9) can't be the self-inflicted burst this
+		// retry exists for — it's the separate, long-lived per-app quota
+		// state (Card #36: hours-long Retry-After, confirmed live again at
+		// ~22h45m during Card #129 verification). Sleeping that out would
+		// tie up the request for the better part of a day for no benefit;
+		// give up immediately instead, same as any other non-retryable
+		// error.
+		if apiErr.RetryAfter > maxRetryableWait {
 			return result, err
 		}
 		wait := apiErr.RetryAfter

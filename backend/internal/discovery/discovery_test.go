@@ -1602,6 +1602,31 @@ func TestRetryOn429GivesUpAfterMaxRetries(t *testing.T) {
 	}
 }
 
+// TestRetryOn429GivesUpImmediatelyOnLongRetryAfter is the regression check
+// for Card #129's own bug: a real live-Spotify Retry-After of ~22h45m
+// (confirmed during that card's own verification) must never be slept
+// through — it's the separate, long-lived per-app quota state (Card #36),
+// not the burst retryOn429 exists to recover from.
+func TestRetryOn429GivesUpImmediatelyOnLongRetryAfter(t *testing.T) {
+	server, calls := rateLimitedThenServer(t, maxRateLimitRetries+10, int((22*time.Hour + 45*time.Minute).Seconds()))
+	client := spotify.NewClient("id", "secret")
+	client.APIBaseURL = server.URL
+
+	var slept []time.Duration
+	sleep := func(d time.Duration) { slept = append(slept, d) }
+
+	_, err := retryOn429(sleep, func() (spotify.SearchResult, error) { return searchViaClient(client) })
+	if !errors.Is(err, spotify.ErrRateLimited) {
+		t.Fatalf("expected a rate-limited error, got %v", err)
+	}
+	if *calls != 1 {
+		t.Fatalf("expected exactly 1 call (no retry attempted), got %d", *calls)
+	}
+	if len(slept) != 0 {
+		t.Fatalf("expected no sleeps for a Retry-After beyond maxRetryableWait, got %v", slept)
+	}
+}
+
 func TestRetryOn429PassesThroughNonRateLimitErrorUnchanged(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
