@@ -3,8 +3,11 @@ package discovery
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/vmmatos/sound-continuum-project/internal/candidate"
 	"github.com/vmmatos/sound-continuum-project/internal/spotify"
@@ -381,5 +384,50 @@ func TestEnrichCandidateMetadataMissingOptionalFieldsStaySafe(t *testing.T) {
 	}
 	if m.SpotifyURL != "" || m.Album.SpotifyURL != "" {
 		t.Errorf("expected empty URLs, got track=%q album=%q", m.SpotifyURL, m.Album.SpotifyURL)
+	}
+}
+
+// TestEnrichCandidateMetadataRetriesRateLimitedTrack is the Card #129
+// regression check for EnrichCandidateMetadata's own burst risk: it calls
+// Track once per eligible candidate, sequentially, with the same lack of
+// pacing DiscoverClassic/Current/Emerging had — so it needs the same
+// retryOn429 wrap.
+func TestEnrichCandidateMetadataRetriesRateLimitedTrack(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"id":"track-1","name":"Heroes"}`))
+	}))
+	defer server.Close()
+
+	client := spotify.NewClient("id", "secret")
+	client.APIBaseURL = server.URL
+
+	svc := &Service{
+		spotify: &realClientCatalogue{client: client},
+		sleep:   func(time.Duration) {},
+	}
+
+	result, err := svc.EnrichCandidateMetadata(context.Background(), []candidate.CandidateTrack{candidateFor(t, "track-1")})
+	if err != nil {
+		t.Fatalf("EnrichCandidateMetadata returned error: %v", err)
+	}
+	if len(result.Failures) != 0 {
+		t.Fatalf("expected the rate-limited call to recover via retry, got Failures=%+v", result.Failures)
+	}
+	if result.EnrichedCount != 1 {
+		t.Fatalf("EnrichedCount = %d, want 1", result.EnrichedCount)
+	}
+	if result.EnrichedCandidates[0].Metadata == nil || result.EnrichedCandidates[0].Metadata.Title != "Heroes" {
+		t.Fatalf("expected enriched metadata from the retried call, got %+v", result.EnrichedCandidates[0].Metadata)
+	}
+	if calls != 2 {
+		t.Fatalf("expected 2 HTTP calls (1 failure + 1 retry), got %d", calls)
 	}
 }

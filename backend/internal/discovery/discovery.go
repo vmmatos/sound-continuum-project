@@ -215,6 +215,10 @@ type Service struct {
 	// place in this repo that needs a clock seam (see decisions.md).
 	// Defaults to time.Now via NewService.
 	now func() time.Time
+	// sleep is retryOn429's wait mechanism, overridden directly by
+	// same-package tests so retry tests don't actually wait. Defaults to
+	// time.Sleep via NewService, same seam pattern as now.
+	sleep func(time.Duration)
 }
 
 // NewService wires a discovery Service to an existing spotify.Service and
@@ -229,6 +233,7 @@ func NewService(spotifyService *spotify.Service, lastfmClient *lastfm.Client, cl
 		emergingCfg:             emergingCfg,
 		recentTrackLookbackDays: recentTrackLookbackDays,
 		now:                     time.Now,
+		sleep:                   time.Sleep,
 	}
 }
 
@@ -308,7 +313,9 @@ artists:
 		}
 
 		albums, err := walkPages(s.classicCfg.MaxAlbumsPerArtist, maxArtistAlbumsPageSize, func(limit, offset int) (spotify.Paging[spotify.Album], error) {
-			return s.spotify.ArtistAlbums(ctx, artistID, limit, offset)
+			return retryOn429(s.sleep, func() (spotify.Paging[spotify.Album], error) {
+				return s.spotify.ArtistAlbums(ctx, artistID, limit, offset)
+			})
 		})
 		if isConnectionError(err) {
 			return result, err
@@ -325,7 +332,9 @@ artists:
 			}
 
 			tracks, err := walkPages(s.classicCfg.MaxTracksPerAlbum, maxAlbumTracksPageSize, func(limit, offset int) (spotify.Paging[spotify.Track], error) {
-				return s.spotify.AlbumTracks(ctx, album.ID, limit, offset)
+				return retryOn429(s.sleep, func() (spotify.Paging[spotify.Track], error) {
+					return s.spotify.AlbumTracks(ctx, album.ID, limit, offset)
+				})
 			})
 			if isConnectionError(err) {
 				return result, err
@@ -484,7 +493,9 @@ func (s *Service) recentTracksForArtist(ctx context.Context, artistID string, p 
 	cutoff := time.Now().AddDate(0, 0, -p.LookbackDays)
 
 	scanned, err := walkPages(p.MaxAlbumsScannedPerArtist, maxArtistAlbumsPageSize, func(limit, offset int) (spotify.Paging[spotify.Album], error) {
-		return s.spotify.ArtistAlbums(ctx, artistID, limit, offset)
+		return retryOn429(s.sleep, func() (spotify.Paging[spotify.Album], error) {
+			return s.spotify.ArtistAlbums(ctx, artistID, limit, offset)
+		})
 	})
 	if err != nil {
 		return recentCatalogue{}, "albums", err
@@ -514,7 +525,9 @@ func (s *Service) recentTracksForArtist(ctx context.Context, artistID string, p 
 
 	for _, album := range recent {
 		tracks, err := walkPages(p.MaxTracksPerAlbum, maxAlbumTracksPageSize, func(limit, offset int) (spotify.Paging[spotify.Track], error) {
-			return s.spotify.AlbumTracks(ctx, album.ID, limit, offset)
+			return retryOn429(s.sleep, func() (spotify.Paging[spotify.Track], error) {
+				return s.spotify.AlbumTracks(ctx, album.ID, limit, offset)
+			})
 		})
 		if isConnectionError(err) {
 			return recentCatalogue{}, "tracks", err
@@ -685,7 +698,9 @@ func parseReleaseDate(raw, precision string) (time.Time, bool) {
 // top 5 results. No fuzzy matching — an unresolved artist is surfaced,
 // never guessed.
 func (s *Service) resolveArtist(ctx context.Context, name string) (string, error) {
-	result, err := s.spotify.Search(ctx, name, "artist", 5, 0)
+	result, err := retryOn429(s.sleep, func() (spotify.SearchResult, error) {
+		return s.spotify.Search(ctx, name, "artist", 5, 0)
+	})
 	if err != nil {
 		return "", err
 	}
@@ -749,6 +764,61 @@ func walkPages[T any](maxItems, maxPageSize int, fetch func(limit, offset int) (
 		items = items[:maxItems]
 	}
 	return items, nil
+}
+
+// maxRateLimitRetries bounds retryOn429's attempts at the self-inflicted
+// burst this helper targets — a few short waits, not an unbounded retry
+// loop.
+const maxRateLimitRetries = 3
+
+// maxRetryableWait caps which Retry-After values retryOn429 will actually
+// sleep through. Spotify documents its own rate limit as a rolling
+// 30-second window (docs/spotify-api.md §2.9); a Retry-After past that
+// can only be the separate, long-lived per-app quota state (Card #36),
+// not the burst this package's own sequential calls can self-inflict.
+// Sleeping that out would tie up the request for hours for no benefit —
+// confirmed live during Card #129 verification (~22h45m Retry-After) — so
+// it's treated as non-retryable instead, same as any other error.
+const maxRetryableWait = 30 * time.Second
+
+// retryOn429 calls fn, retrying up to maxRateLimitRetries times whenever it
+// fails with spotify.ErrRateLimited with a Retry-After within
+// maxRetryableWait, sleeping that Retry-After (or 1s if Spotify sent none)
+// between attempts. Every Spotify call this package makes funnels through
+// resolveArtist or a walkPages fetch closure (plus
+// EnrichCandidateMetadata's Track call) — wrapping each in retryOn429 is
+// what lets a self-inflicted burst of sequential calls, which alone can
+// exceed Spotify's rolling rate-limit window, recover instead of
+// cascading 429s through the rest of the run. Any other error (including
+// a 429 whose Retry-After is too long, or one that still fails after the
+// retry budget) is returned unchanged.
+func retryOn429[T any](sleep func(time.Duration), fn func() (T, error)) (T, error) {
+	for attempt := 0; ; attempt++ {
+		result, err := fn()
+		if err == nil {
+			return result, nil
+		}
+		var apiErr *spotify.APIError
+		if attempt >= maxRateLimitRetries || !errors.As(err, &apiErr) || !errors.Is(err, spotify.ErrRateLimited) {
+			return result, err
+		}
+		// A Retry-After beyond Spotify's own documented rolling window
+		// (docs/spotify-api.md §2.9) can't be the self-inflicted burst this
+		// retry exists for — it's the separate, long-lived per-app quota
+		// state (Card #36: hours-long Retry-After, confirmed live again at
+		// ~22h45m during Card #129 verification). Sleeping that out would
+		// tie up the request for the better part of a day for no benefit;
+		// give up immediately instead, same as any other non-retryable
+		// error.
+		if apiErr.RetryAfter > maxRetryableWait {
+			return result, err
+		}
+		wait := apiErr.RetryAfter
+		if wait <= 0 {
+			wait = time.Second
+		}
+		sleep(wait)
+	}
 }
 
 // isConnectionError reports whether err means Spotify authentication is
