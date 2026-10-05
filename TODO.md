@@ -1072,6 +1072,37 @@
       frontend test runner exists in this repo, see `decisions.md`)
 - [x] Project memory updated (`current-state.md`, `decisions.md`, `TODO.md`)
 
+## Done (Bug fix — official Spotify playlist duplication at the root)
+
+- [x] `backend/internal/spotify/handlers.go` — `InitializeOfficialPlaylist`
+      now checks Spotify (exact, owned-name match via a new
+      `allOwnedPlaylists` full-pagination walk) before creating, instead of
+      only ever checking the local DB row — closes the gap that had
+      produced 3 real duplicate playlists on the connected account
+- [x] `backend/internal/spotify/errors.go` — new
+      `AmbiguousOfficialPlaylistError`/`ErrAmbiguousOfficialPlaylist`,
+      mapped to `409` in `writeSpotifyError`, for the "more than one
+      match" case (fails closed, never guesses)
+- [x] 6 new tests + 3 existing create-path tests updated to stub the new
+      `GET /v1/me/playlists` call (`handlers_test.go`)
+- [x] `go build ./...`, `go vet ./...`, `go test ./...` (full suite) all
+      verified clean
+- [x] Live verification caught a real bug in this fix's own first
+      version: the owner check compared `Owner.ID` against
+      `Connection.SpotifyUserID` (which prefers Spotify's `account_id`),
+      but `Owner.ID` is always the legacy `id` — on the real account these
+      differ, so the check never matched and the first live test **created
+      a 4th duplicate** instead of detecting the 3 that existed. Fixed to
+      compare against a fresh `Service.Me` call's `Profile.ID` instead;
+      re-verified live with all 4 duplicates present — correctly returns
+      `409` now, created no 5th (see `decisions.md` for the full story)
+- [x] Immediate `503` on this Docker instance unblocked via a one-time
+      manual local-DB reconciliation pointing at one of the 3 *original*
+      duplicates (not a code change — see `current-state.md`)
+- [x] `decisions.md` entry recording the partial reversal of Card #30's
+      original local-only decision
+- [x] Project memory updated (`current-state.md`, `decisions.md`, `TODO.md`)
+
 ## In progress
 
 - Nothing currently in progress.

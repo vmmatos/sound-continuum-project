@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -850,7 +851,14 @@ func TestServiceAlbumTracksPassesArgs(t *testing.T) {
 func TestInitializeOfficialPlaylistCreatesOnFirstCall(t *testing.T) {
 	var createCalls int
 	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/me", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"id": "user-1"})
+	})
 	mux.HandleFunc("/v1/me/playlists", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]any{"items": []any{}, "total": 0})
+			return
+		}
 		createCalls++
 		json.NewEncoder(w).Encode(map[string]any{
 			"id": "pl-official", "name": "Sound Continuum — Weekly Journey",
@@ -893,7 +901,14 @@ func TestInitializeOfficialPlaylistCreatesOnFirstCall(t *testing.T) {
 func TestInitializeOfficialPlaylistRequestBody(t *testing.T) {
 	var gotBody map[string]any
 	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/me", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"id": "user-1"})
+	})
 	mux.HandleFunc("/v1/me/playlists", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]any{"items": []any{}, "total": 0})
+			return
+		}
 		json.NewDecoder(r.Body).Decode(&gotBody)
 		json.NewEncoder(w).Encode(map[string]any{
 			"id": "pl-official", "name": "Sound Continuum — Weekly Journey",
@@ -970,7 +985,14 @@ func TestInitializeOfficialPlaylistIdempotentReturnsCachedWithoutCallingSpotify(
 func TestInitializeOfficialPlaylistCalledTwiceCreatesOnlyOnce(t *testing.T) {
 	var createCalls int
 	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/me", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"id": "user-1"})
+	})
 	mux.HandleFunc("/v1/me/playlists", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]any{"items": []any{}, "total": 0})
+			return
+		}
 		createCalls++
 		json.NewEncoder(w).Encode(map[string]any{
 			"id": "pl-official", "name": "Sound Continuum — Weekly Journey",
@@ -1063,6 +1085,9 @@ func TestInitializeOfficialPlaylistAuthorizationRequired(t *testing.T) {
 
 func TestInitializeOfficialPlaylistSpotifyErrorNotPersisted(t *testing.T) {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/me", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"id": "user-1"})
+	})
 	mux.HandleFunc("/v1/me/playlists", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "not allowed"}})
@@ -1095,6 +1120,9 @@ func TestInitializeOfficialPlaylistSpotifyErrorNotPersisted(t *testing.T) {
 
 func TestInitializePlaylistHandlerHTTP(t *testing.T) {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/me", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"id": "user-1"})
+	})
 	mux.HandleFunc("/v1/me/playlists", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"id": "pl-official", "name": "Sound Continuum — Weekly Journey",
@@ -1140,6 +1168,250 @@ func TestInitializePlaylistHandlerHTTP(t *testing.T) {
 	}
 	if second.SpotifyPlaylistID != first.SpotifyPlaylistID {
 		t.Errorf("expected the same playlist across calls, got %+v and %+v", first, second)
+	}
+}
+
+// upsertConnection is the Connection every InitializeOfficialPlaylist
+// existing-playlist-search test below needs, with a fixed SpotifyUserID
+// ("user-1") matched against Playlist.Owner.ID in test fixtures.
+func upsertConnection(t *testing.T, svc *Service, ctx context.Context) {
+	t.Helper()
+	if err := svc.store.Upsert(ctx, Connection{
+		AccessToken: "access-1", RefreshToken: "refresh-1", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), SpotifyUserID: "user-1", DisplayName: "Curator",
+	}); err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+}
+
+func TestInitializeOfficialPlaylistAdoptsSingleExistingMatch(t *testing.T) {
+	var createCalls int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/me", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"id": "user-1"})
+	})
+	mux.HandleFunc("/v1/me/playlists", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]any{
+				"items": []map[string]any{
+					{
+						"id": "pl-existing", "name": "Sound Continuum — Weekly Journey",
+						"owner":          map[string]any{"id": "user-1"},
+						"external_urls": map[string]any{"spotify": "https://open.spotify.com/playlist/pl-existing"},
+					},
+				},
+				"total": 1,
+			})
+			return
+		}
+		createCalls++
+		w.WriteHeader(http.StatusTeapot) // must never be reached
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc := newTestService(t, server.URL)
+	ctx := context.Background()
+	upsertConnection(t, svc, ctx)
+
+	official, err := svc.InitializeOfficialPlaylist(ctx)
+	if err != nil {
+		t.Fatalf("InitializeOfficialPlaylist returned error: %v", err)
+	}
+	if official.SpotifyPlaylistID != "pl-existing" {
+		t.Errorf("expected the existing Spotify playlist to be adopted, got %+v", official)
+	}
+	if createCalls != 0 {
+		t.Fatalf("expected no create call when an existing playlist matches, got %d", createCalls)
+	}
+
+	stored, err := svc.store.GetOfficialPlaylist(ctx)
+	if err != nil {
+		t.Fatalf("GetOfficialPlaylist returned error: %v", err)
+	}
+	if stored == nil || stored.SpotifyPlaylistID != "pl-existing" {
+		t.Fatalf("expected the adopted playlist to be persisted, got %+v", stored)
+	}
+}
+
+func TestInitializeOfficialPlaylistAmbiguousMatchesFailClosed(t *testing.T) {
+	var createCalls int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/me", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"id": "user-1"})
+	})
+	mux.HandleFunc("/v1/me/playlists", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]any{
+				"items": []map[string]any{
+					{"id": "pl-dup-1", "name": "Sound Continuum — Weekly Journey", "owner": map[string]any{"id": "user-1"}},
+					{"id": "pl-dup-2", "name": "Sound Continuum — Weekly Journey", "owner": map[string]any{"id": "user-1"}},
+				},
+				"total": 2,
+			})
+			return
+		}
+		createCalls++
+		w.WriteHeader(http.StatusTeapot) // must never be reached
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc := newTestService(t, server.URL)
+	ctx := context.Background()
+	upsertConnection(t, svc, ctx)
+
+	_, err := svc.InitializeOfficialPlaylist(ctx)
+	var ambiguous *AmbiguousOfficialPlaylistError
+	if !errors.As(err, &ambiguous) {
+		t.Fatalf("expected *AmbiguousOfficialPlaylistError, got %v", err)
+	}
+	if len(ambiguous.Matches) != 2 {
+		t.Errorf("expected 2 matches, got %d: %+v", len(ambiguous.Matches), ambiguous.Matches)
+	}
+	if createCalls != 0 {
+		t.Fatalf("expected no create call when matches are ambiguous, got %d", createCalls)
+	}
+	if stored, err := svc.store.GetOfficialPlaylist(ctx); err != nil || stored != nil {
+		t.Fatalf("expected nothing persisted when ambiguous, got stored=%+v err=%v", stored, err)
+	}
+}
+
+func TestInitializeOfficialPlaylistSearchWalksAllPages(t *testing.T) {
+	var createCalls, listCalls int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/me", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"id": "user-1"})
+	})
+	mux.HandleFunc("/v1/me/playlists", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			listCalls++
+			offset := r.URL.Query().Get("offset")
+			if offset == "0" {
+				// A full page of unrelated playlists — forces a second page.
+				items := make([]map[string]any, 50)
+				for i := range items {
+					items[i] = map[string]any{"id": fmt.Sprintf("other-%d", i), "name": "Unrelated", "owner": map[string]any{"id": "user-1"}}
+				}
+				json.NewEncoder(w).Encode(map[string]any{"items": items, "total": 51})
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{
+				"items": []map[string]any{
+					{
+						"id": "pl-on-page-2", "name": "Sound Continuum — Weekly Journey",
+						"owner":          map[string]any{"id": "user-1"},
+						"external_urls": map[string]any{"spotify": "https://open.spotify.com/playlist/pl-on-page-2"},
+					},
+				},
+				"total": 51,
+			})
+			return
+		}
+		createCalls++
+		w.WriteHeader(http.StatusTeapot)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc := newTestService(t, server.URL)
+	ctx := context.Background()
+	upsertConnection(t, svc, ctx)
+
+	official, err := svc.InitializeOfficialPlaylist(ctx)
+	if err != nil {
+		t.Fatalf("InitializeOfficialPlaylist returned error: %v", err)
+	}
+	if official.SpotifyPlaylistID != "pl-on-page-2" {
+		t.Errorf("expected the match on page 2 to be found, got %+v", official)
+	}
+	if listCalls != 2 {
+		t.Fatalf("expected the search to walk 2 pages, got %d", listCalls)
+	}
+	if createCalls != 0 {
+		t.Fatalf("expected no create call once page 2's match was found, got %d", createCalls)
+	}
+}
+
+func TestInitializeOfficialPlaylistNearNameDoesNotMatch(t *testing.T) {
+	var createCalls int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/me", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"id": "user-1"})
+	})
+	mux.HandleFunc("/v1/me/playlists", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]any{
+				"items": []map[string]any{
+					{"id": "pl-similar", "name": "Sound Continuum - Weekly Journey (old)", "owner": map[string]any{"id": "user-1"}},
+				},
+				"total": 1,
+			})
+			return
+		}
+		createCalls++
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "pl-official", "name": "Sound Continuum — Weekly Journey",
+			"external_urls": map[string]any{"spotify": "https://open.spotify.com/playlist/pl-official"},
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc := newTestService(t, server.URL)
+	ctx := context.Background()
+	upsertConnection(t, svc, ctx)
+
+	official, err := svc.InitializeOfficialPlaylist(ctx)
+	if err != nil {
+		t.Fatalf("InitializeOfficialPlaylist returned error: %v", err)
+	}
+	if official.SpotifyPlaylistID != "pl-official" {
+		t.Errorf("expected a new playlist to be created since no exact match exists, got %+v", official)
+	}
+	if createCalls != 1 {
+		t.Fatalf("expected exactly one create call, got %d", createCalls)
+	}
+}
+
+func TestInitializeOfficialPlaylistOtherOwnerDoesNotMatch(t *testing.T) {
+	var createCalls int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/me", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"id": "user-1"})
+	})
+	mux.HandleFunc("/v1/me/playlists", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]any{
+				"items": []map[string]any{
+					{"id": "pl-someone-elses", "name": "Sound Continuum — Weekly Journey", "owner": map[string]any{"id": "someone-else"}},
+				},
+				"total": 1,
+			})
+			return
+		}
+		createCalls++
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "pl-official", "name": "Sound Continuum — Weekly Journey",
+			"external_urls": map[string]any{"spotify": "https://open.spotify.com/playlist/pl-official"},
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc := newTestService(t, server.URL)
+	ctx := context.Background()
+	upsertConnection(t, svc, ctx)
+
+	official, err := svc.InitializeOfficialPlaylist(ctx)
+	if err != nil {
+		t.Fatalf("InitializeOfficialPlaylist returned error: %v", err)
+	}
+	if official.SpotifyPlaylistID != "pl-official" {
+		t.Errorf("expected a new playlist to be created since the name match is owned by someone else, got %+v", official)
+	}
+	if createCalls != 1 {
+		t.Fatalf("expected exactly one create call, got %d", createCalls)
 	}
 }
 

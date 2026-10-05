@@ -1399,6 +1399,55 @@
   with `Metadata: nil`, so it can never cause the empty-vs-degraded
   ambiguity this card addresses.
 
+- Bug fix (root cause of the Card #37 "Known limitation" entry above):
+  `Service.InitializeOfficialPlaylist`
+  (`backend/internal/spotify/handlers.go`) now checks Spotify itself
+  before creating the official playlist, closing the gap that had
+  produced real duplicate empty "Sound Continuum — Weekly Journey"
+  playlists on the connected account across different local SQLite files
+  (host `make backend-run` vs. Docker volumes). See
+  [`decisions.md`](decisions.md) for the full design (exact, owned-name
+  match via a new `allOwnedPlaylists` full-pagination walk; a local row
+  still short-circuits with zero Spotify calls; more than one match fails
+  closed with the new `*AmbiguousOfficialPlaylistError`/`409`, listing
+  every candidate ID, rather than guessing). 6 new tests in
+  `handlers_test.go` (adopt-single-match, ambiguous-fails-closed,
+  pagination-finds-a-later-page-match, near-name-doesn't-match,
+  other-owner-doesn't-match — plus 3 existing create-path tests updated
+  to also stub the new `GET /v1/me/playlists` call). `go build
+  ./...`/`go vet ./...`/`go test ./...` all pass (full suite).
+
+  Live verification (`make docker-up`, Spotify connected) caught a real
+  bug in this fix's own first version before it shipped: comparing
+  `Playlist.Owner.ID` against `Connection.SpotifyUserID` never matched,
+  because `SpotifyUserID` stores `Profile.UserID()` — which prefers
+  Spotify's newer `account_id` (Card #53-era decision) — while
+  `Owner.ID` is still only ever the legacy `id`. On this account those two
+  values differ (`tintim_22` vs `MyvpUGE9N3`), so the owner check always
+  failed, every existing playlist was treated as "no match," and the very
+  first live test of this fix **created a fourth duplicate** instead of
+  detecting the three that already existed — exactly the bug this card
+  set out to close, reproduced by the fix itself. Caught immediately via
+  the live test, not left in the shipped version: the comparison now
+  calls `Service.Me` directly and compares against `Profile.ID` (the same
+  legacy `id` namespace `Owner.ID` uses), re-verified live afterward —
+  with all **four** real duplicates now present, a repeat
+  `POST /api/spotify/playlist` correctly returned `409` listing all four
+  IDs, and created no fifth. The errant fourth playlist
+  (`6k8aY0Nh52Rgkf57FjP7iT`) is still sitting on the real account, same as
+  the original three — the curator's call to delete, not done
+  automatically.
+
+  The immediate `GET /api/candidates/review` `503` on this Docker instance
+  (empty local `official_playlist` row) was unblocked via a one-time
+  manual reconciliation — `docker compose exec backend sh -c "apk add
+  --no-cache sqlite && sqlite3 ..."` (the alpine image ships neither
+  `sqlite3` nor `python3`) inserting a row pointing at one of the four
+  existing duplicates (`3Ng7HvDMkGoRtLBjsGeA7V`, the original — arbitrary
+  among the three pre-existing ones, specifically not the accidental
+  fourth — all have 0 tracks) — not a code change, local dev-volume data
+  only.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

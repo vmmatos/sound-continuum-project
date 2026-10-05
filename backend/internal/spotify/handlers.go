@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -354,13 +355,40 @@ func (s *Service) AlbumTracks(ctx context.Context, albumID string, limit, offset
 	})
 }
 
+// allOwnedPlaylists walks every page of the curator's own Spotify
+// playlists. No cap — a missed page could hide an already-existing
+// official playlist, defeating InitializeOfficialPlaylist's whole
+// purpose (same reasoning as recent_track_filter.go's own full-playlist
+// walk in package discovery).
+func (s *Service) allOwnedPlaylists(ctx context.Context) ([]Playlist, error) {
+	const pageSize = 50
+	var all []Playlist
+	offset := 0
+	for {
+		page, err := s.Playlists(ctx, pageSize, offset)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page.Items...)
+		offset += len(page.Items)
+		if len(page.Items) < pageSize || offset >= page.Total {
+			break
+		}
+	}
+	return all, nil
+}
+
 // InitializeOfficialPlaylist ensures the one official Sound Continuum
-// Spotify playlist exists, creating it on Spotify at most once ever. If a
-// playlist is already persisted locally, it's returned immediately with
-// no Spotify call at all — no existence re-check, no name search. This is
-// deliberate (see decisions.md): it's what guarantees a second call can
-// never create a duplicate, and it means there is nothing to reconcile if
-// Spotify were ever unable to confirm the playlist still exists.
+// Spotify playlist exists. If a playlist is already persisted locally,
+// it's returned immediately with no Spotify call at all. Otherwise, it
+// checks Spotify itself for an existing playlist before creating a new
+// one: an exact (case-insensitive, trimmed), curator-owned name match —
+// never a fuzzy one, mirroring discovery.resolveArtist's own
+// exact-match-or-fail-closed convention — is adopted; no match creates
+// one via Spotify as before; more than one match fails closed with
+// *AmbiguousOfficialPlaylistError rather than guessing which to keep.
+// This reverses part of Card #30's original "local ID only, never search
+// Spotify" decision — see decisions.md for why.
 func (s *Service) InitializeOfficialPlaylist(ctx context.Context) (OfficialPlaylist, error) {
 	existing, err := s.store.GetOfficialPlaylist(ctx)
 	if err != nil {
@@ -368,6 +396,49 @@ func (s *Service) InitializeOfficialPlaylist(ctx context.Context) (OfficialPlayl
 	}
 	if existing != nil {
 		return *existing, nil
+	}
+
+	// Me, not conn.SpotifyUserID: Connection.SpotifyUserID is
+	// Profile.UserID(), which prefers Spotify's newer account_id over id
+	// (Card #53-era decision, for external linking). Playlist.Owner.id is
+	// still only ever the legacy id — comparing it against account_id
+	// would never match on an account where the two differ (confirmed
+	// live during this fix's own verification). Me() is the one call that
+	// gives us the same legacy id Owner.ID uses.
+	me, err := s.Me(ctx)
+	if err != nil {
+		return OfficialPlaylist{}, err
+	}
+
+	playlists, err := s.allOwnedPlaylists(ctx)
+	if err != nil {
+		return OfficialPlaylist{}, err
+	}
+
+	wantName := strings.ToLower(strings.TrimSpace(officialPlaylistName))
+	var matches []Playlist
+	for _, p := range playlists {
+		if p.Owner.ID == me.ID && strings.ToLower(strings.TrimSpace(p.Name)) == wantName {
+			matches = append(matches, p)
+		}
+	}
+
+	switch len(matches) {
+	case 1:
+		official := OfficialPlaylist{
+			SpotifyPlaylistID: matches[0].ID,
+			Name:              matches[0].Name,
+			URL:               matches[0].ExternalURLs.Spotify,
+		}
+		if err := s.store.SaveOfficialPlaylist(ctx, official); err != nil {
+			return OfficialPlaylist{}, err
+		}
+		return official, nil
+	default:
+		if len(matches) > 1 {
+			return OfficialPlaylist{}, &AmbiguousOfficialPlaylistError{Matches: matches}
+		}
+		// len(matches) == 0: fall through to create.
 	}
 
 	var created Playlist
@@ -549,6 +620,8 @@ func writeSpotifyError(w http.ResponseWriter, err error) {
 		http.Error(w, "Spotify is not connected", http.StatusServiceUnavailable)
 	case errors.Is(err, ErrInvalidGrant):
 		http.Error(w, "Spotify authorization required", http.StatusUnauthorized)
+	case errors.Is(err, ErrAmbiguousOfficialPlaylist):
+		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrRateLimited):
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.RetryAfter > 0 {
