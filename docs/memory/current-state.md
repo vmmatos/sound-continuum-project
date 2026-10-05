@@ -1399,6 +1399,87 @@
   with `Metadata: nil`, so it can never cause the empty-vs-degraded
   ambiguity this card addresses.
 
+- Bug fix (Issue #129): Candidate Review's own Spotify calls no longer
+  manufacture the rate limit they then fail on. `DiscoverClassic`/
+  `DiscoverCurrent`/`DiscoverEmerging` fire a large, fully sequential burst
+  of `Search`/`ArtistAlbums`/`AlbumTracks` calls (~74 reference/seed artists
+  across the three workflows, multiple stages each) with no spacing, which
+  alone was enough to exceed Spotify Development Mode's rolling 30-second
+  rate limit (`docs/spotify-api.md` §2.9) even when the account wasn't
+  otherwise throttled — once that happened, every remaining call in the
+  same burst also got `429`'d, so a whole review run came back empty.
+  `backend/internal/discovery/discovery.go` gains one generic helper,
+  `retryOn429` (next to `walkPages`), used at every Spotify call site this
+  package has: `resolveArtist`'s `Search` call, the 4 `walkPages` fetch
+  closures (Classic's own `ArtistAlbums`/`AlbumTracks` block, and the
+  shared `recentTracksForArtist`'s `ArtistAlbums`/`AlbumTracks`, used by
+  Current/Emerging), and `EnrichCandidateMetadata`'s per-candidate `Track`
+  call (`metadata_enrichment.go`) — the same sequential-burst risk, same
+  package, same fix, since `review.ReviewPool`'s pipeline runs `DiscoverPool
+  -> FilterRecentTracks -> EnrichCandidateMetadata` in one request.
+  `retryOn429` retries up to `maxRateLimitRetries` (3) times on
+  `spotify.ErrRateLimited`, sleeping the real `*spotify.APIError`'s already-
+  parsed `RetryAfter` (or 1s if Spotify sent none) between attempts via a
+  new `Service.sleep func(time.Duration)` field — the same clock-seam
+  pattern Card #37 already established for `now func() time.Time`, defaulted
+  to `time.Sleep` in `NewService`, overridden directly by same-package
+  tests so retry tests don't actually wait. A second constant,
+  `maxRetryableWait` (30s, matching the documented rolling window itself),
+  caps which `Retry-After` values are even eligible for a sleep — added
+  after live verification (against the real, connected Spotify account)
+  caught a genuine gap in the first version of this fix: `retryOn429`
+  slept the server's exact `Retry-After` with no upper bound, and
+  Spotify's separate, long-lived per-app quota state (Card #36) returns
+  `Retry-After` in hours (confirmed live at ~22h45m this session) — so the
+  first version would have tied up a request for most of a day instead of
+  degrading gracefully. A `Retry-After` beyond `maxRetryableWait` is now
+  treated as non-retryable and fails immediately, same as any other
+  error. No change to `spotify/errors.go`'s `APIError`/`RetryAfter`,
+  `walkPages`'s or `resolveArtist`'s exported behavior, or any handler — no
+  queue, no Redis, no distributed rate limiting. 10 new tests
+  (`discovery_test.go`, `metadata_enrichment_test.go`) point a real
+  `spotify.Client` at an `httptest.Server` returning `429`/`Retry-After`
+  (a bare caller-supplied error from the existing `fakeCatalogue` can't
+  satisfy `errors.As(err, *spotify.APIError)`, since `APIError`'s sentinel
+  field is unexported) and cover: recovery after one 429, the no-`Retry-
+  After` 1s default, giving up after `maxRateLimitRetries` with the right
+  call/sleep counts, giving up immediately (zero sleeps) on a `Retry-After`
+  past `maxRetryableWait` using the real ~22h45m value observed live, a
+  non-429 error passed through with zero sleeps, and one `DiscoverClassic`
+  + one `EnrichCandidateMetadata` integration-level check that a
+  self-inflicted burst of exactly this shape now recovers instead of
+  recording a failure. `go build ./...`/`go vet ./...`/`go test ./...` all
+  pass (full suite, not just `discovery`).
+
+  Real Spotify-connected verification (via `make docker-up`, reconnected
+  this session): `POST /api/discovery/classic` now returns in ~7s and
+  `GET /api/candidates/review` in ~40s (both previously indefinite hangs
+  under the pre-`maxRetryableWait` version) — both still report every
+  reference artist's `ArtistAlbums` call failing with `429`, which is the
+  pre-existing, already-documented Card #36 long-lived quota state, not a
+  Card #129 defect; this card's fix is specifically about not hanging on
+  it. Session note, not a code finding: initial live testing this session
+  was confused for a while by a stale `go run ./cmd/server` process left
+  running directly on the host from an earlier session, silently
+  intercepting all `localhost:8080` traffic meant for the Docker
+  container (and reading the host's separate SQLite file, per the
+  Card #30/#37 known-limitation entry above) — not a bug in this fix,
+  but worth remembering before trusting a "nothing changed" result against
+  `make docker-up`.
+
+  A second, later live check (same session, ~20 minutes after the first)
+  re-confirmed `maxRetryableWait` is doing its job — `POST
+  /api/discovery/classic` returned in ~1s and the real `Retry-After` had
+  counted down to `22h40m8s` (from `22h45m` at the first check) — and
+  surfaced that the Card #36 quota state has since widened to cover
+  `Search` too (`resolveArtist`'s own call), not just `ArtistAlbums`:
+  failures now read `Stage: "resolve"` instead of `Stage: "albums"`.
+  `GET /api/candidates/review` returned in ~12s with a `503` whose body is
+  `"Sound Continuum playlist is not initialized"` — the official playlist
+  was never created against this Docker instance's own SQLite volume
+  (same Card #30/#37 per-database limitation already noted above), not a
+  retry/backoff issue. No code changed in this check — confirmation only.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

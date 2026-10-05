@@ -1072,6 +1072,49 @@
       frontend test runner exists in this repo, see `decisions.md`)
 - [x] Project memory updated (`current-state.md`, `decisions.md`, `TODO.md`)
 
+## Done (Issue #129 — Candidate Review burst exceeds Spotify rate limit)
+
+- [x] `backend/internal/discovery/discovery.go` — new generic `retryOn429`
+      helper (next to `walkPages`), retrying up to `maxRateLimitRetries`
+      (3) on `spotify.ErrRateLimited`, sleeping the real `APIError`'s
+      `RetryAfter` (1s default if absent) via a new
+      `Service.sleep func(time.Duration)` seam (same pattern as Card #37's
+      `now`, defaulted to `time.Sleep` in `NewService`)
+- [x] Wired at every Spotify call site `discovery` makes: `resolveArtist`'s
+      `Search`, all 4 `walkPages` fetch closures (Classic's own block +
+      the shared `recentTracksForArtist` used by Current/Emerging), and
+      `metadata_enrichment.go`'s `EnrichCandidateMetadata` `Track` call —
+      so a self-inflicted burst across the whole `DiscoverPool ->
+      FilterRecentTracks -> EnrichCandidateMetadata` pipeline recovers
+      instead of cascading `429`s
+- [x] 10 new Go tests (`discovery_test.go`, `metadata_enrichment_test.go`)
+      against a real `spotify.Client` pointed at an `httptest.Server`
+      (needed for a genuine `*spotify.APIError` — `fakeCatalogue`'s
+      caller-supplied errors can't satisfy `errors.As`): recovery after
+      one 429, the no-`Retry-After` default, giving up after
+      `maxRateLimitRetries`, giving up immediately on a `Retry-After`
+      beyond `maxRetryableWait` (using the real ~22h45m value observed
+      live), a non-429 error passed through untouched, and one
+      `DiscoverClassic` + one `EnrichCandidateMetadata` end-to-end
+      recovery check
+- [x] Follow-up fix found via live verification: `maxRetryableWait` (30s,
+      matching the documented rolling window) caps which `Retry-After`
+      values `retryOn429` will sleep through — the first version slept
+      whatever Spotify sent with no cap, and the real long-lived per-app
+      quota state (Card #36) sends `Retry-After` in hours, which would
+      have hung a request for most of a day instead of degrading
+      gracefully
+- [x] `go build ./...`, `go vet ./...`, `go test ./...` (full suite) all
+      verified clean
+- [x] Real Spotify-connected verification via `make docker-up`:
+      `POST /api/discovery/classic` ~7s, `GET /api/candidates/review`
+      ~40s (both previously indefinite hangs pre-`maxRetryableWait`);
+      remaining per-artist `429`s are the pre-existing Card #36 quota
+      state, not a Card #129 defect
+- [x] Project memory updated (`current-state.md`, `TODO.md`) — no
+      `decisions.md` entry, this reuses Card #37's existing clock-seam
+      precedent rather than introducing new architecture
+
 ## In progress
 
 - Nothing currently in progress.
