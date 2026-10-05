@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -45,7 +46,33 @@ var (
 	// failure — this is a configuration state, not an error talking to
 	// Spotify.
 	ErrOfficialPlaylistNotConfigured = errors.New("spotify: official playlist not configured")
+
+	// ErrAmbiguousOfficialPlaylist is AmbiguousOfficialPlaylistError's
+	// sentinel, checked via errors.Is; use errors.As to get at the
+	// matching playlists themselves.
+	ErrAmbiguousOfficialPlaylist = errors.New("spotify: multiple existing playlists match the official playlist identity")
 )
+
+// AmbiguousOfficialPlaylistError is returned by InitializeOfficialPlaylist
+// when more than one of the curator's own Spotify playlists exactly
+// matches the official playlist's name — it never guesses which one is
+// "the" official one; the curator must resolve this manually (delete the
+// extras on Spotify, or point the local official_playlist row directly at
+// the one to keep).
+type AmbiguousOfficialPlaylistError struct {
+	Matches []Playlist
+}
+
+func (e *AmbiguousOfficialPlaylistError) Error() string {
+	ids := make([]string, len(e.Matches))
+	for i, p := range e.Matches {
+		ids[i] = p.ID
+	}
+	return fmt.Sprintf("%v: %d playlists named %q: %s",
+		ErrAmbiguousOfficialPlaylist, len(e.Matches), officialPlaylistName, strings.Join(ids, ", "))
+}
+
+func (e *AmbiguousOfficialPlaylistError) Unwrap() error { return ErrAmbiguousOfficialPlaylist }
 
 // APIError carries the HTTP status code, Spotify's own error message (safe
 // to surface — never a token/secret), and Retry-After for 429 responses.

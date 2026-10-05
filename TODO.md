@@ -1072,48 +1072,36 @@
       frontend test runner exists in this repo, see `decisions.md`)
 - [x] Project memory updated (`current-state.md`, `decisions.md`, `TODO.md`)
 
-## Done (Issue #129 — Candidate Review burst exceeds Spotify rate limit)
+## Done (Bug fix — official Spotify playlist duplication at the root)
 
-- [x] `backend/internal/discovery/discovery.go` — new generic `retryOn429`
-      helper (next to `walkPages`), retrying up to `maxRateLimitRetries`
-      (3) on `spotify.ErrRateLimited`, sleeping the real `APIError`'s
-      `RetryAfter` (1s default if absent) via a new
-      `Service.sleep func(time.Duration)` seam (same pattern as Card #37's
-      `now`, defaulted to `time.Sleep` in `NewService`)
-- [x] Wired at every Spotify call site `discovery` makes: `resolveArtist`'s
-      `Search`, all 4 `walkPages` fetch closures (Classic's own block +
-      the shared `recentTracksForArtist` used by Current/Emerging), and
-      `metadata_enrichment.go`'s `EnrichCandidateMetadata` `Track` call —
-      so a self-inflicted burst across the whole `DiscoverPool ->
-      FilterRecentTracks -> EnrichCandidateMetadata` pipeline recovers
-      instead of cascading `429`s
-- [x] 10 new Go tests (`discovery_test.go`, `metadata_enrichment_test.go`)
-      against a real `spotify.Client` pointed at an `httptest.Server`
-      (needed for a genuine `*spotify.APIError` — `fakeCatalogue`'s
-      caller-supplied errors can't satisfy `errors.As`): recovery after
-      one 429, the no-`Retry-After` default, giving up after
-      `maxRateLimitRetries`, giving up immediately on a `Retry-After`
-      beyond `maxRetryableWait` (using the real ~22h45m value observed
-      live), a non-429 error passed through untouched, and one
-      `DiscoverClassic` + one `EnrichCandidateMetadata` end-to-end
-      recovery check
-- [x] Follow-up fix found via live verification: `maxRetryableWait` (30s,
-      matching the documented rolling window) caps which `Retry-After`
-      values `retryOn429` will sleep through — the first version slept
-      whatever Spotify sent with no cap, and the real long-lived per-app
-      quota state (Card #36) sends `Retry-After` in hours, which would
-      have hung a request for most of a day instead of degrading
-      gracefully
+- [x] `backend/internal/spotify/handlers.go` — `InitializeOfficialPlaylist`
+      now checks Spotify (exact, owned-name match via a new
+      `allOwnedPlaylists` full-pagination walk) before creating, instead of
+      only ever checking the local DB row — closes the gap that had
+      produced 3 real duplicate playlists on the connected account
+- [x] `backend/internal/spotify/errors.go` — new
+      `AmbiguousOfficialPlaylistError`/`ErrAmbiguousOfficialPlaylist`,
+      mapped to `409` in `writeSpotifyError`, for the "more than one
+      match" case (fails closed, never guesses)
+- [x] 6 new tests + 3 existing create-path tests updated to stub the new
+      `GET /v1/me/playlists` call (`handlers_test.go`)
 - [x] `go build ./...`, `go vet ./...`, `go test ./...` (full suite) all
       verified clean
-- [x] Real Spotify-connected verification via `make docker-up`:
-      `POST /api/discovery/classic` ~7s, `GET /api/candidates/review`
-      ~40s (both previously indefinite hangs pre-`maxRetryableWait`);
-      remaining per-artist `429`s are the pre-existing Card #36 quota
-      state, not a Card #129 defect
-- [x] Project memory updated (`current-state.md`, `TODO.md`) — no
-      `decisions.md` entry, this reuses Card #37's existing clock-seam
-      precedent rather than introducing new architecture
+- [x] Live verification caught a real bug in this fix's own first
+      version: the owner check compared `Owner.ID` against
+      `Connection.SpotifyUserID` (which prefers Spotify's `account_id`),
+      but `Owner.ID` is always the legacy `id` — on the real account these
+      differ, so the check never matched and the first live test **created
+      a 4th duplicate** instead of detecting the 3 that existed. Fixed to
+      compare against a fresh `Service.Me` call's `Profile.ID` instead;
+      re-verified live with all 4 duplicates present — correctly returns
+      `409` now, created no 5th (see `decisions.md` for the full story)
+- [x] Immediate `503` on this Docker instance unblocked via a one-time
+      manual local-DB reconciliation pointing at one of the 3 *original*
+      duplicates (not a code change — see `current-state.md`)
+- [x] `decisions.md` entry recording the partial reversal of Card #30's
+      original local-only decision
+- [x] Project memory updated (`current-state.md`, `decisions.md`, `TODO.md`)
 
 ## In progress
 

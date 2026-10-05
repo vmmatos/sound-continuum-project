@@ -2559,3 +2559,77 @@ package.json`) driven against both the real dev server with mocked
 live, Spotify-connected backend for the degraded state. If a future card
 adopts a real frontend test runner, this card's two new states (`empty`/
 `degraded` in `CandidateReviewView.vue`) are natural first test cases.
+
+---
+
+**Decision:** `Service.InitializeOfficialPlaylist` now checks Spotify
+itself — an exact, case-insensitive, trimmed, curator-owned name match
+against the curator's own playlists — before creating a new one, instead
+of only ever checking the local `official_playlist` row. This partially
+reverses Card #30's original decision ("not discovered by name/search").
+
+**Context:** Card #30 deliberately chose a local-ID-only design, explicitly
+rejecting name search, reasoning "name search is inherently fuzzy and
+could match a renamed or unrelated playlist." That gap was caught live
+during Card #37 and logged as a known, deliberately-deferred limitation
+(see the "Known limitation (found during Card #37...)" entry above): this
+project has run against more than one local SQLite file (host
+`make backend-run` vs. Docker's `/data` volume, vs. a rebuilt/fresh
+volume), and every environment initializing for the first time created
+*another* real Spotify playlist, since the local row is the only thing
+that ever prevented a duplicate. By the time this decision was revisited,
+**three** duplicate empty "Sound Continuum — Weekly Journey" playlists
+existed on the real, connected account — confirmed live.
+
+**Reason:** The curator asked for this fixed at the root, not patched
+per-instance. Card #30's "fuzzy" worry doesn't apply to the mechanism
+actually used here: this is an **exact**, normalized-string match (never
+a similarity score), additionally scoped to playlists the curator owns
+(`Playlist.Owner.ID == Profile.ID`, via a fresh `Service.Me` call — see
+Consequences for why not `Connection.SpotifyUserID`) — the same
+exact-match-or-fail-closed convention `discovery.resolveArtist` already
+established for artist name resolution (no fuzzy matching; an unresolved
+name is surfaced, never guessed). Applying that same discipline here
+answers Card #30's concern directly rather than ignoring it: a near-but
+-different name, or a same-named playlist owned by someone else, still
+falls through to creating a new one rather than being mis-adopted. The
+one case the original decision didn't anticipate — more than one exact,
+owned match (the current real state) — is handled by failing closed
+(`*AmbiguousOfficialPlaylistError`, HTTP `409`, naming every candidate ID)
+rather than guessing which to keep, so the fix can never itself silently
+pick the wrong playlist.
+
+**Consequences:** `InitializeOfficialPlaylist` now makes two additional
+Spotify calls on every *first-ever* initialization against a given local
+database: `GET /v1/me` and `GET /v1/me/playlists` (walked across every
+page — a missed page could hide the very playlist being searched for,
+same reasoning as `recent_track_filter.go`'s own full-playlist walk); a
+local row already present still short-circuits with **zero** Spotify
+calls, exactly as before — idempotency within one database is unchanged.
+The owner check deliberately calls `Service.Me` fresh rather than reusing
+the already-stored `Connection.SpotifyUserID`: that field holds
+`Profile.UserID()`, which prefers Spotify's newer `account_id` over `id`
+(a Card #53-era decision, for external linking), but `Playlist.Owner.id`
+is still only ever the legacy `id`. **This was not a theoretical
+concern** — it's a real bug this fix's own first version shipped with:
+live verification against the real, connected account (where `id` =
+`tintim_22` and `account_id` = `MyvpUGE9N3`, confirmed via `GET
+/api/spotify/me`) found that comparing `Owner.ID` against
+`Connection.SpotifyUserID` never matched, so every existing duplicate
+read as "no match" and the first live test of this fix **created a
+fourth duplicate playlist** before the comparison was corrected to use
+`Profile.ID` from a fresh `Me` call instead. Re-verified live afterward
+with all four real duplicates present: a repeat
+`POST /api/spotify/playlist` correctly returned the ambiguous `409`
+listing all four IDs and created no fifth. `AmbiguousOfficialPlaylistError`/
+`ErrAmbiguousOfficialPlaylist` (`errors.go`) is a new typed error in the
+existing taxonomy convention, mapped to `409` in `writeSpotifyError`.
+This does **not** retroactively clean up the four existing duplicates
+(three original plus the one this fix's own bug created) — Spotify has
+no delete-playlist call anywhere in this codebase, and deleting playlists
+on the curator's real account is their call, not something done
+automatically; initializing against those four today correctly returns
+the ambiguous `409` instead of creating a fifth. The curator resolved the
+immediate blocker separately via a one-time manual local-DB reconciliation
+(pointing one Docker instance's row at one of the three *original*
+duplicates, not the accidental fourth) — see `current-state.md`.
