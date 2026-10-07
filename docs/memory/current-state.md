@@ -1518,6 +1518,45 @@
   (the same pre-existing condition documented for Cards #36/#37/#39/#53/
   #126), but every existing real-mode test still passes unmodified.
 
+- Candidate Review's Keep action is now reversible, and a second decision
+  state, Maybe, is implemented alongside it (Card #57, see
+  [`decisions.md`](decisions.md)). `candidate.StatusUnderReview` is
+  reinstated — the second of the three lifecycle values Card 31 trimmed,
+  now with a real caller — `Status.Valid()` is a 3-way switch
+  (`discovered`/`selected`/`under review`). No new persistence: the Card
+  #56 `candidate_selection` table (one row per `candidate_id`) already
+  stored `status` as a column, so Keep/Maybe are mutually exclusive by
+  construction — writing one overwrites the other, no extra check needed.
+  `selection.Store` gained `Maybe` (upsert `under review`) and `Clear`
+  (idempotent delete, returns the candidate to neutral/`discovered`),
+  alongside the existing `Keep`; `Keep`/`Maybe` now share an unexported
+  `setStatus` helper and `AllSelected`/`AllUnderReview` share an unexported
+  `allWithStatus` helper — small refactors, not new abstractions.
+  `POST /api/candidates/{id}/maybe` and `POST /api/candidates/{id}/clear`
+  are new, siblings of the existing `/keep` endpoint; all three stay plain,
+  idempotent "set"/"clear" operations — the undo/toggle behavior the UI
+  needs is a frontend decision about which endpoint to call, not backend
+  state. `review.Service.ReviewPool`'s `selectionLookup` gained
+  `AllUnderReview`, overlaid in a second pass right after the existing Keep
+  overlay (the two can never collide, since the database can't have a
+  candidate in both sets at once). `frontend/src/components/
+  CandidateCard.vue` gained a `Maybe`/`Maybe ✓` button next to Keep (same
+  shadcn `Button` convention, no new dependency); clicking an already-active
+  button now calls a new `clearCandidateDecision()` instead of re-applying
+  the same action, making Keep undoable for the first time;
+  `frontend/src/types/candidateReview.ts`'s `Status` widened to
+  `'discovered' | 'selected' | 'under review'`. No scoring/ranking/
+  discovery/Spotify/mock-mode change. New/extended tests across
+  `candidate`/`selection`/`review` (store-level, HTTP-level, and overlay
+  coverage for Maybe, Clear, idempotency, and Keep/Maybe mutual exclusion
+  in both directions) — `go build ./...`/`go vet ./...`/`go test ./...` and
+  `npm run build` all pass. Manual validation was done against the running
+  `SPOTIFY_MOCK_MODE=true` backend via `curl` (Keep, Maybe, Keep→Maybe,
+  Clear, idempotent repeat-Clear, all returning the correct resulting
+  `status` and reflected correctly by `GET /api/candidates/review`) — no
+  browser-automation tool was available this session to repeat Card #56's
+  Playwright-based UI click-through.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

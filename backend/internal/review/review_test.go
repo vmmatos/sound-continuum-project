@@ -67,8 +67,9 @@ func (f *fakeDiscovery) PlaylistArtistHistory(ctx context.Context) (map[string]t
 // fakeSelection implements selectionLookup entirely in memory, the same
 // seam-testing approach fakeDiscovery already establishes.
 type fakeSelection struct {
-	selected map[string]struct{}
-	err      error
+	selected    map[string]struct{}
+	underReview map[string]struct{}
+	err         error
 }
 
 func (f *fakeSelection) AllSelected(ctx context.Context) (map[string]struct{}, error) {
@@ -79,6 +80,16 @@ func (f *fakeSelection) AllSelected(ctx context.Context) (map[string]struct{}, e
 		return map[string]struct{}{}, nil
 	}
 	return f.selected, nil
+}
+
+func (f *fakeSelection) AllUnderReview(ctx context.Context) (map[string]struct{}, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.underReview == nil {
+		return map[string]struct{}{}, nil
+	}
+	return f.underReview, nil
 }
 
 func newTestService(f *fakeDiscovery) *Service {
@@ -498,6 +509,45 @@ func TestReviewPoolOverlaysSelectedStatus(t *testing.T) {
 		case "c2":
 			if e.Ranked.Candidate.Status != candidate.StatusDiscovered {
 				t.Errorf("c2 Status = %q, want %q (unrelated candidate must not be modified)", e.Ranked.Candidate.Status, candidate.StatusDiscovered)
+			}
+		}
+	}
+}
+
+// 13b. A candidate marked Maybe (Card #57) comes back with Status overlaid
+// to StatusUnderReview, while an unrelated candidate stays StatusDiscovered,
+// and a selected candidate's overlay is unaffected by an unrelated Maybe.
+func TestReviewPoolOverlaysUnderReviewStatus(t *testing.T) {
+	c1 := testCandidate(t, "c1", "track-1", "artist-1")
+	c2 := testCandidate(t, "c2", "track-2", "artist-2")
+	c3 := testCandidate(t, "c3", "track-3", "artist-3")
+	f := fakeWithEligible([]candidate.CandidateTrack{c1, c2, c3})
+	svc := newTestServiceWithSelection(f, &fakeSelection{
+		selected:    map[string]struct{}{"c3": {}},
+		underReview: map[string]struct{}{"c1": {}},
+	})
+
+	pool, err := svc.ReviewPool(context.Background())
+	if err != nil {
+		t.Fatalf("ReviewPool: %v", err)
+	}
+	if len(pool.Entries) != 3 {
+		t.Fatalf("len(Entries) = %d, want 3", len(pool.Entries))
+	}
+
+	for _, e := range pool.Entries {
+		switch e.Ranked.Candidate.ID {
+		case "c1":
+			if e.Ranked.Candidate.Status != candidate.StatusUnderReview {
+				t.Errorf("c1 Status = %q, want %q", e.Ranked.Candidate.Status, candidate.StatusUnderReview)
+			}
+		case "c2":
+			if e.Ranked.Candidate.Status != candidate.StatusDiscovered {
+				t.Errorf("c2 Status = %q, want %q (unrelated candidate must not be modified)", e.Ranked.Candidate.Status, candidate.StatusDiscovered)
+			}
+		case "c3":
+			if e.Ranked.Candidate.Status != candidate.StatusSelected {
+				t.Errorf("c3 Status = %q, want %q (unaffected by unrelated Maybe)", e.Ranked.Candidate.Status, candidate.StatusSelected)
 			}
 		}
 	}

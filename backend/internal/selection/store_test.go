@@ -99,3 +99,160 @@ func TestStoreKeepDoesNotAffectUnrelatedCandidates(t *testing.T) {
 		t.Fatalf("expected exactly one selected candidate, got %v", selected)
 	}
 }
+
+func TestStoreAllUnderReviewEmpty(t *testing.T) {
+	store := newTestStore(t)
+
+	underReview, err := store.AllUnderReview(context.Background())
+	if err != nil {
+		t.Fatalf("AllUnderReview returned error: %v", err)
+	}
+	if len(underReview) != 0 {
+		t.Fatalf("expected no under-review candidates, got %v", underReview)
+	}
+}
+
+func TestStoreMaybeMarksUnderReview(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.Maybe(ctx, "cand-1"); err != nil {
+		t.Fatalf("Maybe returned error: %v", err)
+	}
+
+	underReview, err := store.AllUnderReview(ctx)
+	if err != nil {
+		t.Fatalf("AllUnderReview returned error: %v", err)
+	}
+	if _, ok := underReview["cand-1"]; !ok {
+		t.Fatalf("expected cand-1 to be under review, got %v", underReview)
+	}
+}
+
+func TestStoreMaybeIsIdempotent(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.Maybe(ctx, "cand-1"); err != nil {
+		t.Fatalf("first Maybe returned error: %v", err)
+	}
+	if err := store.Maybe(ctx, "cand-1"); err != nil {
+		t.Fatalf("second Maybe returned error: %v", err)
+	}
+
+	underReview, err := store.AllUnderReview(ctx)
+	if err != nil {
+		t.Fatalf("AllUnderReview returned error: %v", err)
+	}
+	if len(underReview) != 1 {
+		t.Fatalf("expected exactly one under-review candidate after repeated Maybe, got %v", underReview)
+	}
+}
+
+func TestStoreMaybeDoesNotAffectUnrelatedCandidates(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.Maybe(ctx, "cand-1"); err != nil {
+		t.Fatalf("Maybe returned error: %v", err)
+	}
+
+	underReview, err := store.AllUnderReview(ctx)
+	if err != nil {
+		t.Fatalf("AllUnderReview returned error: %v", err)
+	}
+	if _, ok := underReview["cand-2"]; ok {
+		t.Fatalf("expected cand-2 to remain unaffected, got %v", underReview)
+	}
+}
+
+func TestStoreKeepThenMaybeClearsKeep(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.Keep(ctx, "cand-1"); err != nil {
+		t.Fatalf("Keep returned error: %v", err)
+	}
+	if err := store.Maybe(ctx, "cand-1"); err != nil {
+		t.Fatalf("Maybe returned error: %v", err)
+	}
+
+	selected, err := store.AllSelected(ctx)
+	if err != nil {
+		t.Fatalf("AllSelected returned error: %v", err)
+	}
+	if _, ok := selected["cand-1"]; ok {
+		t.Fatalf("expected cand-1 to no longer be selected after Maybe, got %v", selected)
+	}
+
+	underReview, err := store.AllUnderReview(ctx)
+	if err != nil {
+		t.Fatalf("AllUnderReview returned error: %v", err)
+	}
+	if _, ok := underReview["cand-1"]; !ok {
+		t.Fatalf("expected cand-1 to be under review, got %v", underReview)
+	}
+}
+
+func TestStoreMaybeThenKeepClearsMaybe(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.Maybe(ctx, "cand-1"); err != nil {
+		t.Fatalf("Maybe returned error: %v", err)
+	}
+	if err := store.Keep(ctx, "cand-1"); err != nil {
+		t.Fatalf("Keep returned error: %v", err)
+	}
+
+	underReview, err := store.AllUnderReview(ctx)
+	if err != nil {
+		t.Fatalf("AllUnderReview returned error: %v", err)
+	}
+	if _, ok := underReview["cand-1"]; ok {
+		t.Fatalf("expected cand-1 to no longer be under review after Keep, got %v", underReview)
+	}
+
+	selected, err := store.AllSelected(ctx)
+	if err != nil {
+		t.Fatalf("AllSelected returned error: %v", err)
+	}
+	if _, ok := selected["cand-1"]; !ok {
+		t.Fatalf("expected cand-1 to be selected, got %v", selected)
+	}
+}
+
+func TestStoreClearIsIdempotentAndRemovesDecision(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	// Clearing a candidate with no prior decision is a no-op, not an error.
+	if err := store.Clear(ctx, "cand-1"); err != nil {
+		t.Fatalf("Clear on undecided candidate returned error: %v", err)
+	}
+
+	if err := store.Keep(ctx, "cand-1"); err != nil {
+		t.Fatalf("Keep returned error: %v", err)
+	}
+	if err := store.Clear(ctx, "cand-1"); err != nil {
+		t.Fatalf("first Clear returned error: %v", err)
+	}
+	if err := store.Clear(ctx, "cand-1"); err != nil {
+		t.Fatalf("second Clear returned error: %v", err)
+	}
+
+	selected, err := store.AllSelected(ctx)
+	if err != nil {
+		t.Fatalf("AllSelected returned error: %v", err)
+	}
+	if _, ok := selected["cand-1"]; ok {
+		t.Fatalf("expected cand-1 to no longer be selected after Clear, got %v", selected)
+	}
+	underReview, err := store.AllUnderReview(ctx)
+	if err != nil {
+		t.Fatalf("AllUnderReview returned error: %v", err)
+	}
+	if _, ok := underReview["cand-1"]; ok {
+		t.Fatalf("expected cand-1 to not be under review after Clear, got %v", underReview)
+	}
+}

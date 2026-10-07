@@ -21,10 +21,12 @@ import (
 // schema creates the table backing every candidate's selection state.
 // Candidate ID is the primary key — a candidate.ID (for Spotify-sourced
 // candidates, the Spotify track ID, see decisions.md's Card #33 entry) is
-// never regenerated, so it's a stable, natural key. Only "selected" is ever
-// written today (Keep has no "unselect"/"reject" counterpart yet) — status
-// is still a column, not an implicit boolean, so a future state doesn't
-// require a schema migration.
+// never regenerated, so it's a stable, natural key. "selected" (Keep) and
+// "under review" (Maybe, Card #57) are the two statuses ever written; a
+// cleared decision deletes the row rather than writing a third "neutral"
+// status. One row per candidate means writing one status structurally
+// overwrites the other — Keep and Maybe are mutually exclusive by
+// construction, not by application-level checking.
 const schema = `
 CREATE TABLE IF NOT EXISTS candidate_selection (
 	candidate_id TEXT PRIMARY KEY,
@@ -46,22 +48,74 @@ func NewStore(db *sql.DB) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
-// statusSelected is the only status this package ever writes.
-const statusSelected = "selected"
+// statusSelected and statusUnderReview are the only statuses this package
+// ever writes.
+const (
+	statusSelected    = "selected"
+	statusUnderReview = "under review"
+)
 
-// Keep marks candidateID as selected. Idempotent by construction: the
-// ON CONFLICT upsert means repeating Keep for the same ID always leaves
-// exactly one row in the same end state, never a duplicate and never an
-// error.
-func (s *Store) Keep(ctx context.Context, candidateID string) error {
+// setStatus upserts candidateID's status. Idempotent by construction: the
+// ON CONFLICT upsert means repeating the same status for the same ID always
+// leaves exactly one row in the same end state, never a duplicate and never
+// an error. Writing a different status for an already-decided candidate
+// overwrites the row — this is what makes Keep and Maybe mutually exclusive
+// with no extra check.
+func (s *Store) setStatus(ctx context.Context, candidateID, status string) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO candidate_selection (candidate_id, status, updated_at)
 		VALUES (?, ?, ?)
 		ON CONFLICT(candidate_id) DO UPDATE SET
 			status = excluded.status,
 			updated_at = excluded.updated_at
-	`, candidateID, statusSelected, time.Now().Unix())
+	`, candidateID, status, time.Now().Unix())
 	return err
+}
+
+// Keep marks candidateID as selected.
+func (s *Store) Keep(ctx context.Context, candidateID string) error {
+	return s.setStatus(ctx, candidateID, statusSelected)
+}
+
+// Maybe marks candidateID as under review (Card #57) — the curator is
+// undecided but wants to keep it in consideration.
+func (s *Store) Maybe(ctx context.Context, candidateID string) error {
+	return s.setStatus(ctx, candidateID, statusUnderReview)
+}
+
+// Clear removes any persisted decision for candidateID, returning it to the
+// neutral/discovered state. Idempotent: deleting a row that doesn't exist is
+// a no-op, never an error.
+func (s *Store) Clear(ctx context.Context, candidateID string) error {
+	_, err := s.db.ExecContext(ctx, `
+		DELETE FROM candidate_selection WHERE candidate_id = ?
+	`, candidateID)
+	return err
+}
+
+// allWithStatus returns the set of every candidate ID currently recorded
+// with the given status.
+func (s *Store) allWithStatus(ctx context.Context, status string) (map[string]struct{}, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT candidate_id FROM candidate_selection WHERE status = ?
+	`, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ids := make(map[string]struct{})
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids[id] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 // AllSelected returns the set of every candidate ID currently marked
@@ -69,24 +123,11 @@ func (s *Store) Keep(ctx context.Context, candidateID string) error {
 // selection state onto a freshly-discovered candidate pool (a candidate
 // pool is never itself persisted — see docs/memory/decisions.md).
 func (s *Store) AllSelected(ctx context.Context) (map[string]struct{}, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT candidate_id FROM candidate_selection WHERE status = ?
-	`, statusSelected)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+	return s.allWithStatus(ctx, statusSelected)
+}
 
-	selected := make(map[string]struct{})
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		selected[id] = struct{}{}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return selected, nil
+// AllUnderReview returns the set of every candidate ID currently marked
+// under review (Maybe, Card #57), mirroring AllSelected.
+func (s *Store) AllUnderReview(ctx context.Context) (map[string]struct{}, error) {
+	return s.allWithStatus(ctx, statusUnderReview)
 }

@@ -51,6 +51,7 @@ type candidatePoolSource interface {
 // this package's own tests get something fakeable.
 type selectionLookup interface {
 	AllSelected(ctx context.Context) (map[string]struct{}, error)
+	AllUnderReview(ctx context.Context) (map[string]struct{}, error)
 }
 
 // Service orchestrates discovery + scoring into a ReviewPool. It holds no
@@ -197,18 +198,28 @@ func (s *Service) ReviewPool(ctx context.Context) (ReviewPool, error) {
 		})
 	}
 
-	// Overlay persisted Keep decisions (Card #56) onto this run's
+	// Overlay persisted Keep/Maybe decisions (Cards #56/#57) onto this run's
 	// freshly-discovered candidates — every candidate.NewCandidateTrack call
-	// always produces StatusDiscovered, so a kept candidate only shows as
-	// StatusSelected via this lookup, re-applied on every ReviewPool call
-	// (a refresh after Keep always reflects the persisted state).
+	// always produces StatusDiscovered, so a decided candidate only shows as
+	// StatusSelected/StatusUnderReview via this lookup, re-applied on every
+	// ReviewPool call (a refresh always reflects the persisted state). The
+	// selection store guarantees a candidate ID can only ever be in one of
+	// AllSelected/AllUnderReview's sets (one row per candidate_id, see
+	// selection.Store), so a single pass can safely check both.
 	selected, err := s.selection.AllSelected(ctx)
 	if err != nil {
 		return ReviewPool{}, err
 	}
+	underReview, err := s.selection.AllUnderReview(ctx)
+	if err != nil {
+		return ReviewPool{}, err
+	}
 	for i := range reviewEntries {
-		if _, ok := selected[string(reviewEntries[i].Ranked.Candidate.ID)]; ok {
+		id := string(reviewEntries[i].Ranked.Candidate.ID)
+		if _, ok := selected[id]; ok {
 			reviewEntries[i].Ranked.Candidate.Status = candidate.StatusSelected
+		} else if _, ok := underReview[id]; ok {
+			reviewEntries[i].Ranked.Candidate.Status = candidate.StatusUnderReview
 		}
 	}
 

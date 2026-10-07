@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { CandidateReviewEntry, DiscoveryMethod } from '../types/candidateReview'
-import { keepCandidate } from '../services/candidateReview'
+import { keepCandidate, maybeCandidate, clearCandidateDecision } from '../services/candidateReview'
 import CandidateFactors from './CandidateFactors.vue'
 import BridgeEvidence from './BridgeEvidence.vue'
 import CandidateTrackMetadata from './CandidateTrackMetadata.vue'
@@ -15,24 +15,50 @@ const props = defineProps<{
   entry: CandidateReviewEntry
 }>()
 
-// isSelected mirrors the candidate's persisted Status (the backend overlays
-// StatusSelected onto a freshly-discovered candidate once Keep has been
-// called — see review.Service.ReviewPool), so a page refresh after Keep
-// shows the correct state with no extra request.
+// isSelected/isMaybe mirror the candidate's persisted Status (the backend
+// overlays StatusSelected/StatusUnderReview onto a freshly-discovered
+// candidate once Keep/Maybe has been called — see
+// review.Service.ReviewPool), so a page refresh shows the correct state with
+// no extra request. The backend's single-row-per-candidate selection table
+// guarantees these two are never both true at once.
 const isSelected = ref(props.entry.Ranked.Candidate.Status === 'selected')
+const isMaybe = ref(props.entry.Ranked.Candidate.Status === 'under review')
 const keeping = ref(false)
 const keepFailed = ref(false)
+const maybeing = ref(false)
+const maybeFailed = ref(false)
 
+// Clicking an already-active action undoes it (Clear); clicking the other
+// action overwrites it — the backend's upsert makes Keep/Maybe mutually
+// exclusive, this just picks which endpoint to call based on current state.
 async function onKeep() {
   keeping.value = true
   keepFailed.value = false
-  const ok = await keepCandidate(props.entry.Ranked.Candidate.ID)
+  const ok = isSelected.value
+    ? await clearCandidateDecision(props.entry.Ranked.Candidate.ID)
+    : await keepCandidate(props.entry.Ranked.Candidate.ID)
   if (ok) {
-    isSelected.value = true
+    isSelected.value = !isSelected.value
+    if (isSelected.value) isMaybe.value = false
   } else {
     keepFailed.value = true
   }
   keeping.value = false
+}
+
+async function onMaybe() {
+  maybeing.value = true
+  maybeFailed.value = false
+  const ok = isMaybe.value
+    ? await clearCandidateDecision(props.entry.Ranked.Candidate.ID)
+    : await maybeCandidate(props.entry.Ranked.Candidate.ID)
+  if (ok) {
+    isMaybe.value = !isMaybe.value
+    if (isMaybe.value) isSelected.value = false
+  } else {
+    maybeFailed.value = true
+  }
+  maybeing.value = false
 }
 
 // AvailableWeight is the sum of weights of scoring factors actually
@@ -133,6 +159,15 @@ const provenanceText = computed(() => {
           {{ isSelected ? 'Kept ✓' : 'Keep' }}
         </Button>
         <Button
+          type="button"
+          :variant="isMaybe ? 'secondary' : 'ghost'"
+          size="sm"
+          :disabled="maybeing"
+          @click="onMaybe"
+        >
+          {{ isMaybe ? 'Maybe ✓' : 'Maybe' }}
+        </Button>
+        <Button
           v-if="entry.Ranked.Candidate.Metadata?.SpotifyURL"
           as="a"
           :href="entry.Ranked.Candidate.Metadata.SpotifyURL"
@@ -153,6 +188,7 @@ const provenanceText = computed(() => {
         </Button>
       </div>
       <p v-if="keepFailed" class="text-xs text-destructive">Failed to keep this candidate. Try again.</p>
+      <p v-if="maybeFailed" class="text-xs text-destructive">Failed to update this candidate. Try again.</p>
     </CardFooter>
   </Card>
 </template>

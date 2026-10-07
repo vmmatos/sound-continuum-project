@@ -99,6 +99,8 @@ func main() {
 	mux.HandleFunc("POST /api/candidates/pool", discoveryService.PoolHandler)
 	mux.HandleFunc("GET /api/candidates/review", reviewService.Handler)
 	mux.HandleFunc("POST /api/candidates/{id}/keep", selectionService.KeepHandler)
+	mux.HandleFunc("POST /api/candidates/{id}/maybe", selectionService.MaybeHandler)
+	mux.HandleFunc("POST /api/candidates/{id}/clear", selectionService.ClearHandler)
 
 	addr := ":" + port
 	log.Printf("sound-continuum server listening on %s", addr)
