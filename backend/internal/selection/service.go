@@ -1,6 +1,7 @@
 package selection
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -34,18 +35,41 @@ type keepResponse struct {
 // not inventing validation ahead of a concrete need (see decisions.md's
 // Card #27/#28 deferred-parameter entries).
 func (s *Service) KeepHandler(w http.ResponseWriter, r *http.Request) {
+	s.statusHandler(w, r, statusSelected, s.store.Keep)
+}
+
+// MaybeHandler exposes POST /api/candidates/{id}/maybe (Card #57) — marks a
+// candidate under review. Same idempotency/no-existence-check contract as
+// KeepHandler.
+func (s *Service) MaybeHandler(w http.ResponseWriter, r *http.Request) {
+	s.statusHandler(w, r, statusUnderReview, s.store.Maybe)
+}
+
+// statusHandler is the shared body for KeepHandler/MaybeHandler: both set a
+// fixed status via a single store call and report it back unchanged.
+func (s *Service) statusHandler(w http.ResponseWriter, r *http.Request, status string, set func(context.Context, string) error) {
 	id := r.PathValue("id")
 	if id == "" {
 		http.Error(w, "candidate id is required", http.StatusBadRequest)
 		return
 	}
 
-	if err := s.store.Keep(r.Context(), id); err != nil {
-		log.Printf("keep candidate %q failed: %v", id, err)
-		http.Error(w, "keep failed", http.StatusInternalServerError)
+	if err := set(r.Context(), id); err != nil {
+		log.Printf("set candidate %q status %q failed: %v", id, status, err)
+		http.Error(w, "update failed", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(keepResponse{CandidateID: id, Status: statusSelected})
+	json.NewEncoder(w).Encode(keepResponse{CandidateID: id, Status: status})
+}
+
+// ClearHandler exposes POST /api/candidates/{id}/clear (Card #57) — removes
+// any persisted Keep/Maybe decision, returning the candidate to the neutral
+// "discovered" state. The curator's undo path for both actions: the
+// frontend decides when to call this based on which button is already
+// active, so each endpoint stays a plain, idempotent "set" or "clear"
+// operation.
+func (s *Service) ClearHandler(w http.ResponseWriter, r *http.Request) {
+	s.statusHandler(w, r, "discovered", s.store.Clear)
 }

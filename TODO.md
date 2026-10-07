@@ -1169,6 +1169,56 @@
       discovery algorithm changes, no Candidate Review redesign, no
       Last.fm mock, no frontend test framework
 
+## Done (Card #57 — Maybe Action)
+
+- [x] `candidate.StatusUnderReview` reinstated (`backend/internal/candidate/
+      candidate.go`) — the second of the three lifecycle values Card 31 had
+      trimmed, now with a real caller (Maybe); `Status.Valid()` extended to
+      a 3-way `switch`; no `rejected` added (still no caller)
+- [x] `backend/internal/selection/store.go` — `Keep`/`Maybe` now share an
+      unexported `setStatus` upsert; new `Clear` (idempotent delete) and
+      `AllUnderReview` (mirrors `AllSelected`, both call a shared
+      `allWithStatus` query helper) — same table, same `*sql.DB`, no schema
+      migration, no new datastore
+- [x] `POST /api/candidates/{id}/maybe` and `POST /api/candidates/{id}/clear`
+      (`selection.Service`) added alongside the existing `/keep` — all three
+      share a `statusHandler` helper where applicable; each is a plain,
+      idempotent "set" or "clear" operation
+- [x] Mutual exclusivity between Keep and Maybe falls out of the existing
+      `candidate_selection` schema (one row per `candidate_id`) with no
+      extra application-level check — writing one status structurally
+      overwrites the other
+- [x] `review.Service.ReviewPool` — `selectionLookup` gained `AllUnderReview`;
+      a second overlay pass applies `StatusUnderReview` after the existing
+      Keep overlay, with a comment explaining the two overlays can never
+      collide
+- [x] Frontend: `CandidateCard.vue` gained a `Maybe`/`Maybe ✓` button next to
+      Keep (same shadcn `Button`/variant/size convention, no new dependency,
+      no layout redesign); clicking an already-active action now calls a
+      new `clearCandidateDecision()` to undo it instead of re-applying the
+      same action — Keep is reversible for the first time; `types/
+      candidateReview.ts`'s `Status` widened to `'discovered' | 'selected' |
+      'under review'`; `services/candidateReview.ts` gained
+      `maybeCandidate()`/`clearCandidateDecision()`
+- [x] New/extended backend tests: `candidate` (StatusUnderReview validity),
+      `selection` (`store_test.go` — Maybe/Clear/idempotency/mutual-exclusion/
+      unrelated-candidate isolation; new `service_test.go` — HTTP-level
+      round trips for keep/maybe/clear, idempotency, mutual exclusivity),
+      `review` (Maybe overlay, unrelated-candidate isolation, coexistence
+      with an unrelated Keep) — `go build ./...`/`go vet ./...`/
+      `go test ./...` all pass
+- [x] `npm run build` passes
+- [x] Manual validation (mock mode, via `curl` against the running
+      `SPOTIFY_MOCK_MODE=true` backend — no browser-automation tool was
+      available this session, unlike Card #56's Playwright pass): Keep,
+      Maybe, Keep→Maybe (confirmed Keep cleared), Clear, and idempotent
+      repeat-Clear all returned the correct resulting `status` in the JSON
+      response and were reflected correctly by `GET /api/candidates/review`
+- [x] Project memory updated (`current-state.md`, `decisions.md`, `TODO.md`)
+- [x] No change to scoring/ranking/discovery/categories/Spotify
+      integration/rate-limit handling/mock mode, no Redis, no new database,
+      no AI, no frontend test framework, no Candidate Review redesign
+
 ## In progress
 
 - Nothing currently in progress.
@@ -1186,7 +1236,9 @@
 - M6: Curator experience — in progress (Candidate Review screen designed
       and built, Card #51/#52; Card #53 wires it to a real endpoint for
       Freshness + Repetition Penalty; Card #56 adds the Keep action with
-      persisted selection state, and a `SPOTIFY_MOCK_MODE` dev flag);
+      persisted selection state, and a `SPOTIFY_MOCK_MODE` dev flag; Card
+      #57 adds the Maybe action, makes Keep reversible, and makes Keep/
+      Maybe mutually exclusive);
       Fit/DiscoveryBonus/Diversity/PlaylistFit wiring (once their
       editorial inputs exist) and the rest of the selection/publishing
       workflow (reject, publish to the official playlist) remain open

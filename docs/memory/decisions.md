@@ -2752,3 +2752,48 @@ mode; a missing `LASTFM_API_KEY` degrades exactly as it already did before
 this card (a `WorkflowError`, surfaced by the existing Card #126 degraded
 state), which is not a new failure mode and was not addressed by this card
 (mocking Last.fm was explicitly out of scope).
+
+---
+
+**Decision:** Reinstate `candidate.StatusUnderReview` for the Maybe action
+(Card #57), and make Keep/Maybe toggleable by adding a `Clear` operation,
+rather than adding a new "maybe" status or a boolean-flag second table.
+
+**Context:** Card #57 needs a reversible "Maybe" action, mutual exclusivity
+with Keep, and Keep itself to become undoable. Per the card's own explicit
+instruction to check first: `candidate.Status` had exactly
+`StatusDiscovered`/`StatusSelected` (Card 31 trimmed `under review`/
+`rejected` for lack of a caller; Card #56 reinstated only `StatusSelected`).
+Every discovery workflow produces `StatusDiscovered` only — no candidate
+ever enters the review flow already "under review" — so reusing `under
+review` for Maybe is unambiguous, exactly the same reuse Card #56 already
+established for `selected`. No larger domain/persistence change was needed,
+and none was made.
+
+**Reason:** `candidate_selection` (Card #56) already stores `status` as a
+column with one row per `candidate_id`, specifically anticipated in that
+card's own schema comment for "a future state." Writing a second status for
+an already-decided candidate structurally overwrites the first — mutual
+exclusivity falls out of the existing schema with zero extra application
+logic, rather than requiring an explicit "clear the other decision" step.
+The only genuinely new capability needed was undo: `Store.Clear` (a plain
+idempotent `DELETE`) and a `POST /api/candidates/{id}/clear` endpoint,
+siblings of the existing `/keep` endpoint's shape. Each endpoint
+(`/keep`/`/maybe`/`/clear`) stays a pure, idempotent "set" or "clear"
+operation — the toggle behavior the UI needs ("click the active button
+again to undo") is a frontend decision about which endpoint to call, based
+on the button's own current local state, not a stateful/read-then-write
+operation on the backend.
+
+**Consequences:** `selection.Store.Keep`/`Maybe` now share an unexported
+`setStatus` upsert helper; `AllSelected`/`AllUnderReview` share an
+unexported `allWithStatus` query helper — small refactors of Card #56's
+existing code, not new abstractions (each had exactly one caller gaining a
+second). `review.Service.ReviewPool`'s `selectionLookup` gained
+`AllUnderReview`, overlaid in a second pass right after the existing Keep
+overlay; the two can never collide because the database can never have a
+candidate in both sets at once. `CandidateCard.vue` tracks `isSelected`/
+`isMaybe` locally (same pattern as Card #56), and each button's click
+handler picks `clearCandidateDecision()` vs. the apply call based on
+whether that button is already active. No new package, no new table, no
+new dependency, no request body/JSON parsing added to any handler.

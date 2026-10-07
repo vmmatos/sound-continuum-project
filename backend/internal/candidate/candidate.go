@@ -64,23 +64,25 @@ func (t Type) Valid() bool {
 
 // Status is a candidate's current editorial lifecycle state. It is
 // deliberately small — no approval workflow or roles. Every discovery
-// workflow produces StatusDiscovered only; StatusSelected is set
-// exclusively by the Keep action (Card #56), as a persisted overlay applied
-// on top of a freshly-discovered candidate — see
-// backend/internal/selection and review.Service.ReviewPool. Add a further
-// state here only once another editorial-review transition actually needs
-// one (e.g. "rejected" has no caller today).
+// workflow produces StatusDiscovered only; StatusSelected and
+// StatusUnderReview are set exclusively by the Keep/Maybe actions (Cards
+// #56/#57), as a persisted overlay applied on top of a freshly-discovered
+// candidate — see backend/internal/selection and
+// review.Service.ReviewPool. Add a further state here only once another
+// editorial-review transition actually needs one (e.g. "rejected" has no
+// caller today).
 type Status string
 
 const (
-	StatusDiscovered Status = "discovered"
-	StatusSelected   Status = "selected"
+	StatusDiscovered  Status = "discovered"
+	StatusSelected    Status = "selected"
+	StatusUnderReview Status = "under review"
 )
 
 // Valid reports whether s is a supported lifecycle state.
 func (s Status) Valid() bool {
 	switch s {
-	case StatusDiscovered, StatusSelected:
+	case StatusDiscovered, StatusSelected, StatusUnderReview:
 		return true
 	default:
 		return false
