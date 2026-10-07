@@ -1,7 +1,6 @@
 package selection
 
 import (
-	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -16,16 +15,6 @@ type Service struct {
 // NewService wires a selection Service to an existing Store.
 func NewService(store *Store) *Service {
 	return &Service{store: store}
-}
-
-// Keep marks candidateID as selected.
-func (s *Service) Keep(ctx context.Context, candidateID string) error {
-	return s.store.Keep(ctx, candidateID)
-}
-
-// AllSelected returns the set of every candidate ID currently selected.
-func (s *Service) AllSelected(ctx context.Context) (map[string]struct{}, error) {
-	return s.store.AllSelected(ctx)
 }
 
 // keepResponse is KeepHandler's response body — a small handler-local type,
@@ -51,7 +40,7 @@ func (s *Service) KeepHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.Keep(r.Context(), id); err != nil {
+	if err := s.store.Keep(r.Context(), id); err != nil {
 		log.Printf("keep candidate %q failed: %v", id, err)
 		http.Error(w, "keep failed", http.StatusInternalServerError)
 		return

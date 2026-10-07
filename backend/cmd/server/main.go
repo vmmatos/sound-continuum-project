@@ -63,24 +63,13 @@ func main() {
 	// internal/spotifymock's doc comment and docs/memory/decisions.md.
 	// Default false preserves real Spotify behavior exactly as before this
 	// card.
+	classicCfg, currentCfg, emergingCfg := discovery.DefaultConfig(), discovery.DefaultCurrentConfig(), discovery.DefaultEmergingConfig()
 	var discoveryService *discovery.Service
 	if os.Getenv("SPOTIFY_MOCK_MODE") == "true" {
 		log.Println("SPOTIFY_MOCK_MODE enabled — using deterministic mock Spotify data, zero real Spotify API calls")
-		discoveryService = discovery.NewService(
-			spotifymock.NewCatalogue(), lastfmClient,
-			discovery.DefaultConfig(),
-			discovery.DefaultCurrentConfig(),
-			discovery.DefaultEmergingConfig(),
-			recentTrackLookbackDays,
-		)
+		discoveryService = discovery.NewService(spotifymock.NewCatalogue(), lastfmClient, classicCfg, currentCfg, emergingCfg, recentTrackLookbackDays)
 	} else {
-		discoveryService = discovery.NewService(
-			spotifyService, lastfmClient,
-			discovery.DefaultConfig(),
-			discovery.DefaultCurrentConfig(),
-			discovery.DefaultEmergingConfig(),
-			recentTrackLookbackDays,
-		)
+		discoveryService = discovery.NewService(spotifyService, lastfmClient, classicCfg, currentCfg, emergingCfg, recentTrackLookbackDays)
 	}
 
 	selectionStore, err := selection.NewStore(db)
@@ -89,7 +78,7 @@ func main() {
 	}
 	selectionService := selection.NewService(selectionStore)
 
-	reviewService := review.NewService(discoveryService, selectionService)
+	reviewService := review.NewService(discoveryService, selectionStore)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.Handler)

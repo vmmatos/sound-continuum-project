@@ -44,10 +44,10 @@ type candidatePoolSource interface {
 	PlaylistArtistHistory(ctx context.Context) (map[string]time.Time, error)
 }
 
-// selectionLookup is the slice of *selection.Service this package depends
-// on, extracted into an unexported interface for the same reason
+// selectionLookup is the slice of *selection.Store this package depends on,
+// extracted into an unexported interface for the same reason
 // candidatePoolSource exists (see docs/memory/decisions.md, Card #33):
-// production callers (NewService) still pass a concrete *selection.Service,
+// production callers (NewService) still pass a concrete *selection.Store,
 // this package's own tests get something fakeable.
 type selectionLookup interface {
 	AllSelected(ctx context.Context) (map[string]struct{}, error)
@@ -68,11 +68,11 @@ type Service struct {
 }
 
 // NewService wires a review Service to an existing discovery.Service and
-// selection.Service — no second discovery pipeline, and no new candidate
+// selection.Store — no second discovery pipeline, and no new candidate
 // pool persistence (the pool itself is still rebuilt per request; only
 // Keep's selection state, Card #56, is persisted).
-func NewService(discoverySvc *discovery.Service, selectionSvc *selection.Service) *Service {
-	return &Service{discovery: discoverySvc, selection: selectionSvc, now: time.Now}
+func NewService(discoverySvc *discovery.Service, selectionStore *selection.Store) *Service {
+	return &Service{discovery: discoverySvc, selection: selectionStore, now: time.Now}
 }
 
 // ReviewEntry is one candidate's place in the Candidate Review response:

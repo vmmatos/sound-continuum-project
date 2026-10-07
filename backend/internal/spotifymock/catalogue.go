@@ -66,28 +66,11 @@ func mockID(kind string, seed ...string) string {
 	return fmt.Sprintf("mock-%s-%08x", kind, hashSeed(seed...))
 }
 
-// Small, fixed word pools used to build readable (if obviously synthetic)
-// titles. Not an attempt at realistic song-naming — just enough variation
-// to exercise Candidate Review's UI across many distinct-looking
-// candidates, deterministically.
-var moodWords = []string{
-	"Velvet", "Neon", "Quiet", "Electric", "Hollow", "Golden", "Paper",
-	"Midnight", "Static", "Amber", "Fractured", "Pale", "Wandering", "Slow",
-}
-
-var nounWords = []string{
-	"Horizon", "Static", "Garden", "Signal", "Echo", "Harbor", "Fracture",
-	"Bloom", "Tide", "Ghost", "Current", "Lantern", "Orbit", "Hollow",
-}
-
-// mockTitle builds a deterministic two-word title from seed, picking into
-// the shared word pools by hash so different seeds reliably look
-// different.
+// mockTitle builds a deterministic, clearly-dummy title from seed — not an
+// attempt at realistic song-naming, just enough variation (via seed) to
+// tell candidates apart in the UI.
 func mockTitle(seed string) string {
-	h := hashSeed(seed)
-	mood := moodWords[int(h)%len(moodWords)]
-	noun := nounWords[int(h/97)%len(nounWords)]
-	return mood + " " + noun
+	return fmt.Sprintf("Mock %08x", hashSeed(seed))
 }
 
 // Search synthesizes exactly one artist whose Name echoes query exactly.
@@ -102,13 +85,14 @@ func (c *Catalogue) Search(ctx context.Context, query, types string, limit, offs
 	if name == "" {
 		return spotify.SearchResult{}, nil
 	}
+	artistID := mockID("artist", strings.ToLower(name))
 	artist := spotify.Artist{
-		ID:   mockID("artist", strings.ToLower(name)),
+		ID:   artistID,
 		Name: name,
-		URI:  "spotify:artist:" + mockID("artist", strings.ToLower(name)),
+		URI:  "spotify:artist:" + artistID,
 		Type: "artist",
 		ExternalURLs: spotify.ExternalURLs{
-			Spotify: "https://open.spotify.com/artist/" + mockID("artist", strings.ToLower(name)),
+			Spotify: "https://open.spotify.com/artist/" + artistID,
 		},
 	}
 	return spotify.SearchResult{
@@ -164,9 +148,6 @@ func mockAlbum(artistID string, i int) spotify.Album {
 // ArtistAlbums deterministically derives mockAlbumCount albums from
 // artistID — same artistID always yields the same albums.
 func (c *Catalogue) ArtistAlbums(ctx context.Context, artistID string, limit, offset int) (spotify.Paging[spotify.Album], error) {
-	if offset >= mockAlbumCount {
-		return spotify.Paging[spotify.Album]{Total: mockAlbumCount, Limit: limit, Offset: offset}, nil
-	}
 	var albums []spotify.Album
 	for i := offset; i < mockAlbumCount && len(albums) < limit; i++ {
 		albums = append(albums, mockAlbum(artistID, i))
@@ -227,9 +208,6 @@ func trackFromID(trackID string) spotify.Track {
 // AlbumTracks deterministically derives mockTrackCount tracks from
 // albumID — same albumID always yields the same tracks.
 func (c *Catalogue) AlbumTracks(ctx context.Context, albumID string, limit, offset int) (spotify.Paging[spotify.Track], error) {
-	if offset >= mockTrackCount {
-		return spotify.Paging[spotify.Track]{Total: mockTrackCount, Limit: limit, Offset: offset}, nil
-	}
 	var tracks []spotify.Track
 	for i := offset; i < mockTrackCount && len(tracks) < limit; i++ {
 		tracks = append(tracks, mockTrack(albumID, i))
