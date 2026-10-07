@@ -1448,6 +1448,76 @@
   fourth — all have 0 tracks) — not a code change, local dev-volume data
   only.
 
+- Candidate Review now has a working Keep action, and Spotify Development
+  Mode's ongoing rate limit no longer blocks local development of it (Card
+  #56, see [`decisions.md`](decisions.md)). `candidate.StatusSelected` is
+  reinstated (one of the three lifecycle values Card 31 had trimmed for
+  lack of a caller) and set exclusively via a new persisted-selection
+  overlay, not through `NewCandidateTrack`. A new package,
+  `backend/internal/selection` (`store.go`/`service.go`), persists Keep
+  decisions in a new SQLite table, `candidate_selection`, reusing the
+  existing `*sql.DB`/`CREATE TABLE IF NOT EXISTS` pattern
+  `spotify.Store` already established — no new datastore. `POST
+  /api/candidates/{id}/keep` (`selection.Service.KeepHandler`) is
+  idempotent by construction (`INSERT ... ON CONFLICT DO UPDATE`).
+  `review.Service.ReviewPool` (`backend/internal/review/review.go`) gained
+  a `selectionLookup` interface field (mirroring the existing
+  `candidatePoolSource` seam) and overlays `AllSelected()`'s result onto
+  every freshly-discovered candidate on each call — the candidate pool
+  itself is still never persisted; only the Keep decision is, so a page
+  refresh always reflects the latest persisted state with no extra
+  frontend fetch. `frontend/src/components/CandidateCard.vue` gained a
+  `Keep`/`Kept ✓` shadcn `Button` in the existing `CardFooter` (no new
+  dependency, no layout redesign), with local `ref`s for in-flight/failure
+  state mirroring `HomeView.vue`'s existing `officialPlaylist` pattern;
+  `frontend/src/types/candidateReview.ts`'s `Status` widened to
+  `'discovered' | 'selected'`; `frontend/src/services/candidateReview.ts`
+  gained `keepCandidate()`.
+
+  Separately, `SPOTIFY_MOCK_MODE` (default `false`, `dev/.env`) lets
+  Candidate Discovery/Review run entirely offline against deterministic
+  dummy data, with zero real Spotify API calls, while Spotify Development
+  Mode's `GET /artists/{id}/albums` rate limit (documented since Card #36,
+  still in effect as of Cards #53/#126) remains unresolved. The existing
+  `discovery.spotifyCatalogue` interface (Card #33's test-only seam,
+  already covering every Spotify touchpoint in the discovery pipeline) is
+  reused for a second, production purpose:
+  `discovery.NewService`'s first parameter is widened from the concrete
+  `*spotify.Service` to this interface — existing production and test
+  callers are unaffected, since both already satisfy it structurally. A new
+  package, `backend/internal/spotifymock` (`catalogue.go`), implements the
+  same 6 methods as pure, deterministic functions of their own input (no
+  shared state, no `net/http` import anywhere in the package); `Search`
+  echoes its query back as the returned artist's `Name` — required, not
+  cosmetic, since `discovery.resolveArtist` only accepts an exact
+  case-insensitive match — so every one of Sound Continuum's canonical
+  reference artists resolves deterministically with no per-name data
+  hand-authored. `cmd/server/main.go` is the single branch point between
+  `spotifyService` and `spotifymock.NewCatalogue()`; `review.Service` and
+  every discovery-derived endpoint (`/api/candidates/pool`,
+  `/api/discovery/{classic,current,emerging}`, `/api/candidates/review`)
+  share the one `discoveryService` instance, so mock mode covers the whole
+  surface automatically with no scattered `if mock` checks. Direct
+  `spotify.Service` endpoints (OAuth connect, `/api/spotify/*`, official
+  playlist init) are unaffected by the flag. Last.fm is untouched — out of
+  scope — so `DiscoverEmerging` still calls the real Last.fm API even in
+  mock mode; a missing `LASTFM_API_KEY` degrades exactly as before (a
+  `WorkflowError`, already surfaced by the Card #126 degraded state).
+
+  Verified live (mock mode, real browser via Playwright): `GET
+  /api/candidates/review` returned 240 deterministic Classic/Current mock
+  candidates (Emerging degraded with a `WorkflowError` due to no
+  `LASTFM_API_KEY` in the test environment — expected, not a defect);
+  zero `spotify.com` network requests were observed from the browser;
+  Keep/re-Keep (idempotent) both confirmed via the UI, with the kept state
+  surviving a fresh page load. `go build ./...`/`go vet
+  ./...`/`go test ./...` (all packages, including new
+  `selection`/`spotifymock` packages) and `npm run build` all pass. Real
+  Spotify behavior (`SPOTIFY_MOCK_MODE=false`, the default) is unchanged —
+  not re-verified live this session since Spotify remains rate-limited
+  (the same pre-existing condition documented for Cards #36/#37/#39/#53/
+  #126), but every existing real-mode test still passes unmodified.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

@@ -174,10 +174,13 @@ var errArtistNotResolved = errors.New("discovery: artist not found by exact name
 
 // spotifyCatalogue is the subset of spotify.Service DiscoverClassic needs.
 // *spotify.Service satisfies it, so production wiring is a plain
-// spotify.Service — the interface exists only so tests can substitute a
-// fake without going through Spotify's real OAuth/HTTP transport, which
-// spotify.Service has no exported hook to redirect from outside its
-// package.
+// spotify.Service. The interface originally existed only so tests could
+// substitute a fake without going through Spotify's real OAuth/HTTP
+// transport (see decisions.md, Card #33); Card #56 reuses the same seam a
+// second time for a production purpose — SPOTIFY_MOCK_MODE swaps in
+// backend/internal/spotifymock.Catalogue here, at the one point every
+// Spotify touchpoint in the discovery pipeline funnels through (see that
+// package's doc comment for the full call-graph justification).
 type spotifyCatalogue interface {
 	Search(ctx context.Context, query, types string, limit, offset int) (spotify.SearchResult, error)
 	ArtistAlbums(ctx context.Context, artistID string, limit, offset int) (spotify.Paging[spotify.Album], error)
@@ -221,12 +224,15 @@ type Service struct {
 	sleep func(time.Duration)
 }
 
-// NewService wires a discovery Service to an existing spotify.Service and
-// lastfm.Client — no second Spotify client and no generic provider
-// abstraction is created.
-func NewService(spotifyService *spotify.Service, lastfmClient *lastfm.Client, classicCfg Config, currentCfg CurrentConfig, emergingCfg EmergingConfig, recentTrackLookbackDays int) *Service {
+// NewService wires a discovery Service to a spotifyCatalogue and
+// lastfm.Client — no generic provider abstraction is created. catalogue is
+// typically a concrete *spotify.Service (the real path); SPOTIFY_MOCK_MODE
+// passes a *spotifymock.Catalogue instead (Card #56) — both satisfy
+// spotifyCatalogue structurally, so this is the only place that choice is
+// made (see cmd/server/main.go), never a scattered `if mock` check.
+func NewService(catalogue spotifyCatalogue, lastfmClient *lastfm.Client, classicCfg Config, currentCfg CurrentConfig, emergingCfg EmergingConfig, recentTrackLookbackDays int) *Service {
 	return &Service{
-		spotify:                 spotifyService,
+		spotify:                 catalogue,
 		lastfm:                  lastfmClient,
 		classicCfg:              classicCfg,
 		currentCfg:              currentCfg,

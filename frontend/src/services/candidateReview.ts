@@ -11,3 +11,12 @@ export async function getCandidateReviewPool(): Promise<CandidateReviewPool | nu
     return null
   }
 }
+
+export async function keepCandidate(id: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/candidates/${id}/keep`, { method: 'POST' })
+    return response.ok
+  } catch {
+    return false
+  }
+}

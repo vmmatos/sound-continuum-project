@@ -56,6 +56,23 @@ func TestNewCandidateTrackInvalidCategory(t *testing.T) {
 	}
 }
 
+func TestValidateStatusSelected(t *testing.T) {
+	// The Keep action (Card #56) sets Status to StatusSelected by direct
+	// field assignment, not through NewCandidateTrack — confirm Validate()
+	// accepts it like StatusDiscovered.
+	c := CandidateTrack{
+		ID:             "cand-1",
+		SpotifyTrackID: "spotify-track-1",
+		Source:         SourceSpotify,
+		Category:       CategoryPast,
+		Type:           TypeClassic,
+		Status:         StatusSelected,
+	}
+	if err := c.Validate(); err != nil {
+		t.Errorf("Validate() = %v, want nil for StatusSelected", err)
+	}
+}
+
 func TestValidateInvalidStatus(t *testing.T) {
 	// NewCandidateTrack always sets StatusDiscovered, so an invalid status
 	// can only be exercised via Validate directly.

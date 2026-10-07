@@ -70,18 +70,28 @@ func (t Type) Valid() bool {
 }
 
 // Status is a candidate's current editorial lifecycle state. It is
-// deliberately small — no approval workflow, roles, or voting states.
-// Every discovery workflow produces StatusDiscovered only; add a further
-// state here once an editorial-review workflow actually transitions one.
+// deliberately small — no approval workflow or roles. Every discovery
+// workflow produces StatusDiscovered only; StatusSelected is set
+// exclusively by the Keep action (Card #56), as a persisted overlay applied
+// on top of a freshly-discovered candidate — see
+// backend/internal/selection and review.Service.ReviewPool. Add a further
+// state here only once another editorial-review transition actually needs
+// one (e.g. "rejected" has no caller today).
 type Status string
 
 const (
 	StatusDiscovered Status = "discovered"
+	StatusSelected   Status = "selected"
 )
 
 // Valid reports whether s is a supported lifecycle state.
 func (s Status) Valid() bool {
-	return s == StatusDiscovered
+	switch s {
+	case StatusDiscovered, StatusSelected:
+		return true
+	default:
+		return false
+	}
 }
 
 // ID is a candidate's internal Sound Continuum identity — distinct from
