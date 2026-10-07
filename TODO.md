@@ -1103,6 +1103,72 @@
       original local-only decision
 - [x] Project memory updated (`current-state.md`, `decisions.md`, `TODO.md`)
 
+## Done (Card #56 — Keep Action + Spotify Mock Mode)
+
+- [x] `candidate.StatusSelected` reinstated (`backend/internal/candidate/
+      candidate.go`) — one of the three lifecycle values Card 31 had
+      trimmed for lack of a caller; `Status.Valid()` now a `switch`; no
+      `under review`/`rejected` added (still no caller for either)
+- [x] `backend/internal/selection` — new package, `Store`/`Service`
+      persisting Keep decisions in a new SQLite table
+      (`candidate_selection`), reusing the existing `*sql.DB`/
+      `CREATE TABLE IF NOT EXISTS` pattern `spotify.Store` already
+      established — no new datastore, no ORM, no migration runner
+- [x] `POST /api/candidates/{id}/keep` (`selection.Service.KeepHandler`) —
+      idempotent by construction (`INSERT ... ON CONFLICT DO UPDATE`), no
+      existence check against a live pool (none is persisted)
+- [x] `review.Service.ReviewPool` gained a `selectionLookup` seam
+      (mirroring `candidatePoolSource`) and overlays persisted selections
+      onto every freshly-discovered candidate on each call — a page
+      refresh after Keep always reflects the latest persisted state
+- [x] `frontend/src/components/CandidateCard.vue` — `Keep`/`Kept ✓` shadcn
+      `Button` in the existing `CardFooter`, no new dependency, no layout
+      redesign; `frontend/src/types/candidateReview.ts`'s `Status` widened
+      to `'discovered' | 'selected'`;
+      `frontend/src/services/candidateReview.ts` gained `keepCandidate()`
+- [x] `SPOTIFY_MOCK_MODE` (`dev/.env`, default `false`) — lets Candidate
+      Discovery/Review run entirely offline with zero real Spotify API
+      calls, while Spotify Development Mode's rate limit (Cards #36/#53/
+      #126) remains unresolved (not fixed by this card, out of scope)
+- [x] `discovery.NewService`'s first parameter widened from the concrete
+      `*spotify.Service` to the existing unexported `spotifyCatalogue`
+      interface (Card #33's test-only seam, reused for a second,
+      production purpose) — existing production/test callers unaffected
+- [x] `backend/internal/spotifymock` — new package, `Catalogue` implements
+      the same 6-method interface as pure, deterministic functions of
+      their own input (no shared state, no `net/http` import anywhere);
+      `Search` echoes its query back as the artist `Name` (required, not
+      cosmetic — `resolveArtist` needs an exact match), so every canonical
+      reference artist resolves deterministically with no per-name data
+      hand-authored
+- [x] `cmd/server/main.go` is the single branch point between
+      `spotifyService` and `spotifymock.NewCatalogue()` — no `if mock`
+      checks inside `discovery`/`review`; every discovery-derived endpoint
+      shares the one `discoveryService` instance, so mock mode covers the
+      whole surface automatically
+- [x] Last.fm untouched (out of scope) — `DiscoverEmerging` still calls
+      the real Last.fm API even in mock mode; a missing `LASTFM_API_KEY`
+      degrades exactly as before (a `WorkflowError`, Card #126's existing
+      degraded state)
+- [x] New backend tests: `candidate` (StatusSelected validity),
+      `selection` (Keep/idempotency/unrelated-candidate isolation),
+      `review` (selection overlay, selection-error propagation),
+      `spotifymock` (determinism, query-echo, Track/AlbumTracks
+      consistency, no `net/http` import) — `go build ./...`/
+      `go vet ./...`/`go test ./...` all pass
+- [x] `npm run build` passes
+- [x] Manual validation (mock mode, real browser via Playwright): 240
+      deterministic Classic/Current candidates rendered correctly (Emerging
+      degraded on missing `LASTFM_API_KEY` in the test environment, as
+      expected); zero `spotify.com` network requests observed; Keep and
+      idempotent re-Keep confirmed via the UI; kept state survived a fresh
+      page load
+- [x] Project memory updated (`current-state.md`, `decisions.md`, `TODO.md`)
+- [x] No Redis, no new database engine, no authentication, no UUID
+      infrastructure, no new repository architecture, no scoring/ranking/
+      discovery algorithm changes, no Candidate Review redesign, no
+      Last.fm mock, no frontend test framework
+
 ## In progress
 
 - Nothing currently in progress.
@@ -1119,8 +1185,10 @@
       automatic editorial selection remains open
 - M6: Curator experience — in progress (Candidate Review screen designed
       and built, Card #51/#52; Card #53 wires it to a real endpoint for
-      Freshness + Repetition Penalty); Fit/DiscoveryBonus/Diversity/
-      PlaylistFit wiring (once their editorial inputs exist) and the
-      selection/publishing workflow remain open
+      Freshness + Repetition Penalty; Card #56 adds the Keep action with
+      persisted selection state, and a `SPOTIFY_MOCK_MODE` dev flag);
+      Fit/DiscoveryBonus/Diversity/PlaylistFit wiring (once their
+      editorial inputs exist) and the rest of the selection/publishing
+      workflow (reject, publish to the official playlist) remain open
 - M7: Weekly editorial workflow
 - M8: Feedback & evolution

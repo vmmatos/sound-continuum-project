@@ -64,8 +64,29 @@ func (f *fakeDiscovery) PlaylistArtistHistory(ctx context.Context) (map[string]t
 	return f.artistHistory, f.artistHistoryErr
 }
 
+// fakeSelection implements selectionLookup entirely in memory, the same
+// seam-testing approach fakeDiscovery already establishes.
+type fakeSelection struct {
+	selected map[string]struct{}
+	err      error
+}
+
+func (f *fakeSelection) AllSelected(ctx context.Context) (map[string]struct{}, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.selected == nil {
+		return map[string]struct{}{}, nil
+	}
+	return f.selected, nil
+}
+
 func newTestService(f *fakeDiscovery) *Service {
-	return &Service{discovery: f, now: func() time.Time { return fixedNow }}
+	return newTestServiceWithSelection(f, &fakeSelection{})
+}
+
+func newTestServiceWithSelection(f *fakeDiscovery, sel *fakeSelection) *Service {
+	return &Service{discovery: f, selection: sel, now: func() time.Time { return fixedNow }}
 }
 
 func testCandidate(t *testing.T, id, spotifyTrackID string, artistIDs ...string) candidate.CandidateTrack {
@@ -449,5 +470,48 @@ func TestReviewPoolPropagatesFilterError(t *testing.T) {
 	_, err := svc.ReviewPool(context.Background())
 	if !errors.Is(err, spotify.ErrOfficialPlaylistNotConfigured) {
 		t.Errorf("err = %v, want ErrOfficialPlaylistNotConfigured", err)
+	}
+}
+
+// 13. A selected candidate (Card #56) comes back with Status overlaid to
+// StatusSelected, while an unrelated candidate stays StatusDiscovered.
+func TestReviewPoolOverlaysSelectedStatus(t *testing.T) {
+	c1 := testCandidate(t, "c1", "track-1", "artist-1")
+	c2 := testCandidate(t, "c2", "track-2", "artist-2")
+	f := fakeWithEligible([]candidate.CandidateTrack{c1, c2})
+	svc := newTestServiceWithSelection(f, &fakeSelection{selected: map[string]struct{}{"c1": {}}})
+
+	pool, err := svc.ReviewPool(context.Background())
+	if err != nil {
+		t.Fatalf("ReviewPool: %v", err)
+	}
+	if len(pool.Entries) != 2 {
+		t.Fatalf("len(Entries) = %d, want 2", len(pool.Entries))
+	}
+
+	for _, e := range pool.Entries {
+		switch e.Ranked.Candidate.ID {
+		case "c1":
+			if e.Ranked.Candidate.Status != candidate.StatusSelected {
+				t.Errorf("c1 Status = %q, want %q", e.Ranked.Candidate.Status, candidate.StatusSelected)
+			}
+		case "c2":
+			if e.Ranked.Candidate.Status != candidate.StatusDiscovered {
+				t.Errorf("c2 Status = %q, want %q (unrelated candidate must not be modified)", e.Ranked.Candidate.Status, candidate.StatusDiscovered)
+			}
+		}
+	}
+}
+
+// 14. A selection-store error propagates instead of silently returning an
+// un-overlaid (or empty) review.
+func TestReviewPoolPropagatesSelectionError(t *testing.T) {
+	c := testCandidate(t, "c1", "track-1", "artist-1")
+	f := fakeWithEligible([]candidate.CandidateTrack{c})
+	svc := newTestServiceWithSelection(f, &fakeSelection{err: errUnexpected})
+
+	_, err := svc.ReviewPool(context.Background())
+	if !errors.Is(err, errUnexpected) {
+		t.Errorf("err = %v, want errUnexpected", err)
 	}
 }

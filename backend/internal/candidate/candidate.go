@@ -8,21 +8,14 @@ package candidate
 
 import "time"
 
-// Source identifies where a candidate was discovered. Spotify is the only
-// supported source today — every discovery workflow (Classic/Current/
+// SourceSpotify identifies a candidate discovered via Spotify — the only
+// supported source today; every discovery workflow (Classic/Current/
 // Emerging) resolves candidate identity through Spotify, even when an
-// external signal like Last.fm drove the discovery. Add a new constant
-// here only once a workflow actually constructs a candidate with it.
-type Source string
-
-const (
-	SourceSpotify Source = "Spotify"
-)
-
-// Valid reports whether s is a supported discovery source.
-func (s Source) Valid() bool {
-	return s == SourceSpotify
-}
+// external signal like Last.fm drove the discovery. CandidateTrack.Source
+// is a plain string, not its own enum type, since there is exactly one
+// valid value; promote it to a typed enum (matching Category/Type/Status)
+// once a second source actually exists.
+const SourceSpotify = "Spotify"
 
 // Category is the editorial context in which a candidate is being
 // considered. It is editorial metadata, not a Spotify or genre
@@ -70,18 +63,28 @@ func (t Type) Valid() bool {
 }
 
 // Status is a candidate's current editorial lifecycle state. It is
-// deliberately small — no approval workflow, roles, or voting states.
-// Every discovery workflow produces StatusDiscovered only; add a further
-// state here once an editorial-review workflow actually transitions one.
+// deliberately small — no approval workflow or roles. Every discovery
+// workflow produces StatusDiscovered only; StatusSelected is set
+// exclusively by the Keep action (Card #56), as a persisted overlay applied
+// on top of a freshly-discovered candidate — see
+// backend/internal/selection and review.Service.ReviewPool. Add a further
+// state here only once another editorial-review transition actually needs
+// one (e.g. "rejected" has no caller today).
 type Status string
 
 const (
 	StatusDiscovered Status = "discovered"
+	StatusSelected   Status = "selected"
 )
 
 // Valid reports whether s is a supported lifecycle state.
 func (s Status) Valid() bool {
-	return s == StatusDiscovered
+	switch s {
+	case StatusDiscovered, StatusSelected:
+		return true
+	default:
+		return false
+	}
 }
 
 // ID is a candidate's internal Sound Continuum identity — distinct from
@@ -97,7 +100,7 @@ type ID string
 type CandidateTrack struct {
 	ID             ID
 	SpotifyTrackID string // external reference; empty unless Source == SourceSpotify
-	Source         Source
+	Source         string
 	Category       Category
 	Type           Type
 	Status         Status
@@ -129,7 +132,7 @@ type CandidateTrack struct {
 type NewCandidateTrackParams struct {
 	ID             ID
 	SpotifyTrackID string
-	Source         Source
+	Source         string
 	Category       Category
 	Type           Type
 
@@ -173,7 +176,7 @@ func (c CandidateTrack) Validate() error {
 	if c.ID == "" {
 		return ErrEmptyCandidateID
 	}
-	if !c.Source.Valid() {
+	if c.Source != SourceSpotify {
 		return ErrInvalidSource
 	}
 	if !c.Category.Valid() {

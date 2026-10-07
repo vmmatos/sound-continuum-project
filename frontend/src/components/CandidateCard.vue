@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { CandidateReviewEntry, DiscoveryMethod } from '../types/candidateReview'
+import { keepCandidate } from '../services/candidateReview'
 import CandidateFactors from './CandidateFactors.vue'
 import BridgeEvidence from './BridgeEvidence.vue'
 import CandidateTrackMetadata from './CandidateTrackMetadata.vue'
@@ -13,6 +14,26 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 const props = defineProps<{
   entry: CandidateReviewEntry
 }>()
+
+// isSelected mirrors the candidate's persisted Status (the backend overlays
+// StatusSelected onto a freshly-discovered candidate once Keep has been
+// called — see review.Service.ReviewPool), so a page refresh after Keep
+// shows the correct state with no extra request.
+const isSelected = ref(props.entry.Ranked.Candidate.Status === 'selected')
+const keeping = ref(false)
+const keepFailed = ref(false)
+
+async function onKeep() {
+  keeping.value = true
+  keepFailed.value = false
+  const ok = await keepCandidate(props.entry.Ranked.Candidate.ID)
+  if (ok) {
+    isSelected.value = true
+  } else {
+    keepFailed.value = true
+  }
+  keeping.value = false
+}
 
 // AvailableWeight is the sum of weights of scoring factors actually
 // evaluated for this candidate — a low value (e.g. only Freshness, 0.10)
@@ -100,26 +121,38 @@ const provenanceText = computed(() => {
       <p v-if="provenanceText" class="text-xs text-muted-foreground">{{ provenanceText }}</p>
     </CardContent>
 
-    <CardFooter class="justify-end gap-1">
-      <Button
-        v-if="entry.Ranked.Candidate.Metadata?.SpotifyURL"
-        as="a"
-        :href="entry.Ranked.Candidate.Metadata.SpotifyURL"
-        target="_blank"
-        rel="noopener noreferrer"
-        variant="ghost"
-        size="sm"
-      >
-        Listen on Spotify
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        @click="() => console.log('Open details', entry.Ranked.Candidate.ID)"
-      >
-        Open details <span aria-hidden="true">→</span>
-      </Button>
+    <CardFooter class="flex-col items-end gap-1">
+      <div class="flex justify-end gap-1">
+        <Button
+          type="button"
+          :variant="isSelected ? 'secondary' : 'ghost'"
+          size="sm"
+          :disabled="keeping"
+          @click="onKeep"
+        >
+          {{ isSelected ? 'Kept ✓' : 'Keep' }}
+        </Button>
+        <Button
+          v-if="entry.Ranked.Candidate.Metadata?.SpotifyURL"
+          as="a"
+          :href="entry.Ranked.Candidate.Metadata.SpotifyURL"
+          target="_blank"
+          rel="noopener noreferrer"
+          variant="ghost"
+          size="sm"
+        >
+          Listen on Spotify
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          @click="() => console.log('Open details', entry.Ranked.Candidate.ID)"
+        >
+          Open details <span aria-hidden="true">→</span>
+        </Button>
+      </div>
+      <p v-if="keepFailed" class="text-xs text-destructive">Failed to keep this candidate. Try again.</p>
     </CardFooter>
   </Card>
 </template>

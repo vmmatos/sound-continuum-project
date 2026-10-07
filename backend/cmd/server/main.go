@@ -14,7 +14,9 @@ import (
 	"github.com/vmmatos/sound-continuum-project/internal/health"
 	"github.com/vmmatos/sound-continuum-project/internal/lastfm"
 	"github.com/vmmatos/sound-continuum-project/internal/review"
+	"github.com/vmmatos/sound-continuum-project/internal/selection"
 	"github.com/vmmatos/sound-continuum-project/internal/spotify"
+	"github.com/vmmatos/sound-continuum-project/internal/spotifymock"
 )
 
 func main() {
@@ -54,15 +56,29 @@ func main() {
 		}
 	}
 
-	discoveryService := discovery.NewService(
-		spotifyService, lastfmClient,
-		discovery.DefaultConfig(),
-		discovery.DefaultCurrentConfig(),
-		discovery.DefaultEmergingConfig(),
-		recentTrackLookbackDays,
-	)
+	// SPOTIFY_MOCK_MODE (Card #56) swaps discovery's Spotify dependency for a
+	// deterministic, zero-network mock at the one seam every Spotify
+	// touchpoint in the discovery pipeline already funnels through
+	// (discovery.NewService's first parameter) — see
+	// internal/spotifymock's doc comment and docs/memory/decisions.md.
+	// Default false preserves real Spotify behavior exactly as before this
+	// card.
+	classicCfg, currentCfg, emergingCfg := discovery.DefaultConfig(), discovery.DefaultCurrentConfig(), discovery.DefaultEmergingConfig()
+	var discoveryService *discovery.Service
+	if os.Getenv("SPOTIFY_MOCK_MODE") == "true" {
+		log.Println("SPOTIFY_MOCK_MODE enabled — using deterministic mock Spotify data, zero real Spotify API calls")
+		discoveryService = discovery.NewService(spotifymock.NewCatalogue(), lastfmClient, classicCfg, currentCfg, emergingCfg, recentTrackLookbackDays)
+	} else {
+		discoveryService = discovery.NewService(spotifyService, lastfmClient, classicCfg, currentCfg, emergingCfg, recentTrackLookbackDays)
+	}
 
-	reviewService := review.NewService(discoveryService)
+	selectionStore, err := selection.NewStore(db)
+	if err != nil {
+		log.Fatalf("failed to initialize selection store: %v", err)
+	}
+	selectionService := selection.NewService(selectionStore)
+
+	reviewService := review.NewService(discoveryService, selectionStore)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.Handler)
@@ -82,6 +98,7 @@ func main() {
 	mux.HandleFunc("POST /api/discovery/emerging", discoveryService.EmergingHandler)
 	mux.HandleFunc("POST /api/candidates/pool", discoveryService.PoolHandler)
 	mux.HandleFunc("GET /api/candidates/review", reviewService.Handler)
+	mux.HandleFunc("POST /api/candidates/{id}/keep", selectionService.KeepHandler)
 
 	addr := ":" + port
 	log.Printf("sound-continuum server listening on %s", addr)

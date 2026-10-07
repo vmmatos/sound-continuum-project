@@ -27,7 +27,7 @@ func TestNewCandidateTrackValidSpotify(t *testing.T) {
 }
 
 func TestNewCandidateTrackInvalidSource(t *testing.T) {
-	for _, source := range []Source{"", "spotify", "SPOTIFY", "Youtube"} {
+	for _, source := range []string{"", "spotify", "SPOTIFY", "Youtube"} {
 		_, err := NewCandidateTrack(NewCandidateTrackParams{
 			ID:       "cand-1",
 			Source:   source,
@@ -53,6 +53,23 @@ func TestNewCandidateTrackInvalidCategory(t *testing.T) {
 		if !errors.Is(err, ErrInvalidCategory) {
 			t.Errorf("category %q: err = %v, want ErrInvalidCategory", category, err)
 		}
+	}
+}
+
+func TestValidateStatusSelected(t *testing.T) {
+	// The Keep action (Card #56) sets Status to StatusSelected by direct
+	// field assignment, not through NewCandidateTrack — confirm Validate()
+	// accepts it like StatusDiscovered.
+	c := CandidateTrack{
+		ID:             "cand-1",
+		SpotifyTrackID: "spotify-track-1",
+		Source:         SourceSpotify,
+		Category:       CategoryPast,
+		Type:           TypeClassic,
+		Status:         StatusSelected,
+	}
+	if err := c.Validate(); err != nil {
+		t.Errorf("Validate() = %v, want nil for StatusSelected", err)
 	}
 }
 

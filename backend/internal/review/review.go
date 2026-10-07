@@ -25,6 +25,7 @@ import (
 	"github.com/vmmatos/sound-continuum-project/internal/candidate"
 	"github.com/vmmatos/sound-continuum-project/internal/discovery"
 	"github.com/vmmatos/sound-continuum-project/internal/scoring"
+	"github.com/vmmatos/sound-continuum-project/internal/selection"
 	"github.com/vmmatos/sound-continuum-project/internal/spotify"
 )
 
@@ -43,11 +44,21 @@ type candidatePoolSource interface {
 	PlaylistArtistHistory(ctx context.Context) (map[string]time.Time, error)
 }
 
+// selectionLookup is the slice of *selection.Store this package depends on,
+// extracted into an unexported interface for the same reason
+// candidatePoolSource exists (see docs/memory/decisions.md, Card #33):
+// production callers (NewService) still pass a concrete *selection.Store,
+// this package's own tests get something fakeable.
+type selectionLookup interface {
+	AllSelected(ctx context.Context) (map[string]struct{}, error)
+}
+
 // Service orchestrates discovery + scoring into a ReviewPool. It holds no
 // scoring state of its own — scoring.Calculate/Rank/GenerateExplanation are
 // pure functions, called directly.
 type Service struct {
 	discovery candidatePoolSource
+	selection selectionLookup
 
 	// now is a clock seam, overridden directly by same-package tests for
 	// deterministic Freshness/RepetitionPenalty boundary testing — the same
@@ -56,10 +67,12 @@ type Service struct {
 	now func() time.Time
 }
 
-// NewService wires a review Service to an existing discovery.Service — no
-// second discovery pipeline and no new persistence.
-func NewService(discoverySvc *discovery.Service) *Service {
-	return &Service{discovery: discoverySvc, now: time.Now}
+// NewService wires a review Service to an existing discovery.Service and
+// selection.Store — no second discovery pipeline, and no new candidate
+// pool persistence (the pool itself is still rebuilt per request; only
+// Keep's selection state, Card #56, is persisted).
+func NewService(discoverySvc *discovery.Service, selectionStore *selection.Store) *Service {
+	return &Service{discovery: discoverySvc, selection: selectionStore, now: time.Now}
 }
 
 // ReviewEntry is one candidate's place in the Candidate Review response:
@@ -182,6 +195,21 @@ func (s *Service) ReviewPool(ctx context.Context) (ReviewPool, error) {
 			Ranked:      rc,
 			Explanation: explanation,
 		})
+	}
+
+	// Overlay persisted Keep decisions (Card #56) onto this run's
+	// freshly-discovered candidates — every candidate.NewCandidateTrack call
+	// always produces StatusDiscovered, so a kept candidate only shows as
+	// StatusSelected via this lookup, re-applied on every ReviewPool call
+	// (a refresh after Keep always reflects the persisted state).
+	selected, err := s.selection.AllSelected(ctx)
+	if err != nil {
+		return ReviewPool{}, err
+	}
+	for i := range reviewEntries {
+		if _, ok := selected[string(reviewEntries[i].Ranked.Candidate.ID)]; ok {
+			reviewEntries[i].Ranked.Candidate.Status = candidate.StatusSelected
+		}
 	}
 
 	return ReviewPool{Entries: reviewEntries, WorkflowErrors: pool.WorkflowErrors, Failures: failures}, nil

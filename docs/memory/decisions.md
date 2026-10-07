@@ -2633,3 +2633,122 @@ the ambiguous `409` instead of creating a fifth. The curator resolved the
 immediate blocker separately via a one-time manual local-DB reconciliation
 (pointing one Docker instance's row at one of the three *original*
 duplicates, not the accidental fourth) — see `current-state.md`.
+
+---
+
+**Decision:** Reinstate `candidate.StatusSelected` (Card #56 — Keep
+action), rather than inventing a new "kept" status.
+
+**Context:** Card 31 trimmed `candidate.Status` down to `StatusDiscovered`
+only, because no workflow had a real caller for `under review`/`selected`/
+`rejected`. Card #56 is the first real caller: the curator needs to mark a
+candidate for inclusion.
+
+**Reason:** The card's own instructions require reusing an existing
+"selected" concept rather than introducing a new "kept" domain state —
+`selected` is the correct reuse target since it's exactly what Card 31
+removed for lack of a caller, not a new concept. No `under review`/
+`rejected` value is added alongside it — neither has a caller yet, and
+adding them speculatively would repeat the exact ahead-of-need mistake
+Card 31's cleanup corrected.
+
+**Consequences:** `Status.Valid()` becomes a `switch` (matching
+`Category`/`Type`'s existing convention) instead of a single `==` check.
+`NewCandidateTrack` is unchanged — it still only ever produces
+`StatusDiscovered`; `StatusSelected` is set by direct field assignment,
+exclusively inside `review.Service.ReviewPool`'s selection overlay (see the
+next entry), never through a constructor or a new `SetStatus`/`Select()`
+method (one call site doesn't justify one).
+
+---
+
+**Decision:** Persist Keep decisions in a new `backend/internal/selection`
+package/table (`candidate_selection`), rather than extending
+`spotify.Store` or building a new general-purpose persistence layer for
+`CandidateTrack`.
+
+**Context:** Card #56 needs the curator's Keep action to survive a page
+refresh. No persistence of any kind exists for `CandidateTrack`/`Status`
+anywhere in the repo — `review.Service.ReviewPool` rebuilds the entire
+candidate pool from scratch on every request; nothing is cached. The only
+existing SQLite tables are `spotify_connection` and `official_playlist`
+(`backend/internal/spotify/store.go`).
+
+**Reason:** The smallest viable persistence reuses what already exists —
+the same `*sql.DB` (already wired in `main.go`) and the same
+`CREATE TABLE IF NOT EXISTS` pattern `spotify.Store` already established —
+without inventing a migration runner, an ORM, Redis, or a new database
+engine. A new package rather than extending `spotify.Store` follows this
+repo's own established convention: `candidate`/`discovery`/`review`/
+`scoring`/`lastfm` are each their own small, flat, feature-named package
+rather than folded into an unrelated existing one, and candidate selection
+is not a Spotify concern. `candidate.ID` (for every Spotify-sourced
+candidate today, the Spotify track ID — see the Card #33 entry above) is a
+stable, natural key, since it's never regenerated. The table stores a
+`status` column (only ever written as `"selected"` today) rather than an
+implicit boolean, so a future second state doesn't require a schema
+migration.
+
+**Consequences:** `selection.Store`/`selection.Service` are new;
+`review.Service` gains a `selectionLookup` interface field (mirroring the
+existing `candidatePoolSource` seam) and overlays `AllSelected()`'s result
+onto `ReviewPool`'s freshly-discovered candidates on every call — a
+candidate pool is still never itself persisted; only the Keep decision is.
+`POST /api/candidates/{id}/keep` performs no existence check against a live
+candidate pool (there is none to check against), matching this project's
+existing precedent of not inventing validation ahead of a concrete need
+(see the Card 27/28 entries above). `selection.Store.Keep` is a single
+`INSERT ... ON CONFLICT DO UPDATE` upsert — idempotent by construction, no
+read-before-write race, no duplicate rows possible.
+
+---
+
+**Decision:** Widen `discovery.NewService`'s first parameter from the
+concrete `*spotify.Service` to the existing unexported `spotifyCatalogue`
+interface, and introduce `SPOTIFY_MOCK_MODE` / `backend/internal/
+spotifymock` (Card #56) as the one production implementation that swaps in
+through it.
+
+**Context:** Spotify Development Mode has been rate-limited since Card #36
+and remained so through Cards #53/#126 — Candidate Review development is
+blocked without a way to exercise it offline. `discovery.spotifyCatalogue`
+(Card #33) already exists as a 6-method interface
+(`Search`/`ArtistAlbums`/`AlbumTracks`/`PlaylistItems`/`OfficialPlaylist`/
+`Track`) covering every Spotify touchpoint anywhere in the discovery
+pipeline (confirmed by inspection: no 7th call exists in
+`DiscoverClassic`/`DiscoverCurrent`/`DiscoverEmerging`/
+`FilterRecentTracks`/`EnrichCandidateMetadata`) — but it was deliberately
+kept test-only, with `NewService` typed to the concrete `*spotify.Service`
+(see that card's own decision entry above: "production wiring is a plain
+spotify.Service").
+
+**Reason:** This is the natural seam for a mock: `review.Service` never
+touches Spotify directly (it only reaches Spotify through
+`discovery.Service`), so swapping the catalogue at this one point mocks the
+entire Discover → Pool → Score → Rank → Review path with no `if mock`
+checks scattered through discovery's own logic — exactly what the card
+requires ("Spotify interface ├── real ├── mock", not scattered
+conditionals). Widening an existing interface's point of use to a second,
+production purpose is smaller than introducing a parallel abstraction or an
+`httptest`-server-based mock dressed up as a real `*spotify.Service`.
+
+**Consequences:** `discovery.NewService(catalogue spotifyCatalogue, ...)` —
+existing callers passing a concrete `*spotify.Service` (production) or a
+`fakeCatalogue` (tests) are unaffected, since both already satisfy the
+interface structurally; this is a pure widening, not a behavior change.
+`backend/internal/spotifymock.Catalogue` implements the same 6 methods as
+pure, deterministic functions of their own input (no shared mutable state,
+no clock dependency beyond a fixed "recently released" offset needed to
+clear `DiscoverCurrent`/`DiscoverEmerging`'s 90-day recency window, and
+critically no `net/http` import anywhere in the package) — `Search` echoes
+the query back as the returned artist's `Name`, which is required (not
+cosmetic): `discovery.resolveArtist` only accepts an exact,
+case-insensitive name match, so a fixed-roster mock with different names
+would silently fail every resolution. `cmd/server/main.go` reads
+`SPOTIFY_MOCK_MODE` (`dev/.env`, default `false`) and is the only branch
+point between `spotifyService` and `spotifymock.NewCatalogue()`. Last.fm is
+untouched — `DiscoverEmerging` still calls the real Last.fm API in mock
+mode; a missing `LASTFM_API_KEY` degrades exactly as it already did before
+this card (a `WorkflowError`, surfaced by the existing Card #126 degraded
+state), which is not a new failure mode and was not addressed by this card
+(mocking Last.fm was explicitly out of scope).
