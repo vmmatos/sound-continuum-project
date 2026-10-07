@@ -1,6 +1,5 @@
 import type { CandidateReviewPool } from '../types/candidateReview'
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
+import { API_BASE_URL } from './apiBase'
 
 export async function getCandidateReviewPool(): Promise<CandidateReviewPool | null> {
   try {

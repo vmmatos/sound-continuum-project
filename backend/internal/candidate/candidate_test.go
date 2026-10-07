@@ -27,7 +27,7 @@ func TestNewCandidateTrackValidSpotify(t *testing.T) {
 }
 
 func TestNewCandidateTrackInvalidSource(t *testing.T) {
-	for _, source := range []Source{"", "spotify", "SPOTIFY", "Youtube"} {
+	for _, source := range []string{"", "spotify", "SPOTIFY", "Youtube"} {
 		_, err := NewCandidateTrack(NewCandidateTrackParams{
 			ID:       "cand-1",
 			Source:   source,

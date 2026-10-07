@@ -8,21 +8,14 @@ package candidate
 
 import "time"
 
-// Source identifies where a candidate was discovered. Spotify is the only
-// supported source today — every discovery workflow (Classic/Current/
+// SourceSpotify identifies a candidate discovered via Spotify — the only
+// supported source today; every discovery workflow (Classic/Current/
 // Emerging) resolves candidate identity through Spotify, even when an
-// external signal like Last.fm drove the discovery. Add a new constant
-// here only once a workflow actually constructs a candidate with it.
-type Source string
-
-const (
-	SourceSpotify Source = "Spotify"
-)
-
-// Valid reports whether s is a supported discovery source.
-func (s Source) Valid() bool {
-	return s == SourceSpotify
-}
+// external signal like Last.fm drove the discovery. CandidateTrack.Source
+// is a plain string, not its own enum type, since there is exactly one
+// valid value; promote it to a typed enum (matching Category/Type/Status)
+// once a second source actually exists.
+const SourceSpotify = "Spotify"
 
 // Category is the editorial context in which a candidate is being
 // considered. It is editorial metadata, not a Spotify or genre
@@ -107,7 +100,7 @@ type ID string
 type CandidateTrack struct {
 	ID             ID
 	SpotifyTrackID string // external reference; empty unless Source == SourceSpotify
-	Source         Source
+	Source         string
 	Category       Category
 	Type           Type
 	Status         Status
@@ -139,7 +132,7 @@ type CandidateTrack struct {
 type NewCandidateTrackParams struct {
 	ID             ID
 	SpotifyTrackID string
-	Source         Source
+	Source         string
 	Category       Category
 	Type           Type
 
@@ -183,7 +176,7 @@ func (c CandidateTrack) Validate() error {
 	if c.ID == "" {
 		return ErrEmptyCandidateID
 	}
-	if !c.Source.Valid() {
+	if c.Source != SourceSpotify {
 		return ErrInvalidSource
 	}
 	if !c.Category.Valid() {
