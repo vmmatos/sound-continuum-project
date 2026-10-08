@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { Ref } from 'vue'
-import type { CandidateCategory, CandidateReviewEntry, DiscoveryMethod } from '../types/candidateReview'
+import type { CandidateCategory, CandidateReviewEntry, CandidateTrack, DiscoveryMethod } from '../types/candidateReview'
 import { keepCandidate, maybeCandidate, skipCandidate, clearCandidateDecision } from '../services/candidateReview'
 import CandidateFactors from './CandidateFactors.vue'
 import BridgeEvidence from './BridgeEvidence.vue'
@@ -36,13 +36,18 @@ const skipFailed = ref(false)
 // other two actions overwrites it — the backend's upsert makes Keep/Maybe/
 // Skip mutually exclusive. setDecision captures the shared shape (toggle,
 // clear the other two refs on success, surface failure) once; onKeep/
-// onMaybe/onSkip just supply which refs/endpoint apply to them.
+// onMaybe/onSkip just supply which refs/endpoint/status apply to them.
+// It also writes the resulting status back onto the shared entry object
+// (not just the local refs) so other reactive consumers of the same
+// `entries` array — e.g. the Weekly Playlist Preview — see the change
+// without a second, duplicated selection state.
 async function setDecision(
   active: Ref<boolean>,
   busy: Ref<boolean>,
   failed: Ref<boolean>,
   others: Ref<boolean>[],
   apply: (id: string) => Promise<boolean>,
+  status: CandidateTrack['Status'],
 ) {
   busy.value = true
   failed.value = false
@@ -52,6 +57,7 @@ async function setDecision(
   if (ok) {
     active.value = !active.value
     if (active.value) others.forEach((other) => (other.value = false))
+    props.entry.Ranked.Candidate.Status = active.value ? status : 'discovered'
   } else {
     failed.value = true
   }
@@ -59,15 +65,15 @@ async function setDecision(
 }
 
 function onKeep() {
-  return setDecision(isSelected, keeping, keepFailed, [isMaybe, isSkipped], keepCandidate)
+  return setDecision(isSelected, keeping, keepFailed, [isMaybe, isSkipped], keepCandidate, 'selected')
 }
 
 function onMaybe() {
-  return setDecision(isMaybe, maybeing, maybeFailed, [isSelected, isSkipped], maybeCandidate)
+  return setDecision(isMaybe, maybeing, maybeFailed, [isSelected, isSkipped], maybeCandidate, 'under review')
 }
 
 function onSkip() {
-  return setDecision(isSkipped, skipping, skipFailed, [isSelected, isMaybe], skipCandidate)
+  return setDecision(isSkipped, skipping, skipFailed, [isSelected, isMaybe], skipCandidate, 'rejected')
 }
 
 // AvailableWeight is the sum of weights of scoring factors actually

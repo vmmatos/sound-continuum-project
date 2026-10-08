@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { getCandidateReviewPool } from '../services/candidateReview'
 import type { CandidateReviewEntry } from '../types/candidateReview'
 import CandidateCard from '../components/CandidateCard.vue'
+import WeeklyPlaylistPreview from '../components/WeeklyPlaylistPreview.vue'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
@@ -44,6 +45,7 @@ onMounted(async () => {
     </p>
     <template v-else>
       <p class="mt-1 text-xs text-muted-foreground">{{ entries.length }} candidates</p>
+      <WeeklyPlaylistPreview class="mt-4" :entries="entries" />
       <TooltipProvider>
         <div class="mt-4 flex flex-col gap-4">
           <CandidateCard v-for="e in entries" :key="e.Ranked.Candidate.ID" :entry="e" />
