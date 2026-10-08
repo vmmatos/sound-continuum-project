@@ -35,10 +35,7 @@ watch(
   (ids) => {
     const idSet = new Set(ids)
     const next = order.value.filter((id) => idSet.has(id))
-    const known = new Set(next)
-    for (const id of ids) {
-      if (!known.has(id)) next.push(id)
-    }
+    next.push(...ids.filter((id) => !order.value.includes(id)))
     order.value = next
   },
   { immediate: true },
@@ -93,10 +90,6 @@ function onDragEnd() {
 // to this component, per the project's target of a ~15-track weekly edition.
 // Exceeding it is reported, never used to truncate or discard candidates.
 const WEEKLY_TRACK_TARGET = 15
-
-// Test-only escape hatch: tests drive reordering through the up/down
-// buttons (reliable in jsdom), which already call this function directly.
-defineExpose({ moveTo })
 </script>
 
 <template>
