@@ -45,6 +45,15 @@ func (s *Service) MaybeHandler(w http.ResponseWriter, r *http.Request) {
 	s.statusHandler(w, r, statusUnderReview, s.store.Maybe)
 }
 
+// RejectHandler exposes POST /api/candidates/{id}/skip (Card #58) — marks a
+// candidate rejected. Named "skip" (the curator-facing action) rather than
+// "reject" (the domain status), matching the existing /keep and /maybe
+// endpoint naming — both are already UI-action names, not status names.
+// Same idempotency/no-existence-check contract as KeepHandler/MaybeHandler.
+func (s *Service) RejectHandler(w http.ResponseWriter, r *http.Request) {
+	s.statusHandler(w, r, statusRejected, s.store.Reject)
+}
+
 // statusHandler is the shared body for KeepHandler/MaybeHandler: both set a
 // fixed status via a single store call and report it back unchanged.
 func (s *Service) statusHandler(w http.ResponseWriter, r *http.Request, status string, set func(context.Context, string) error) {
@@ -65,11 +74,11 @@ func (s *Service) statusHandler(w http.ResponseWriter, r *http.Request, status s
 }
 
 // ClearHandler exposes POST /api/candidates/{id}/clear (Card #57) — removes
-// any persisted Keep/Maybe decision, returning the candidate to the neutral
-// "discovered" state. The curator's undo path for both actions: the
-// frontend decides when to call this based on which button is already
-// active, so each endpoint stays a plain, idempotent "set" or "clear"
-// operation.
+// any persisted Keep/Maybe/Skip decision, returning the candidate to the
+// neutral "discovered" state. The curator's undo path for all three
+// actions: the frontend decides when to call this based on which button is
+// already active, so each endpoint stays a plain, idempotent "set" or
+// "clear" operation.
 func (s *Service) ClearHandler(w http.ResponseWriter, r *http.Request) {
 	s.statusHandler(w, r, "discovered", s.store.Clear)
 }

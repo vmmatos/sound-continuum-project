@@ -66,7 +66,7 @@ export interface CandidateTrack {
   Source: 'Spotify'
   Category: CandidateCategory
   Type: CandidateType
-  Status: 'discovered' | 'selected' | 'under review'
+  Status: 'discovered' | 'selected' | 'under review' | 'rejected'
   TrackTitle: string
   TrackArtist: string
   CreatedAt: string

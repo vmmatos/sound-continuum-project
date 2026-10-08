@@ -1219,6 +1219,53 @@
       integration/rate-limit handling/mock mode, no Redis, no new database,
       no AI, no frontend test framework, no Candidate Review redesign
 
+## Done (Card #58 — Skip Action)
+
+- [x] `candidate.StatusRejected` reinstated (`backend/internal/candidate/
+      candidate.go`) — the last of the three lifecycle values Card 31 had
+      trimmed, now with a real caller (Skip); `Status.Valid()` extended to
+      a 4-way `switch`
+- [x] `backend/internal/selection/store.go` — `Reject` (upsert `rejected`,
+      shares `setStatus`) and `AllRejected` (shares `allWithStatus`), both
+      one-line wrappers mirroring `Keep`/`Maybe` and `AllSelected`/
+      `AllUnderReview` exactly; same table, same schema, no migration
+- [x] `POST /api/candidates/{id}/skip` (`selection.Service.RejectHandler`)
+      added alongside the existing `/keep`/`/maybe`/`/clear`, sharing
+      `statusHandler`; named after the UI action ("skip"), not the domain
+      status ("rejected"), matching existing naming
+- [x] Mutual exclusivity among Keep/Maybe/Skip falls out of the existing
+      `candidate_selection` schema (one row per `candidate_id`) with no
+      extra application-level check
+- [x] `review.Service.ReviewPool` — `selectionLookup` gained `AllRejected`;
+      a third overlay pass applies `StatusRejected` after the existing
+      Keep/Maybe overlays, which can never collide with it
+- [x] Frontend: `CandidateCard.vue` gained a `Skip`/`Skipped ✓` button next
+      to Maybe (same shadcn `Button` convention, no new dependency, no
+      layout redesign); each of Keep/Maybe/Skip's handlers now clears both
+      other local flags on success (previously Keep/Maybe only cleared
+      each other); `types/candidateReview.ts`'s `Status` widened to
+      `'discovered' | 'selected' | 'under review' | 'rejected'`;
+      `services/candidateReview.ts` gained `skipCandidate()`
+- [x] New/extended backend tests: `candidate` (StatusRejected validity),
+      `selection` (`store_test.go` — Reject/idempotency/mutual-exclusion in
+      both directions with Keep and Maybe/unrelated-candidate isolation;
+      `service_test.go` — HTTP-level round trips, idempotency, mutual
+      exclusivity), `review` (Skip overlay, unrelated-candidate isolation,
+      coexistence with unrelated Keep/Maybe) — `go build ./...`/
+      `go vet ./...`/`go test ./...` all pass
+- [x] `npm run build` passes
+- [x] Manual validation (mock mode, via `curl` against the running
+      `SPOTIFY_MOCK_MODE=true` backend — no browser-automation tool
+      available this session, same fallback as Card #57): Skip, repeat-Skip
+      (idempotent), Skip→Keep, Keep→Skip, Maybe→Skip, Skip→Maybe,
+      Skip→Clear all returned the correct resulting `status` in the JSON
+      response and were reflected correctly by `GET /api/candidates/review`
+- [x] Project memory updated (`current-state.md`, `decisions.md`, `TODO.md`)
+- [x] No change to scoring/ranking/discovery/categories/Spotify
+      integration/rate-limit handling/mock mode, no Redis, no new database,
+      no AI, no frontend test framework, no Candidate Review redesign, no
+      candidate physically deleted
+
 ## In progress
 
 - Nothing currently in progress.
@@ -1238,9 +1285,11 @@
       Freshness + Repetition Penalty; Card #56 adds the Keep action with
       persisted selection state, and a `SPOTIFY_MOCK_MODE` dev flag; Card
       #57 adds the Maybe action, makes Keep reversible, and makes Keep/
-      Maybe mutually exclusive);
+      Maybe mutually exclusive; Card #58 adds the Skip action, mutually
+      exclusive with Keep/Maybe, reusing the same persisted-selection
+      mechanism);
       Fit/DiscoveryBonus/Diversity/PlaylistFit wiring (once their
       editorial inputs exist) and the rest of the selection/publishing
-      workflow (reject, publish to the official playlist) remain open
+      workflow (publish to the official playlist) remain open
 - M7: Weekly editorial workflow
 - M8: Feedback & evolution

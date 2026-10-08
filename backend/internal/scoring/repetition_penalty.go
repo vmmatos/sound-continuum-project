@@ -95,10 +95,7 @@ func CalculateRepetitionPenalty(trackLastUsedAt, artistLastUsedAt *time.Time, no
 	track := repetitionSeverity(trackLastUsedAt, now, config.HorizonDays)
 	artist := repetitionSeverity(artistLastUsedAt, now, config.HorizonDays)
 
-	value := track.Value
-	if artist.Value > value {
-		value = artist.Value
-	}
+	value := max(track.Value, artist.Value)
 
 	return RepetitionPenaltyResult{
 		Value:       value,

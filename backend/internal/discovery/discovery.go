@@ -750,10 +750,7 @@ func walkPages[T any](maxItems, maxPageSize int, fetch func(limit, offset int) (
 	var items []T
 	offset := 0
 	for len(items) < maxItems {
-		pageSize := maxItems - len(items)
-		if pageSize > maxPageSize {
-			pageSize = maxPageSize
-		}
+		pageSize := min(maxItems-len(items), maxPageSize)
 
 		page, err := fetch(pageSize, offset)
 		if err != nil {

@@ -21,12 +21,13 @@ import (
 // schema creates the table backing every candidate's selection state.
 // Candidate ID is the primary key — a candidate.ID (for Spotify-sourced
 // candidates, the Spotify track ID, see decisions.md's Card #33 entry) is
-// never regenerated, so it's a stable, natural key. "selected" (Keep) and
-// "under review" (Maybe, Card #57) are the two statuses ever written; a
-// cleared decision deletes the row rather than writing a third "neutral"
-// status. One row per candidate means writing one status structurally
-// overwrites the other — Keep and Maybe are mutually exclusive by
-// construction, not by application-level checking.
+// never regenerated, so it's a stable, natural key. "selected" (Keep),
+// "under review" (Maybe, Card #57), and "rejected" (Skip, Card #58) are the
+// three statuses ever written; a cleared decision deletes the row rather
+// than writing a fourth "neutral" status. One row per candidate means
+// writing one status structurally overwrites another — Keep, Maybe, and
+// Skip are mutually exclusive by construction, not by application-level
+// checking.
 const schema = `
 CREATE TABLE IF NOT EXISTS candidate_selection (
 	candidate_id TEXT PRIMARY KEY,
@@ -48,11 +49,12 @@ func NewStore(db *sql.DB) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
-// statusSelected and statusUnderReview are the only statuses this package
-// ever writes.
+// statusSelected, statusUnderReview, and statusRejected are the only
+// statuses this package ever writes.
 const (
 	statusSelected    = "selected"
 	statusUnderReview = "under review"
+	statusRejected    = "rejected"
 )
 
 // setStatus upserts candidateID's status. Idempotent by construction: the
@@ -81,6 +83,12 @@ func (s *Store) Keep(ctx context.Context, candidateID string) error {
 // undecided but wants to keep it in consideration.
 func (s *Store) Maybe(ctx context.Context, candidateID string) error {
 	return s.setStatus(ctx, candidateID, statusUnderReview)
+}
+
+// Reject marks candidateID as rejected (Card #58's Skip action) — the
+// curator explicitly rejects it.
+func (s *Store) Reject(ctx context.Context, candidateID string) error {
+	return s.setStatus(ctx, candidateID, statusRejected)
 }
 
 // Clear removes any persisted decision for candidateID, returning it to the
@@ -130,4 +138,10 @@ func (s *Store) AllSelected(ctx context.Context) (map[string]struct{}, error) {
 // under review (Maybe, Card #57), mirroring AllSelected.
 func (s *Store) AllUnderReview(ctx context.Context) (map[string]struct{}, error) {
 	return s.allWithStatus(ctx, statusUnderReview)
+}
+
+// AllRejected returns the set of every candidate ID currently marked
+// rejected (Skip, Card #58), mirroring AllSelected/AllUnderReview.
+func (s *Store) AllRejected(ctx context.Context) (map[string]struct{}, error) {
+	return s.allWithStatus(ctx, statusRejected)
 }

@@ -11,29 +11,16 @@ export async function getCandidateReviewPool(): Promise<CandidateReviewPool | nu
   }
 }
 
-export async function keepCandidate(id: string): Promise<boolean> {
+async function postAction(path: string): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/candidates/${id}/keep`, { method: 'POST' })
+    const response = await fetch(`${API_BASE_URL}${path}`, { method: 'POST' })
     return response.ok
   } catch {
     return false
   }
 }
 
-export async function maybeCandidate(id: string): Promise<boolean> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/candidates/${id}/maybe`, { method: 'POST' })
-    return response.ok
-  } catch {
-    return false
-  }
-}
-
-export async function clearCandidateDecision(id: string): Promise<boolean> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/candidates/${id}/clear`, { method: 'POST' })
-    return response.ok
-  } catch {
-    return false
-  }
-}
+export const keepCandidate = (id: string) => postAction(`/api/candidates/${id}/keep`)
+export const maybeCandidate = (id: string) => postAction(`/api/candidates/${id}/maybe`)
+export const skipCandidate = (id: string) => postAction(`/api/candidates/${id}/skip`)
+export const clearCandidateDecision = (id: string) => postAction(`/api/candidates/${id}/clear`)
