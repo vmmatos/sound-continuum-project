@@ -1706,11 +1706,12 @@
   `order`'s membership/sequence, so a Keep/Maybe/Skip change made elsewhere
   on `CandidateCard` — which has no notion of this component's lock state
   — can never leave a stale "confirmed" label next to a changed playlist.
-  `confirmedPlaylist` (a computed of `{ trackIds, entries }`, `null` unless
-  confirmed, using `SpotifyTrackID` for `trackIds`) is exposed via
-  `defineExpose` as the integration point a future M3 publishing flow would
-  read via a template ref — no such flow exists yet in this repo (confirmed
-  by inspection: only `InitializeOfficialPlaylist` exists, no add-tracks
+  `confirmedPlaylist` (a computed exposing `keptEntries` itself, `null`
+  unless confirmed — no precomputed shape like a separate track-ID list,
+  since there's no caller yet to size one for) is exposed via `defineExpose`
+  as the integration point a future M3 publishing flow would read via a
+  template ref — no such flow exists yet in this repo (confirmed by
+  inspection: only `InitializeOfficialPlaylist` exists, no add-tracks
   endpoint), so nothing consumes it yet. `CandidateTrack.Status` is never
   read or written by confirmation — selection decisions and playlist
   confirmation remain independent concepts. 10 new Vitest cases (16 total

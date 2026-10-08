@@ -3031,13 +3031,15 @@ exist yet.
 **Consequences:** New state in `WeeklyPlaylistPreview.vue`: `confirmed:
 ref<boolean>`, `confirmPlaylist()`/`editPlaylist()` (each a guarded flip of
 `confirmed`, with focus moved to the other action's button via `nextTick`),
-and `confirmedPlaylist: ComputedRef<{ trackIds: string[], entries:
-CandidateReviewEntry[] } | null>` (`null` whenever not confirmed, so a
-confirmed *empty* playlist can never exist), exposed via `defineExpose`.
-`trackIds` uses `CandidateTrack.SpotifyTrackID` (not `ID`) since that's the
-field actually meant for Spotify publishing, even though the two are equal
-for every Source=Spotify candidate today (Card #33's decision). The
-existing `watch(keptIds, ...)` gained one diff check: if confirmed and the
+and `confirmedPlaylist: ComputedRef<CandidateReviewEntry[] | null>` (`null`
+whenever not confirmed, so a confirmed *empty* playlist can never exist),
+exposed via `defineExpose`. `confirmedPlaylist` is `keptEntries` itself, not
+a precomputed shape (e.g. a separate track-ID list) — nothing calls this
+yet, so there's no caller to size that shape for; a future consumer derives
+`CandidateTrack.SpotifyTrackID` (not `ID`, since that's the field actually
+meant for Spotify publishing, even though the two are equal for every
+Source=Spotify candidate today — Card #33's decision) from each entry
+itself. The existing `watch(keptIds, ...)` gained one diff check: if confirmed and the
 reconciled `next` sequence differs from the current `order`,
 `confirmed.value = false` before applying the reconciliation — so the live
 and confirmed states can never diverge while the UI still claims

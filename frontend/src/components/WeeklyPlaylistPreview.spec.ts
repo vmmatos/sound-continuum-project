@@ -54,6 +54,11 @@ async function edit(wrapper: ReturnType<typeof mount>) {
   await findButton(wrapper, 'Edit playlist')!.trigger('click')
 }
 
+function confirmedIds(wrapper: ReturnType<typeof mount>) {
+  const entries = (wrapper.vm as any).confirmedPlaylist as CandidateReviewEntry[] | null
+  return entries?.map((e) => e.Ranked.Candidate.ID) ?? null
+}
+
 describe('WeeklyPlaylistPreview', () => {
   it('shows only Kept tracks, in rank order', () => {
     const entries = [makeEntry('a', 'selected', 1), makeEntry('b', 'rejected', 2), makeEntry('c', 'selected', 3)]
@@ -125,7 +130,7 @@ describe('WeeklyPlaylistPreview', () => {
 
     expect(wrapper.text()).toContain('Final playlist confirmed')
     expect(wrapper.text()).toContain('3 tracks')
-    expect((wrapper.vm as any).confirmedPlaylist.trackIds).toEqual(['a', 'b', 'c'])
+    expect(confirmedIds(wrapper)).toEqual(['a', 'b', 'c'])
   })
 
   it('a reorder made before confirming is reflected in the confirmed order, not rank order', async () => {
@@ -136,7 +141,7 @@ describe('WeeklyPlaylistPreview', () => {
     await clickUp(wrapper, 'c') // manual order becomes [c, a, b]
     await confirm(wrapper)
 
-    expect((wrapper.vm as any).confirmedPlaylist.trackIds).toEqual(['c', 'a', 'b'])
+    expect(confirmedIds(wrapper)).toEqual(['c', 'a', 'b'])
   })
 
   it('confirmed order is stable across unrelated re-renders', async () => {
@@ -147,7 +152,7 @@ describe('WeeklyPlaylistPreview', () => {
     await wrapper.setProps({ entries: [...entries] }) // same statuses, new array reference
 
     expect(wrapper.text()).toContain('Final playlist confirmed')
-    expect((wrapper.vm as any).confirmedPlaylist.trackIds).toEqual(['a', 'b'])
+    expect(confirmedIds(wrapper)).toEqual(['a', 'b'])
   })
 
   it('reordering is unavailable once the playlist is locked', async () => {
@@ -158,7 +163,7 @@ describe('WeeklyPlaylistPreview', () => {
 
     expect(wrapper.find('[aria-label="Move Track a up"]').exists()).toBe(false)
     expect(wrapper.find('[aria-label="Move Track b down"]').exists()).toBe(false)
-    expect((wrapper.vm as any).confirmedPlaylist.trackIds).toEqual(['a', 'b'])
+    expect(confirmedIds(wrapper)).toEqual(['a', 'b'])
   })
 
   it('a Keep/Maybe/Skip change elsewhere invalidates the confirmation instead of silently diverging', async () => {
@@ -200,7 +205,7 @@ describe('WeeklyPlaylistPreview', () => {
     expect(wrapper.text()).not.toContain('Final playlist confirmed')
 
     await confirm(wrapper)
-    expect((wrapper.vm as any).confirmedPlaylist.trackIds).toEqual(['b', 'a'])
+    expect(confirmedIds(wrapper)).toEqual(['b', 'a'])
   })
 
   it('a membership change after Edit playlist requires reconfirmation', async () => {
@@ -217,7 +222,7 @@ describe('WeeklyPlaylistPreview', () => {
     expect(titles(wrapper)).toEqual(['Track a'])
 
     await confirm(wrapper)
-    expect((wrapper.vm as any).confirmedPlaylist.trackIds).toEqual(['a'])
+    expect(confirmedIds(wrapper)).toEqual(['a'])
   })
 
   it('confirm is unavailable with nothing Kept, and never produces a confirmed empty playlist', async () => {
@@ -241,8 +246,6 @@ describe('WeeklyPlaylistPreview', () => {
 
     await confirm(wrapper)
 
-    const confirmedPlaylist = (wrapper.vm as any).confirmedPlaylist
-    expect(confirmedPlaylist.trackIds).toEqual(['a', 'b'])
-    expect(confirmedPlaylist.entries.map((e: CandidateReviewEntry) => e.Ranked.Candidate.ID)).toEqual(['a', 'b'])
+    expect(confirmedIds(wrapper)).toEqual(['a', 'b'])
   })
 })

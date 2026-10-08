@@ -94,17 +94,10 @@ function editPlaylist() {
 // The one integration point a future Spotify-publishing flow would read
 // (via a template ref on this component) — null whenever nothing is
 // confirmed, so a confirmed *empty* playlist can never exist. Extends
-// `order`/`keptEntries` rather than inventing a second order concept.
-// `SpotifyTrackID` (not `ID`) is the field actually meant for Spotify
-// publishing, even though the two are equal for every candidate today.
-const confirmedPlaylist = computed(() =>
-  confirmed.value
-    ? {
-        trackIds: keptEntries.value.map((e) => e.Ranked.Candidate.SpotifyTrackID),
-        entries: keptEntries.value,
-      }
-    : null,
-)
+// `keptEntries` rather than inventing a second order concept or a
+// precomputed shape (e.g. a track-ID list) nothing calls yet — a future
+// caller derives `SpotifyTrackID` from each entry when it exists.
+const confirmedPlaylist = computed(() => (confirmed.value ? keptEntries.value : null))
 
 defineExpose({ confirmedPlaylist })
 
