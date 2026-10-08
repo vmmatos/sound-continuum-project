@@ -2797,3 +2797,51 @@ candidate in both sets at once. `CandidateCard.vue` tracks `isSelected`/
 handler picks `clearCandidateDecision()` vs. the apply call based on
 whether that button is already active. No new package, no new table, no
 new dependency, no request body/JSON parsing added to any handler.
+
+---
+
+**Decision:** Reinstate `candidate.StatusRejected` for the Skip action
+(Card #58) by extending the exact `Keep`/`Maybe` mechanism (Cards #56/#57)
+with a third status, rather than introducing a parallel implementation.
+
+**Context:** Card #58 explicitly requires checking first whether the
+existing Keep/Maybe decision model already has a generic mechanism for
+changing candidate decisions, and extending it rather than forking it if
+so. `candidate.Status` had `StatusDiscovered`/`StatusSelected`/
+`StatusUnderReview` (Card 31 originally defined all three plus `rejected`;
+Card 31's own cleanup trimmed `rejected` for lack of a caller; Cards #56/
+#57 reinstated the other two). `selection.Store` already stores `status` as
+a single column, one row per `candidate_id`, with `setStatus` (shared
+upsert) and `allWithStatus` (shared query) helpers Card #57 had already
+generalized from Card #56's Keep-only code specifically so a later state
+could reuse them.
+
+**Reason:** This is the same reuse Card #57 established for `under
+review`: every discovery workflow produces `StatusDiscovered` only, so no
+candidate ever enters the review flow already `rejected` — reusing it for
+Skip is unambiguous. `setStatus`/`allWithStatus` already generalize to a
+third value with zero new code beyond two one-line wrapper methods
+(`Reject`, `AllRejected`) mirroring `Keep`/`Maybe` and `AllSelected`/
+`AllUnderReview` exactly. Mutual exclusivity among all three again falls
+out of "one row per `candidate_id`" with no extra application logic — the
+schema was never specific to two statuses. No architectural problem was
+found in the existing model, so per the card's own instruction, no new
+abstraction was introduced.
+
+**Consequences:** `POST /api/candidates/{id}/skip`
+(`selection.Service.RejectHandler`) is a new sibling of `/keep`/`/maybe`,
+sharing the existing `statusHandler` helper; it is named after the
+curator-facing action ("skip"), not the domain status ("rejected"),
+matching the existing `/keep`→`selected`/`/maybe`→`under review` naming.
+The existing `/clear` endpoint needed no change — it already returns any
+decided candidate to `"discovered"` regardless of which status it held.
+`review.Service.ReviewPool`'s `selectionLookup` gained `AllRejected`,
+overlaid in a third pass after the existing two — the three overlays can
+never collide, for the same single-row-schema reason the Card #57 Keep/
+Maybe overlays can't. `CandidateCard.vue` gained `isSkipped`/`onSkip`
+mirroring `isSelected`/`onKeep` and `isMaybe`/`onMaybe` exactly; each of
+the three handlers now clears both other local flags on success (a latent
+gap in Cards #56/#57's two-way-only cross-clearing that only matters once a
+third mutually-exclusive state exists). No new package, no new table, no
+schema migration, no new dependency, no request body/JSON parsing added to
+any handler, no candidate physically removed from the pool.

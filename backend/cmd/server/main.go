@@ -100,6 +100,7 @@ func main() {
 	mux.HandleFunc("GET /api/candidates/review", reviewService.Handler)
 	mux.HandleFunc("POST /api/candidates/{id}/keep", selectionService.KeepHandler)
 	mux.HandleFunc("POST /api/candidates/{id}/maybe", selectionService.MaybeHandler)
+	mux.HandleFunc("POST /api/candidates/{id}/skip", selectionService.RejectHandler)
 	mux.HandleFunc("POST /api/candidates/{id}/clear", selectionService.ClearHandler)
 
 	addr := ":" + port

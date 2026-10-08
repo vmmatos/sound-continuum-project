@@ -29,6 +29,15 @@ export async function maybeCandidate(id: string): Promise<boolean> {
   }
 }
 
+export async function skipCandidate(id: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/candidates/${id}/skip`, { method: 'POST' })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
 export async function clearCandidateDecision(id: string): Promise<boolean> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/candidates/${id}/clear`, { method: 'POST' })

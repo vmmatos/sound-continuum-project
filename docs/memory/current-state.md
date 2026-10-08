@@ -1557,6 +1557,45 @@
   browser-automation tool was available this session to repeat Card #56's
   Playwright-based UI click-through.
 
+- Candidate Review's Keep/Maybe decisions now have a third, mutually
+  exclusive counterpart: Skip (Card #58, see [`decisions.md`](decisions.md)).
+  `candidate.StatusRejected` is reinstated — the last of the three lifecycle
+  values Card 31 originally trimmed, now with a real caller — `Status.
+  Valid()` is a 4-way switch (`discovered`/`selected`/`under review`/
+  `rejected`). No new persistence or mechanism: the Card #56 `candidate_
+  selection` table and its `setStatus`/`allWithStatus` helpers already
+  generalize to a third status with zero schema change.
+  `selection.Store` gained `Reject` (upsert `rejected`, calls the existing
+  `setStatus`) and `AllRejected` (calls the existing `allWithStatus`), both
+  one-line wrappers exactly mirroring `Keep`/`Maybe` and `AllSelected`/
+  `AllUnderReview`. `POST /api/candidates/{id}/skip`
+  (`selection.Service.RejectHandler`) is a new sibling of `/keep`/`/maybe`,
+  named after the curator-facing action ("skip"), not the domain status
+  ("rejected") — the same naming precedent `/keep`→`selected` and
+  `/maybe`→`under review` already established. `review.Service.ReviewPool`'s
+  `selectionLookup` gained `AllRejected`, overlaid in a third pass right
+  after the existing Keep/Maybe overlays — the three can never collide,
+  since the database can't have a candidate in more than one of the three
+  sets at once. `frontend/src/components/CandidateCard.vue` gained a
+  `Skip`/`Skipped ✓` button next to Maybe (same shadcn `Button` convention,
+  no new dependency); each of Keep/Maybe/Skip's click handlers now clears
+  both of the other two local flags on success (previously Keep/Maybe only
+  cleared each other), so the UI never shows more than one active at once
+  now that there are three. `frontend/src/types/candidateReview.ts`'s
+  `Status` widened to `'discovered' | 'selected' | 'under review' |
+  'rejected'`; `frontend/src/services/candidateReview.ts` gained
+  `skipCandidate()`. No scoring/ranking/discovery/Spotify/mock-mode change;
+  rejected candidates are kept, never physically removed from the pool. New/
+  extended tests across `candidate`/`selection`/`review` (store-level,
+  HTTP-level, and overlay coverage for Skip, idempotency, and Skip's mutual
+  exclusion with Keep and Maybe in both directions) — `go build ./...`/
+  `go vet ./...`/`go test ./...` and `npm run build` all pass. Manual
+  validation was done against the running `SPOTIFY_MOCK_MODE=true` backend
+  via `curl` (Skip, repeat-Skip, Skip↔Keep, Skip↔Maybe, Skip→Clear, all
+  returning the correct resulting `status` and reflected correctly by
+  `GET /api/candidates/review`) — no browser-automation tool was available
+  this session either, same fallback as Card #57.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

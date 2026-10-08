@@ -69,6 +69,7 @@ func (f *fakeDiscovery) PlaylistArtistHistory(ctx context.Context) (map[string]t
 type fakeSelection struct {
 	selected    map[string]struct{}
 	underReview map[string]struct{}
+	rejected    map[string]struct{}
 	err         error
 }
 
@@ -90,6 +91,16 @@ func (f *fakeSelection) AllUnderReview(ctx context.Context) (map[string]struct{}
 		return map[string]struct{}{}, nil
 	}
 	return f.underReview, nil
+}
+
+func (f *fakeSelection) AllRejected(ctx context.Context) (map[string]struct{}, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.rejected == nil {
+		return map[string]struct{}{}, nil
+	}
+	return f.rejected, nil
 }
 
 func newTestService(f *fakeDiscovery) *Service {
@@ -548,6 +559,51 @@ func TestReviewPoolOverlaysUnderReviewStatus(t *testing.T) {
 		case "c3":
 			if e.Ranked.Candidate.Status != candidate.StatusSelected {
 				t.Errorf("c3 Status = %q, want %q (unaffected by unrelated Maybe)", e.Ranked.Candidate.Status, candidate.StatusSelected)
+			}
+		}
+	}
+}
+
+// 13c. A candidate marked Skip (Card #58) comes back with Status overlaid
+// to StatusRejected, while an unrelated candidate stays StatusDiscovered,
+// and unrelated Keep/Maybe overlays are unaffected by an unrelated Skip.
+func TestReviewPoolOverlaysRejectedStatus(t *testing.T) {
+	c1 := testCandidate(t, "c1", "track-1", "artist-1")
+	c2 := testCandidate(t, "c2", "track-2", "artist-2")
+	c3 := testCandidate(t, "c3", "track-3", "artist-3")
+	c4 := testCandidate(t, "c4", "track-4", "artist-4")
+	f := fakeWithEligible([]candidate.CandidateTrack{c1, c2, c3, c4})
+	svc := newTestServiceWithSelection(f, &fakeSelection{
+		selected:    map[string]struct{}{"c3": {}},
+		underReview: map[string]struct{}{"c4": {}},
+		rejected:    map[string]struct{}{"c1": {}},
+	})
+
+	pool, err := svc.ReviewPool(context.Background())
+	if err != nil {
+		t.Fatalf("ReviewPool: %v", err)
+	}
+	if len(pool.Entries) != 4 {
+		t.Fatalf("len(Entries) = %d, want 4", len(pool.Entries))
+	}
+
+	for _, e := range pool.Entries {
+		switch e.Ranked.Candidate.ID {
+		case "c1":
+			if e.Ranked.Candidate.Status != candidate.StatusRejected {
+				t.Errorf("c1 Status = %q, want %q", e.Ranked.Candidate.Status, candidate.StatusRejected)
+			}
+		case "c2":
+			if e.Ranked.Candidate.Status != candidate.StatusDiscovered {
+				t.Errorf("c2 Status = %q, want %q (unrelated candidate must not be modified)", e.Ranked.Candidate.Status, candidate.StatusDiscovered)
+			}
+		case "c3":
+			if e.Ranked.Candidate.Status != candidate.StatusSelected {
+				t.Errorf("c3 Status = %q, want %q (unaffected by unrelated Skip)", e.Ranked.Candidate.Status, candidate.StatusSelected)
+			}
+		case "c4":
+			if e.Ranked.Candidate.Status != candidate.StatusUnderReview {
+				t.Errorf("c4 Status = %q, want %q (unaffected by unrelated Skip)", e.Ranked.Candidate.Status, candidate.StatusUnderReview)
 			}
 		}
 	}

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// newTestMux wires the three selection routes the same way
+// newTestMux wires the four selection routes the same way
 // backend/cmd/server/main.go does, so r.PathValue("id") resolves correctly
 // (net/http's ServeMux, not the handler, extracts path wildcards).
 func newTestMux(t *testing.T) (*http.ServeMux, *Store) {
@@ -18,6 +18,7 @@ func newTestMux(t *testing.T) (*http.ServeMux, *Store) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/candidates/{id}/keep", svc.KeepHandler)
 	mux.HandleFunc("POST /api/candidates/{id}/maybe", svc.MaybeHandler)
+	mux.HandleFunc("POST /api/candidates/{id}/skip", svc.RejectHandler)
 	mux.HandleFunc("POST /api/candidates/{id}/clear", svc.ClearHandler)
 	return mux, store
 }
@@ -61,6 +62,19 @@ func TestMaybeHandlerReturnsUnderReview(t *testing.T) {
 	resp := decodeKeepResponse(t, rec)
 	if resp.CandidateID != "cand-1" || resp.Status != "under review" {
 		t.Fatalf("response = %+v, want {cand-1 under review}", resp)
+	}
+}
+
+func TestSkipHandlerReturnsRejected(t *testing.T) {
+	mux, _ := newTestMux(t)
+
+	rec := doAction(mux, "skip", "cand-1")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	resp := decodeKeepResponse(t, rec)
+	if resp.CandidateID != "cand-1" || resp.Status != "rejected" {
+		t.Fatalf("response = %+v, want {cand-1 rejected}", resp)
 	}
 }
 
@@ -119,6 +133,87 @@ func TestMaybeThenKeepAreMutuallyExclusive(t *testing.T) {
 	}
 	if _, ok := selected["cand-1"]; !ok {
 		t.Fatalf("expected cand-1 to be selected, got %v", selected)
+	}
+}
+
+func TestKeepThenSkipAreMutuallyExclusive(t *testing.T) {
+	mux, store := newTestMux(t)
+
+	doAction(mux, "keep", "cand-1")
+	doAction(mux, "skip", "cand-1")
+
+	selected, err := store.AllSelected(t.Context())
+	if err != nil {
+		t.Fatalf("AllSelected: %v", err)
+	}
+	if _, ok := selected["cand-1"]; ok {
+		t.Fatalf("expected cand-1 to no longer be selected after Skip, got %v", selected)
+	}
+	rejected, err := store.AllRejected(t.Context())
+	if err != nil {
+		t.Fatalf("AllRejected: %v", err)
+	}
+	if _, ok := rejected["cand-1"]; !ok {
+		t.Fatalf("expected cand-1 to be rejected, got %v", rejected)
+	}
+}
+
+func TestMaybeThenSkipAreMutuallyExclusive(t *testing.T) {
+	mux, store := newTestMux(t)
+
+	doAction(mux, "maybe", "cand-1")
+	doAction(mux, "skip", "cand-1")
+
+	underReview, err := store.AllUnderReview(t.Context())
+	if err != nil {
+		t.Fatalf("AllUnderReview: %v", err)
+	}
+	if _, ok := underReview["cand-1"]; ok {
+		t.Fatalf("expected cand-1 to no longer be under review after Skip, got %v", underReview)
+	}
+	rejected, err := store.AllRejected(t.Context())
+	if err != nil {
+		t.Fatalf("AllRejected: %v", err)
+	}
+	if _, ok := rejected["cand-1"]; !ok {
+		t.Fatalf("expected cand-1 to be rejected, got %v", rejected)
+	}
+}
+
+func TestSkipThenKeepAreMutuallyExclusive(t *testing.T) {
+	mux, store := newTestMux(t)
+
+	doAction(mux, "skip", "cand-1")
+	doAction(mux, "keep", "cand-1")
+
+	rejected, err := store.AllRejected(t.Context())
+	if err != nil {
+		t.Fatalf("AllRejected: %v", err)
+	}
+	if _, ok := rejected["cand-1"]; ok {
+		t.Fatalf("expected cand-1 to no longer be rejected after Keep, got %v", rejected)
+	}
+	selected, err := store.AllSelected(t.Context())
+	if err != nil {
+		t.Fatalf("AllSelected: %v", err)
+	}
+	if _, ok := selected["cand-1"]; !ok {
+		t.Fatalf("expected cand-1 to be selected, got %v", selected)
+	}
+}
+
+func TestRepeatingSkipIsIdempotentOverHTTP(t *testing.T) {
+	mux, store := newTestMux(t)
+
+	doAction(mux, "skip", "cand-1")
+	doAction(mux, "skip", "cand-1")
+
+	rejected, err := store.AllRejected(t.Context())
+	if err != nil {
+		t.Fatalf("AllRejected: %v", err)
+	}
+	if len(rejected) != 1 {
+		t.Fatalf("expected exactly one rejected candidate, got %v", rejected)
 	}
 }
 

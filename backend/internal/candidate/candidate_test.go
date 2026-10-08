@@ -90,6 +90,23 @@ func TestValidateStatusUnderReview(t *testing.T) {
 	}
 }
 
+func TestValidateStatusRejected(t *testing.T) {
+	// The Skip action (Card #58) sets Status to StatusRejected by direct
+	// field assignment, not through NewCandidateTrack — confirm Validate()
+	// accepts it like StatusDiscovered/StatusSelected/StatusUnderReview.
+	c := CandidateTrack{
+		ID:             "cand-1",
+		SpotifyTrackID: "spotify-track-1",
+		Source:         SourceSpotify,
+		Category:       CategoryPast,
+		Type:           TypeClassic,
+		Status:         StatusRejected,
+	}
+	if err := c.Validate(); err != nil {
+		t.Errorf("Validate() = %v, want nil for StatusRejected", err)
+	}
+}
+
 func TestValidateInvalidStatus(t *testing.T) {
 	// NewCandidateTrack always sets StatusDiscovered, so an invalid status
 	// can only be exercised via Validate directly.

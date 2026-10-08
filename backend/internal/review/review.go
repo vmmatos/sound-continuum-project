@@ -52,6 +52,7 @@ type candidatePoolSource interface {
 type selectionLookup interface {
 	AllSelected(ctx context.Context) (map[string]struct{}, error)
 	AllUnderReview(ctx context.Context) (map[string]struct{}, error)
+	AllRejected(ctx context.Context) (map[string]struct{}, error)
 }
 
 // Service orchestrates discovery + scoring into a ReviewPool. It holds no
@@ -198,19 +199,25 @@ func (s *Service) ReviewPool(ctx context.Context) (ReviewPool, error) {
 		})
 	}
 
-	// Overlay persisted Keep/Maybe decisions (Cards #56/#57) onto this run's
-	// freshly-discovered candidates — every candidate.NewCandidateTrack call
-	// always produces StatusDiscovered, so a decided candidate only shows as
-	// StatusSelected/StatusUnderReview via this lookup, re-applied on every
-	// ReviewPool call (a refresh always reflects the persisted state). The
-	// selection store guarantees a candidate ID can only ever be in one of
-	// AllSelected/AllUnderReview's sets (one row per candidate_id, see
-	// selection.Store), so a single pass can safely check both.
+	// Overlay persisted Keep/Maybe/Skip decisions (Cards #56/#57/#58) onto
+	// this run's freshly-discovered candidates — every
+	// candidate.NewCandidateTrack call always produces StatusDiscovered, so
+	// a decided candidate only shows as StatusSelected/StatusUnderReview/
+	// StatusRejected via this lookup, re-applied on every ReviewPool call (a
+	// refresh always reflects the persisted state). The selection store
+	// guarantees a candidate ID can only ever be in one of
+	// AllSelected/AllUnderReview/AllRejected's sets (one row per
+	// candidate_id, see selection.Store), so a single pass can safely check
+	// all three.
 	selected, err := s.selection.AllSelected(ctx)
 	if err != nil {
 		return ReviewPool{}, err
 	}
 	underReview, err := s.selection.AllUnderReview(ctx)
+	if err != nil {
+		return ReviewPool{}, err
+	}
+	rejected, err := s.selection.AllRejected(ctx)
 	if err != nil {
 		return ReviewPool{}, err
 	}
@@ -220,6 +227,8 @@ func (s *Service) ReviewPool(ctx context.Context) (ReviewPool, error) {
 			reviewEntries[i].Ranked.Candidate.Status = candidate.StatusSelected
 		} else if _, ok := underReview[id]; ok {
 			reviewEntries[i].Ranked.Candidate.Status = candidate.StatusUnderReview
+		} else if _, ok := rejected[id]; ok {
+			reviewEntries[i].Ranked.Candidate.Status = candidate.StatusRejected
 		}
 	}
 

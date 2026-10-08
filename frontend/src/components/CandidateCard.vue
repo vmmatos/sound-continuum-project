@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { CandidateReviewEntry, DiscoveryMethod } from '../types/candidateReview'
-import { keepCandidate, maybeCandidate, clearCandidateDecision } from '../services/candidateReview'
+import { keepCandidate, maybeCandidate, skipCandidate, clearCandidateDecision } from '../services/candidateReview'
 import CandidateFactors from './CandidateFactors.vue'
 import BridgeEvidence from './BridgeEvidence.vue'
 import CandidateTrackMetadata from './CandidateTrackMetadata.vue'
@@ -15,22 +15,27 @@ const props = defineProps<{
   entry: CandidateReviewEntry
 }>()
 
-// isSelected/isMaybe mirror the candidate's persisted Status (the backend
-// overlays StatusSelected/StatusUnderReview onto a freshly-discovered
-// candidate once Keep/Maybe has been called — see
+// isSelected/isMaybe/isSkipped mirror the candidate's persisted Status (the
+// backend overlays StatusSelected/StatusUnderReview/StatusRejected onto a
+// freshly-discovered candidate once Keep/Maybe/Skip has been called — see
 // review.Service.ReviewPool), so a page refresh shows the correct state with
 // no extra request. The backend's single-row-per-candidate selection table
-// guarantees these two are never both true at once.
+// guarantees these three are never more than one true at once.
 const isSelected = ref(props.entry.Ranked.Candidate.Status === 'selected')
 const isMaybe = ref(props.entry.Ranked.Candidate.Status === 'under review')
+const isSkipped = ref(props.entry.Ranked.Candidate.Status === 'rejected')
 const keeping = ref(false)
 const keepFailed = ref(false)
 const maybeing = ref(false)
 const maybeFailed = ref(false)
+const skipping = ref(false)
+const skipFailed = ref(false)
 
-// Clicking an already-active action undoes it (Clear); clicking the other
-// action overwrites it — the backend's upsert makes Keep/Maybe mutually
-// exclusive, this just picks which endpoint to call based on current state.
+// Clicking an already-active action undoes it (Clear); clicking one of the
+// other two actions overwrites it — the backend's upsert makes Keep/Maybe/
+// Skip mutually exclusive, this just picks which endpoint to call based on
+// current state and clears both other local flags on success so the UI
+// never shows more than one as active at once.
 async function onKeep() {
   keeping.value = true
   keepFailed.value = false
@@ -39,7 +44,10 @@ async function onKeep() {
     : await keepCandidate(props.entry.Ranked.Candidate.ID)
   if (ok) {
     isSelected.value = !isSelected.value
-    if (isSelected.value) isMaybe.value = false
+    if (isSelected.value) {
+      isMaybe.value = false
+      isSkipped.value = false
+    }
   } else {
     keepFailed.value = true
   }
@@ -54,11 +62,32 @@ async function onMaybe() {
     : await maybeCandidate(props.entry.Ranked.Candidate.ID)
   if (ok) {
     isMaybe.value = !isMaybe.value
-    if (isMaybe.value) isSelected.value = false
+    if (isMaybe.value) {
+      isSelected.value = false
+      isSkipped.value = false
+    }
   } else {
     maybeFailed.value = true
   }
   maybeing.value = false
+}
+
+async function onSkip() {
+  skipping.value = true
+  skipFailed.value = false
+  const ok = isSkipped.value
+    ? await clearCandidateDecision(props.entry.Ranked.Candidate.ID)
+    : await skipCandidate(props.entry.Ranked.Candidate.ID)
+  if (ok) {
+    isSkipped.value = !isSkipped.value
+    if (isSkipped.value) {
+      isSelected.value = false
+      isMaybe.value = false
+    }
+  } else {
+    skipFailed.value = true
+  }
+  skipping.value = false
 }
 
 // AvailableWeight is the sum of weights of scoring factors actually
@@ -168,6 +197,15 @@ const provenanceText = computed(() => {
           {{ isMaybe ? 'Maybe ✓' : 'Maybe' }}
         </Button>
         <Button
+          type="button"
+          :variant="isSkipped ? 'secondary' : 'ghost'"
+          size="sm"
+          :disabled="skipping"
+          @click="onSkip"
+        >
+          {{ isSkipped ? 'Skipped ✓' : 'Skip' }}
+        </Button>
+        <Button
           v-if="entry.Ranked.Candidate.Metadata?.SpotifyURL"
           as="a"
           :href="entry.Ranked.Candidate.Metadata.SpotifyURL"
@@ -189,6 +227,7 @@ const provenanceText = computed(() => {
       </div>
       <p v-if="keepFailed" class="text-xs text-destructive">Failed to keep this candidate. Try again.</p>
       <p v-if="maybeFailed" class="text-xs text-destructive">Failed to update this candidate. Try again.</p>
+      <p v-if="skipFailed" class="text-xs text-destructive">Failed to skip this candidate. Try again.</p>
     </CardFooter>
   </Card>
 </template>
