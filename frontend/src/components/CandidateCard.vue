@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { CandidateReviewEntry, DiscoveryMethod } from '../types/candidateReview'
+import type { CandidateCategory, CandidateReviewEntry, DiscoveryMethod } from '../types/candidateReview'
 import { keepCandidate, maybeCandidate, skipCandidate, clearCandidateDecision } from '../services/candidateReview'
 import CandidateFactors from './CandidateFactors.vue'
 import BridgeEvidence from './BridgeEvidence.vue'
@@ -98,6 +98,18 @@ async function onSkip() {
 const isFullyScored = computed(() => props.entry.Ranked.Score.AvailableWeight >= 0.999)
 const availablePercent = computed(() => Math.round(props.entry.Ranked.Score.AvailableWeight * 100))
 
+// Soft, per-category tint (cool-toned palette, deliberately distinct from
+// the warm/green decision-button colors below) so Past/Present/Emerging are
+// distinguishable at a glance, not just by reading the label — layered on
+// top of the Badge's existing "outline" variant via the class prop (Badge
+// merges it in through cn()/twMerge, same mechanism CandidateCard already
+// uses for its text-size override).
+const categoryBadgeClass: Record<CandidateCategory, string> = {
+  Past: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
+  Present: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30',
+  Emerging: 'bg-violet-500/10 text-violet-300 border-violet-500/30',
+}
+
 const provenanceLabel: Record<DiscoveryMethod, string> = {
   classic_reference_artist: 'Discovered via classic reference artists',
   current_reference_artist: 'Discovered via current reference artists',
@@ -134,7 +146,7 @@ const provenanceText = computed(() => {
             :album="entry.Ranked.Candidate.Metadata?.Album ?? null"
           />
           <div class="mt-2 flex gap-1">
-            <Badge variant="outline" class="text-[0.65rem] uppercase tracking-wide">{{ entry.Ranked.Candidate.Category }}</Badge>
+            <Badge variant="outline" :class="['text-[0.65rem] uppercase tracking-wide', categoryBadgeClass[entry.Ranked.Candidate.Category]]">{{ entry.Ranked.Candidate.Category }}</Badge>
             <Badge variant="outline" class="text-[0.65rem] uppercase tracking-wide">{{ entry.Ranked.Candidate.Type }}</Badge>
           </div>
         </div>
@@ -180,27 +192,30 @@ const provenanceText = computed(() => {
       <div class="flex justify-end gap-1">
         <Button
           type="button"
-          :variant="isSelected ? 'secondary' : 'ghost'"
+          variant="ghost"
           size="sm"
           :disabled="keeping"
+          :class="isSelected && 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/25 hover:text-emerald-300'"
           @click="onKeep"
         >
           {{ isSelected ? 'Kept ✓' : 'Keep' }}
         </Button>
         <Button
           type="button"
-          :variant="isMaybe ? 'secondary' : 'ghost'"
+          variant="ghost"
           size="sm"
           :disabled="maybeing"
+          :class="isMaybe && 'bg-amber-500/15 text-amber-300 border-amber-500/40 hover:bg-amber-500/25 hover:text-amber-300'"
           @click="onMaybe"
         >
           {{ isMaybe ? 'Maybe ✓' : 'Maybe' }}
         </Button>
         <Button
           type="button"
-          :variant="isSkipped ? 'secondary' : 'ghost'"
+          variant="ghost"
           size="sm"
           :disabled="skipping"
+          :class="isSkipped && 'bg-rose-500/15 text-rose-300 border-rose-500/40 hover:bg-rose-500/25 hover:text-rose-300'"
           @click="onSkip"
         >
           {{ isSkipped ? 'Skipped ✓' : 'Skip' }}
