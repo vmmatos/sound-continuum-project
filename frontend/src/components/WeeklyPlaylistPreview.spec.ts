@@ -44,6 +44,21 @@ async function clickUp(wrapper: ReturnType<typeof mount>, id: string) {
   await wrapper.find(`[aria-label="Move Track ${id} up"]`).trigger('click')
 }
 
+function findButton(wrapper: ReturnType<typeof mount>, text: string) {
+  return wrapper.findAll('button').find((b) => b.text() === text)
+}
+async function confirm(wrapper: ReturnType<typeof mount>) {
+  await findButton(wrapper, 'Confirm final playlist')!.trigger('click')
+}
+async function edit(wrapper: ReturnType<typeof mount>) {
+  await findButton(wrapper, 'Edit playlist')!.trigger('click')
+}
+
+function confirmedIds(wrapper: ReturnType<typeof mount>) {
+  const entries = (wrapper.vm as any).confirmedPlaylist as CandidateReviewEntry[] | null
+  return entries?.map((e) => e.Ranked.Candidate.ID) ?? null
+}
+
 describe('WeeklyPlaylistPreview', () => {
   it('shows only Kept tracks, in rank order', () => {
     const entries = [makeEntry('a', 'selected', 1), makeEntry('b', 'rejected', 2), makeEntry('c', 'selected', 3)]
@@ -105,5 +120,132 @@ describe('WeeklyPlaylistPreview', () => {
     const entries = [makeEntry('a', 'rejected', 1)]
     const wrapper = mount(WeeklyPlaylistPreview, { props: { entries } })
     expect(wrapper.text()).toContain('No tracks kept yet')
+  })
+
+  it('confirming captures the current manual order as the confirmed playlist', async () => {
+    const entries = [makeEntry('a', 'selected', 1), makeEntry('b', 'selected', 2), makeEntry('c', 'selected', 3)]
+    const wrapper = mount(WeeklyPlaylistPreview, { props: { entries } })
+
+    await confirm(wrapper)
+
+    expect(wrapper.text()).toContain('Final playlist confirmed')
+    expect(wrapper.text()).toContain('3 tracks')
+    expect(confirmedIds(wrapper)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('a reorder made before confirming is reflected in the confirmed order, not rank order', async () => {
+    const entries = [makeEntry('a', 'selected', 1), makeEntry('b', 'selected', 2), makeEntry('c', 'selected', 3)]
+    const wrapper = mount(WeeklyPlaylistPreview, { props: { entries } })
+
+    await clickUp(wrapper, 'c')
+    await clickUp(wrapper, 'c') // manual order becomes [c, a, b]
+    await confirm(wrapper)
+
+    expect(confirmedIds(wrapper)).toEqual(['c', 'a', 'b'])
+  })
+
+  it('confirmed order is stable across unrelated re-renders', async () => {
+    const entries = [makeEntry('a', 'selected', 1), makeEntry('b', 'selected', 2)]
+    const wrapper = mount(WeeklyPlaylistPreview, { props: { entries } })
+
+    await confirm(wrapper)
+    await wrapper.setProps({ entries: [...entries] }) // same statuses, new array reference
+
+    expect(wrapper.text()).toContain('Final playlist confirmed')
+    expect(confirmedIds(wrapper)).toEqual(['a', 'b'])
+  })
+
+  it('reordering is unavailable once the playlist is locked', async () => {
+    const entries = [makeEntry('a', 'selected', 1), makeEntry('b', 'selected', 2)]
+    const wrapper = mount(WeeklyPlaylistPreview, { props: { entries } })
+
+    await confirm(wrapper)
+
+    expect(wrapper.find('[aria-label="Move Track a up"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="Move Track b down"]').exists()).toBe(false)
+    expect(confirmedIds(wrapper)).toEqual(['a', 'b'])
+  })
+
+  it('a Keep/Maybe/Skip change elsewhere invalidates the confirmation instead of silently diverging', async () => {
+    const entries = [makeEntry('a', 'selected', 1), makeEntry('b', 'selected', 2), makeEntry('c', 'discovered', 3)]
+    const wrapper = mount(WeeklyPlaylistPreview, { props: { entries } })
+
+    await confirm(wrapper)
+    expect(wrapper.text()).toContain('Final playlist confirmed')
+
+    entries[2].Ranked.Candidate.Status = 'selected' // Keep clicked on CandidateCard elsewhere
+    await wrapper.setProps({ entries: [...entries] })
+
+    expect(wrapper.text()).not.toContain('Final playlist confirmed')
+    expect((wrapper.vm as any).confirmedPlaylist).toBeNull()
+    expect(titles(wrapper)).toEqual(['Track a', 'Track b', 'Track c'])
+  })
+
+  it('Edit playlist returns to editable state and invalidates the confirmation', async () => {
+    const entries = [makeEntry('a', 'selected', 1), makeEntry('b', 'selected', 2)]
+    const wrapper = mount(WeeklyPlaylistPreview, { props: { entries } })
+
+    await confirm(wrapper)
+    await edit(wrapper)
+
+    expect(wrapper.text()).not.toContain('Final playlist confirmed')
+    expect((wrapper.vm as any).confirmedPlaylist).toBeNull()
+    expect(wrapper.find('[aria-label="Move Track a up"]').exists()).toBe(true)
+  })
+
+  it('reordering after Edit playlist requires reconfirmation', async () => {
+    const entries = [makeEntry('a', 'selected', 1), makeEntry('b', 'selected', 2)]
+    const wrapper = mount(WeeklyPlaylistPreview, { props: { entries } })
+
+    await confirm(wrapper)
+    await edit(wrapper)
+    await clickUp(wrapper, 'b')
+
+    expect((wrapper.vm as any).confirmedPlaylist).toBeNull()
+    expect(wrapper.text()).not.toContain('Final playlist confirmed')
+
+    await confirm(wrapper)
+    expect(confirmedIds(wrapper)).toEqual(['b', 'a'])
+  })
+
+  it('a membership change after Edit playlist requires reconfirmation', async () => {
+    const entries = [makeEntry('a', 'selected', 1), makeEntry('b', 'selected', 2)]
+    const wrapper = mount(WeeklyPlaylistPreview, { props: { entries } })
+
+    await confirm(wrapper)
+    await edit(wrapper)
+
+    entries[1].Ranked.Candidate.Status = 'rejected'
+    await wrapper.setProps({ entries: [...entries] })
+
+    expect((wrapper.vm as any).confirmedPlaylist).toBeNull()
+    expect(titles(wrapper)).toEqual(['Track a'])
+
+    await confirm(wrapper)
+    expect(confirmedIds(wrapper)).toEqual(['a'])
+  })
+
+  it('confirm is unavailable with nothing Kept, and never produces a confirmed empty playlist', async () => {
+    const entries = [makeEntry('a', 'rejected', 1)]
+    const wrapper = mount(WeeklyPlaylistPreview, { props: { entries } })
+
+    const button = findButton(wrapper, 'Confirm final playlist')!
+    expect(button.attributes('disabled')).toBeDefined()
+
+    await button.trigger('click')
+
+    expect((wrapper.vm as any).confirmedPlaylist).toBeNull()
+    expect(wrapper.text()).toContain('No tracks kept yet')
+  })
+
+  it('exposes the confirmed ordered tracks for an external consumer', async () => {
+    const entries = [makeEntry('a', 'selected', 1), makeEntry('b', 'selected', 2)]
+    const wrapper = mount(WeeklyPlaylistPreview, { props: { entries } })
+
+    expect((wrapper.vm as any).confirmedPlaylist).toBeNull()
+
+    await confirm(wrapper)
+
+    expect(confirmedIds(wrapper)).toEqual(['a', 'b'])
   })
 })

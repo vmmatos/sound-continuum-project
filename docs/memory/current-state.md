@@ -1691,6 +1691,52 @@
   drag in an actual user session is expected to work and should be spot-
   checked by a human.
 
+- The Weekly Playlist Preview now has an explicit confirm/lock step (Card
+  #61, see [`decisions.md`](decisions.md)) — frontend-only, still no
+  backend change. `WeeklyPlaylistPreview.vue` gained one new ref,
+  `confirmed`, distinguishing the editable playlist (Card #60's `order`/
+  `keptEntries`, unchanged) from the confirmed/locked playlist. Confirming
+  (only actionable with ≥1 Kept track) shows a `role="status"` "Final
+  playlist confirmed · N tracks · Ready to publish" banner, hides the drag
+  handle and Up/Down reorder buttons, and shows an "Edit playlist" button
+  that flips back to editable. No frozen snapshot of the confirmed order
+  exists — `order` itself can't change while locked (controls hidden,
+  `moveTo` guarded), and the Card #60 `watch(keptIds, ...)` reconciliation
+  now invalidates (`confirmed = false`) whenever it would actually change
+  `order`'s membership/sequence, so a Keep/Maybe/Skip change made elsewhere
+  on `CandidateCard` — which has no notion of this component's lock state
+  — can never leave a stale "confirmed" label next to a changed playlist.
+  `confirmedPlaylist` (a computed exposing `keptEntries` itself, `null`
+  unless confirmed — no precomputed shape like a separate track-ID list,
+  since there's no caller yet to size one for) is exposed via `defineExpose`
+  as the integration point a future M3 publishing flow would read via a
+  template ref — no such flow exists yet in this repo (confirmed by
+  inspection: only `InitializeOfficialPlaylist` exists, no add-tracks
+  endpoint), so nothing consumes it yet. `CandidateTrack.Status` is never
+  read or written by confirmation — selection decisions and playlist
+  confirmation remain independent concepts. 10 new Vitest cases (16 total
+  in `WeeklyPlaylistPreview.spec.ts`) cover capture, pre-confirm reorder,
+  stability across unrelated re-renders, locking, auto-invalidation from an
+  elsewhere Keep/Maybe/Skip change, Edit-playlist round-trips, the
+  empty-state guard, and the exposed `confirmedPlaylist`; the existing 6
+  Card #59/#60 tests are untouched. `go build ./...`/`go vet ./...`/`go
+  test ./...` (no backend file changed) and `npm run build` both verified
+  clean. Manual verification (mock mode, real Chromium via a one-off
+  `playwright-core` script against the running dev servers, no new project
+  dependency) confirmed live: keep 3 + reorder + confirm locks the exact
+  reordered sequence; skipping a Kept candidate elsewhere while locked
+  immediately reverts the preview to editable with the updated membership;
+  Edit → reorder → reconfirm and Edit → Keep a new candidate → reconfirm
+  both produce the correct new confirmed state; the Confirm button renders
+  `disabled` with zero Kept tracks and the existing empty-state message is
+  unchanged; keyboard activation (Tab + Enter) works for both Confirm and
+  Edit, with focus moving to the other action's button each time; the
+  status paragraph exposes `role="status"`; zero `spotify.com` network
+  requests throughout. (A leftover `candidate_selection` SQLite row set from
+  earlier Cards #56-#60 manual-verification sessions was found in the local
+  dev database and cleared before this session's verification, to get a
+  clean baseline — not a defect, just local dev-session residue.)
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

@@ -2983,3 +2983,79 @@ backend test can cover frontend-only state.
 `WeeklyPlaylistPreview.spec.ts` is the first frontend test file in this
 repo. A future card adding more frontend tests should use this same setup,
 not re-litigate whether a runner should exist.
+
+---
+
+**Decision:** Implement the Confirm/lock step (Card #61) as a single new
+boolean ref, `confirmed`, inside `WeeklyPlaylistPreview.vue` — no frozen
+snapshot of the confirmed order, no lift to `CandidateReviewView.vue`, no
+store — and expose the confirmed ordered tracks for a future publishing
+flow via `defineExpose`, not a new emit/prop/store.
+
+**Context:** Card #61 needs an explicit boundary between "still curating"
+and "ready to publish": confirming must capture the exact Kept tracks +
+exact order at that moment, lock reordering, survive being re-displayed,
+and become invalid the instant a Keep/Maybe/Skip change (made on
+`CandidateCard`, which has no notion of this component's lock state) or a
+reorder would actually change the confirmed membership/sequence — never
+silently. No M3 publish flow exists yet to consume this (confirmed by
+inspection: only `InitializeOfficialPlaylist` exists; there is no
+add-tracks-to-playlist endpoint anywhere in the repo), so this card only
+has to establish the state, not wire a consumer.
+
+**Reason:** `order`/`keptEntries` (Card #60) already fully describe "the
+current playlist." A second, frozen copy of the order at confirm-time would
+be a second source of truth to keep in sync — unnecessary, since while
+`confirmed` is true the reorder controls aren't rendered and `moveTo`
+itself refuses to run, so `order` cannot change via direct interaction.
+The one real risk is `order`'s own reconciliation watcher (Card #60's
+`watch(keptIds, ...)`, which appends newly-Kept IDs and drops no-longer-Kept
+ones) firing while `confirmed` is true: it needed an actual diff check
+(next sequence vs. current `order`) before invalidating, not an
+unconditional invalidate — `keptIds` recomputes (a new array) on *any*
+candidate's `Status` write, since its `.filter()` reads every entry's
+`Status`, not only ones affecting Kept membership. An unconditional
+invalidate was tried first and discarded: it uninformedly un-confirmed the
+playlist on a completely unrelated Maybe→Skip change elsewhere, which would
+be confusing (and was caught live by a failing "confirmed order is stable
+across unrelated re-renders" test). Confirming/editing never reads or
+writes `CandidateTrack.Status` — selection decisions (Keep/Maybe/Skip,
+Cards #56/#57/#58) and playlist confirmation stay two independent concepts,
+per the card's explicit instruction not to conflate them. `defineExpose` is
+the smallest integration surface for a not-yet-built publishing flow: a
+future card can read `confirmedPlaylist` off a template ref on this
+component with zero plumbing added now, rather than this card speculatively
+lifting state into `CandidateReviewView.vue` for a consumer that doesn't
+exist yet.
+
+**Consequences:** New state in `WeeklyPlaylistPreview.vue`: `confirmed:
+ref<boolean>`, `confirmPlaylist()`/`editPlaylist()` (each a guarded flip of
+`confirmed`, with focus moved to the other action's button via `nextTick`),
+and `confirmedPlaylist: ComputedRef<CandidateReviewEntry[] | null>` (`null`
+whenever not confirmed, so a confirmed *empty* playlist can never exist),
+exposed via `defineExpose`. `confirmedPlaylist` is `keptEntries` itself, not
+a precomputed shape (e.g. a separate track-ID list) — nothing calls this
+yet, so there's no caller to size that shape for; a future consumer derives
+`CandidateTrack.SpotifyTrackID` (not `ID`, since that's the field actually
+meant for Spotify publishing, even though the two are equal for every
+Source=Spotify candidate today — Card #33's decision) from each entry
+itself. The existing `watch(keptIds, ...)` gained one diff check: if confirmed and the
+reconciled `next` sequence differs from the current `order`,
+`confirmed.value = false` before applying the reconciliation — so the live
+and confirmed states can never diverge while the UI still claims
+"confirmed." `moveTo` gained a defensive `confirmed.value ||` bail-out
+beyond the template already hiding the drag handle and Up/Down buttons
+when `confirmed`. Visually: a `role="status"` paragraph (one persistent
+element whose text toggles, not two swapped via `v-if`/`v-else`, for
+reliable assistive-tech announcement) plus a `variant="default"` "Confirm
+final playlist" button (visually distinct from every `ghost` button on this
+screen) when editable, or a `variant="outline"` "Edit playlist" button when
+locked. `CandidateReviewView.vue`, `CandidateCard.vue`, and all backend
+code are unchanged — the integration point for a future publish UI is
+`confirmedPlaylist`, read via a template ref whenever that card is built.
+10 new Vitest cases cover capture, pre-confirm reorder affecting the
+confirmed order, stability across unrelated re-renders, locking,
+auto-invalidation on an elsewhere Keep/Maybe/Skip change, Edit-playlist
+round-trips (reorder and membership), the empty-state guard, and the
+exposed `confirmedPlaylist` being readable by an external consumer — the 6
+existing Card #59/#60 tests are untouched.
