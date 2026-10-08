@@ -1647,6 +1647,50 @@
   decremented the count (3→2→1→0 across the sequence); Maybe→Keep correctly
   added it back; zero `spotify.com` network requests observed throughout.
 
+- The Weekly Playlist Preview is now manually reorderable (Card #60, see
+  [`decisions.md`](decisions.md)) — frontend-only, still no backend change.
+  `WeeklyPlaylistPreview.vue` gained a local `order: ref<string[]>` (curator
+  manual sequence, independent of `scoring.Rank`/`FinalScore`), reconciled
+  against Keep/Maybe/Skip changes by a `watch` that appends newly-Kept IDs at
+  the end and drops IDs no longer Kept, never resetting an existing manual
+  position. Reordering uses native HTML5 Drag and Drop (a handle toggles
+  `draggable` on mousedown, so only the handle starts a drag, not the whole
+  row) plus Up/Down icon buttons per row as the keyboard-accessible
+  equivalent — no new dependency (no sortable primitive exists in `reka-ui`
+  or `@vueuse/core`). Numbering falls out of the existing `v-for` index, same
+  as Card #59. Order state lives in `WeeklyPlaylistPreview.vue` itself, not
+  lifted into `CandidateReviewView.vue` — the component is never torn down
+  mid-session, so it already survives every Keep/Maybe/Skip click the same
+  way `keptEntries` always has. Order is in-session only (lost on reload,
+  falling back to rank order) — accepted per the card's own scope.
+- Vitest + `@vue/test-utils` + `jsdom` are now installed (`frontend/
+  package.json` devDependencies, `npm run test`, `vitest` config block in
+  `vite.config.ts`) — the repo's first frontend test runner, added for Card
+  #60 after Cards 22/#126 had both previously declined one; this card's
+  test requirement outweighed that precedent, per an explicit user decision.
+  `WeeklyPlaylistPreview.spec.ts` (6 cases) covers: only Kept tracks render
+  in rank order; reordering via `moveTo` changes displayed order and
+  renumbers; a newly-Kept track is appended without disturbing manual order;
+  removing a Kept track preserves the remaining relative order; reordering
+  never mutates `Status`; the empty state.
+- Manual verification: real Chromium (via a one-off `playwright-core`
+  script, no new project dependency), against the running
+  `SPOTIFY_MOCK_MODE=true` backend. Confirmed live: the drag handle's
+  `mousedown` correctly flips the row's `draggable` attribute to `true`;
+  clicking the Up/Down buttons reorders tracks and renumbers correctly;
+  keeping an additional candidate appends it without disturbing the existing
+  manual order; skipping a Kept candidate removes it while the rest keep
+  their relative order; zero `spotify.com` network requests during any
+  reorder action; dark theme styling confirmed via screenshot. Native mouse-
+  driven HTML5 drag itself (`dragstart`/`drop`) could not be triggered via
+  Chromium's CDP-based synthetic input in this automated session — a known
+  limitation of automating native drag-and-drop under headless/CDP control,
+  not an application defect (the same `moveTo` function both the drag
+  handlers and the Up/Down buttons call is what's exercised and confirmed
+  working, by both the unit tests and the live keyboard path) — real mouse
+  drag in an actual user session is expected to work and should be spot-
+  checked by a human.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

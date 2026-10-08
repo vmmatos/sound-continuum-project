@@ -2906,3 +2906,80 @@ persisted in SQLite. Fixing this would require persisting enriched
 candidates themselves — explicitly out of this card's scope (no new
 persistence system) — so it is left as a known limitation, not silently
 papered over.
+
+---
+
+**Decision:** Implement manual reordering (Card #60) with native HTML5
+Drag and Drop, no new dependency; keep the manual order as component-local
+state in `WeeklyPlaylistPreview.vue`, reconciled against Keep/Maybe/Skip
+changes by an append/drop `watch`, rather than lifting it into
+`CandidateReviewView.vue` or introducing a store.
+
+**Context:** Card #60 needs the curator to manually resequence Kept tracks
+— an editorial/narrative order, explicitly independent of `scoring.Rank`/
+`FinalScore` per the manifesto. No ordering concept existed before this
+card; `WeeklyPlaylistPreview.vue` (Card #59) only filtered `entries` and
+relied on `Array.filter` preserving rank order.
+
+**Reason:** `reka-ui` (the project's headless primitives library) has no
+sortable/list-reorder primitive — `Tree` is for hierarchies. `@vueuse/core`'s
+`useDraggable` is free-form pointer positioning and `useSorted` is
+comparator-based sorting; neither fits manual, arbitrary reordering. The
+browser's own Drag and Drop API (`draggable`, `dragstart`/`dragover`/`drop`/
+`dragend`) is a native platform feature that covers this exactly, so no
+dependency (`vuedraggable`, `@dnd-kit`, `sortablejs`, etc.) was added.
+On state placement: `WeeklyPlaylistPreview.vue` is rendered once per session
+and never torn down/recreated (`CandidateReviewView`'s `status` only ever
+moves forward out of `'loading'`), so it already sees every Keep/Maybe/Skip
+change via the same shared `entries` array reference Card #59 established
+(`CandidateCard.vue`'s `setDecision` mutates `entry.Ranked.Candidate.Status`
+in place). A local `order: ref<string[]>` here survives exactly the same way
+`keptEntries` always has, with no new props/emits/store needed — lifting it
+into the parent would be plumbing with no behavioral benefit.
+
+**Consequences:** `WeeklyPlaylistPreview.vue` gained `order`, a `keptIds`
+computed, and a `watch(keptIds, ...)` that appends newly-Kept IDs at the end
+and drops IDs no longer Kept, never resetting an existing manual position.
+`moveTo(from, to)` is the single function both the drag handlers and the new
+Up/Down icon buttons (the keyboard-accessible equivalent — native HTML5 DnD
+has no built-in keyboard support, and a full ARIA grid/listbox reorder
+pattern was judged more than this card needs) call to actually reorder.
+A drag handle span (`aria-hidden`, decorative) toggles a `dragEnabled` ref
+on `mousedown` so only the handle starts a drag, not the whole row — avoids
+turning the row into an accidental drag surface. Numbering is unchanged:
+it falls out of the existing `v-for` index. Order is in-session only — a
+page reload loses it and falls back to rank order — explicitly accepted by
+the card ("assume the curator's ordering is an in-session editorial state").
+`CandidateReviewView.vue`, `CandidateCard.vue`, and all scoring/ranking code
+are untouched; reordering never reads `Score.FinalScore`/`Ranked.Rank` and
+never writes `Status`.
+
+---
+
+**Decision:** Introduce Vitest + `@vue/test-utils` + `jsdom` as the
+project's first frontend test runner for Card #60, superseding the Card 22
+/ Card #126 "no frontend test runner yet" stance.
+
+**Context:** Card 22 ("no frontend test target — no test runner is
+configured... add the corresponding `frontend-test` target then, not
+before") and Card #126 ("the user explicitly chose not to introduce Vitest/
+`@vue/test-utils`... despite the card asking for frontend tests") both
+declined this twice already. Card #60 again asks for frontend tests, this
+time with a detailed, itemized coverage list for genuinely interactive
+logic (drag/keyboard reorder, append/remove behavior) rather than a small
+diagnostics card's display states.
+
+**Reason:** Presented with the same choice Card #126 faced, the user this
+time chose to add the test runner — the reorder logic (`order`
+reconciliation, `moveTo` splicing) is exactly the kind of non-trivial,
+branching logic this project's own testing conventions (thorough backend
+unit tests for every other card) would otherwise require, and no existing
+backend test can cover frontend-only state.
+
+**Consequences:** `frontend/package.json` gained `vitest`, `@vue/test-utils`,
+`jsdom` as devDependencies and a `"test": "vitest run"` script;
+`vite.config.ts` gained a `test: { environment: 'jsdom' }` block (with a
+`/// <reference types="vitest/config" />` so `vue-tsc -b` type-checks it).
+`WeeklyPlaylistPreview.spec.ts` is the first frontend test file in this
+repo. A future card adding more frontend tests should use this same setup,
+not re-litigate whether a runner should exist.

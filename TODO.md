@@ -1307,6 +1307,48 @@
       discovery succeeds again — fixing this needs persisting enriched
       candidates, explicitly out of this card's scope
 
+## Done (Card #60 — Reorder Selected Tracks)
+
+- [x] `frontend/src/components/WeeklyPlaylistPreview.vue` — Kept tracks are
+      now manually reorderable: drag handle (native HTML5 Drag and Drop) +
+      Up/Down icon buttons (keyboard-accessible equivalent) per row
+- [x] `order: ref<string[]>` — curator's manual sequence, reconciled against
+      Keep/Maybe/Skip changes by a `watch` that appends newly-Kept IDs at the
+      end and drops no-longer-Kept IDs, never resetting an existing manual
+      position; lives local to this component (never torn down mid-session)
+- [x] `moveTo(from, to)` — single function used by both drag and Up/Down
+      buttons; numbering still falls out of the existing `v-for` index
+- [x] No new dependency — native HTML5 DnD (`reka-ui` has no sortable
+      primitive, `@vueuse/core`'s `useDraggable`/`useSorted` don't fit)
+- [x] `frontend/package.json`/`vite.config.ts` — Vitest + `@vue/test-utils` +
+      `jsdom` added as the repo's first frontend test runner (`npm run
+      test`), per explicit user decision superseding the Card 22/#126
+      "no runner yet" precedent
+- [x] `frontend/src/components/WeeklyPlaylistPreview.spec.ts` — 6 new tests:
+      only Kept tracks shown in rank order; reorder via `moveTo` changes
+      order and renumbers; newly-Kept track appended without disturbing
+      manual order; removing a Kept track preserves the rest's relative
+      order; reordering never mutates `Status`; empty state — all passing
+- [x] `npm run build` (type-check + Vite build) verified clean
+- [x] Manual browser verification (real Chromium via a one-off
+      `playwright-core` script, `SPOTIFY_MOCK_MODE=true` backend): drag
+      handle correctly toggles `draggable`; Up/Down buttons reorder and
+      renumber live; Keeping another candidate appends without disturbing
+      manual order; Skipping a Kept candidate removes it while the rest
+      keep relative order; zero `spotify.com` network requests; dark theme
+      confirmed via screenshot
+- [x] Project memory updated (`current-state.md`, `decisions.md`)
+- [x] No backend/scoring/ranking change, no automatic/AI sequencing, no
+      playlist publishing, no Spotify API change, no backend persistence of
+      order (in-session only, per the card)
+- [~] Native mouse-driven `dragstart`/`drop` could not be triggered via
+      Chromium's CDP synthetic input in the automated verification session —
+      a known limitation of automating native HTML5 drag-and-drop under
+      headless/CDP control, not an app defect (the handle's `draggable`
+      toggle and the shared `moveTo` function were both confirmed correct by
+      the unit tests and the live keyboard path); real mouse drag in an
+      actual human browser session should be spot-checked
+
 ## In progress
 
 - Nothing currently in progress.
@@ -1329,7 +1371,9 @@
       Maybe mutually exclusive; Card #58 adds the Skip action, mutually
       exclusive with Keep/Maybe, reusing the same persisted-selection
       mechanism; Card #59 adds the Weekly Playlist Preview over the same
-      Kept state);
+      Kept state; Card #60 makes the preview's Kept tracks manually
+      reorderable (drag handle + keyboard Up/Down), an in-session editorial
+      order independent of scoring/rank);
       Fit/DiscoveryBonus/Diversity/PlaylistFit wiring (once their
       editorial inputs exist) and the rest of the selection/publishing
       workflow (publish to the official playlist) remain open
