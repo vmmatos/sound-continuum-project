@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import type { Ref } from 'vue'
 import type { CandidateCategory, CandidateReviewEntry, DiscoveryMethod } from '../types/candidateReview'
 import { keepCandidate, maybeCandidate, skipCandidate, clearCandidateDecision } from '../services/candidateReview'
 import CandidateFactors from './CandidateFactors.vue'
@@ -33,61 +34,40 @@ const skipFailed = ref(false)
 
 // Clicking an already-active action undoes it (Clear); clicking one of the
 // other two actions overwrites it — the backend's upsert makes Keep/Maybe/
-// Skip mutually exclusive, this just picks which endpoint to call based on
-// current state and clears both other local flags on success so the UI
-// never shows more than one as active at once.
-async function onKeep() {
-  keeping.value = true
-  keepFailed.value = false
-  const ok = isSelected.value
+// Skip mutually exclusive. setDecision captures the shared shape (toggle,
+// clear the other two refs on success, surface failure) once; onKeep/
+// onMaybe/onSkip just supply which refs/endpoint apply to them.
+async function setDecision(
+  active: Ref<boolean>,
+  busy: Ref<boolean>,
+  failed: Ref<boolean>,
+  others: Ref<boolean>[],
+  apply: (id: string) => Promise<boolean>,
+) {
+  busy.value = true
+  failed.value = false
+  const ok = active.value
     ? await clearCandidateDecision(props.entry.Ranked.Candidate.ID)
-    : await keepCandidate(props.entry.Ranked.Candidate.ID)
+    : await apply(props.entry.Ranked.Candidate.ID)
   if (ok) {
-    isSelected.value = !isSelected.value
-    if (isSelected.value) {
-      isMaybe.value = false
-      isSkipped.value = false
-    }
+    active.value = !active.value
+    if (active.value) others.forEach((other) => (other.value = false))
   } else {
-    keepFailed.value = true
+    failed.value = true
   }
-  keeping.value = false
+  busy.value = false
 }
 
-async function onMaybe() {
-  maybeing.value = true
-  maybeFailed.value = false
-  const ok = isMaybe.value
-    ? await clearCandidateDecision(props.entry.Ranked.Candidate.ID)
-    : await maybeCandidate(props.entry.Ranked.Candidate.ID)
-  if (ok) {
-    isMaybe.value = !isMaybe.value
-    if (isMaybe.value) {
-      isSelected.value = false
-      isSkipped.value = false
-    }
-  } else {
-    maybeFailed.value = true
-  }
-  maybeing.value = false
+function onKeep() {
+  return setDecision(isSelected, keeping, keepFailed, [isMaybe, isSkipped], keepCandidate)
 }
 
-async function onSkip() {
-  skipping.value = true
-  skipFailed.value = false
-  const ok = isSkipped.value
-    ? await clearCandidateDecision(props.entry.Ranked.Candidate.ID)
-    : await skipCandidate(props.entry.Ranked.Candidate.ID)
-  if (ok) {
-    isSkipped.value = !isSkipped.value
-    if (isSkipped.value) {
-      isSelected.value = false
-      isMaybe.value = false
-    }
-  } else {
-    skipFailed.value = true
-  }
-  skipping.value = false
+function onMaybe() {
+  return setDecision(isMaybe, maybeing, maybeFailed, [isSelected, isSkipped], maybeCandidate)
+}
+
+function onSkip() {
+  return setDecision(isSkipped, skipping, skipFailed, [isSelected, isMaybe], skipCandidate)
 }
 
 // AvailableWeight is the sum of weights of scoring factors actually
