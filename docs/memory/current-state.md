@@ -1596,6 +1596,57 @@
   `GET /api/candidates/review`) — no browser-automation tool was available
   this session either, same fallback as Card #57.
 
+- Candidate Review now shows a Weekly Playlist Preview (Card #59, see
+  [`decisions.md`](decisions.md)) — a frontend-only addition, no backend
+  change. `frontend/src/components/WeeklyPlaylistPreview.vue` is a new
+  component, rendered above the candidate-card list in
+  `CandidateReviewView.vue`'s `'ok'` state, that filters the same `entries`
+  array the screen already holds down to `Status === 'selected'` (Keep) and
+  lists them in their existing order — `Entries`' own order is already
+  `scoring.Rank`'s deterministic `FinalScore`-descending order (Card #49),
+  reused unchanged rather than inventing a second ordering rule. A local,
+  display-only `WEEKLY_TRACK_TARGET = 15` constant (no equivalent exists
+  anywhere else in the codebase) drives a non-blocking "above the 15-track
+  weekly target" note when exceeded — selected candidates are never
+  truncated or discarded. Each row reuses `CandidateTrackMetadata.vue`
+  (Card #52) unchanged for artwork/title/artist/album. Empty state ("No
+  tracks kept yet...") follows the screen's existing
+  `text-sm text-muted-foreground` convention.
+
+  A real gap was found and fixed in the same change: `CandidateCard.vue`'s
+  `setDecision` (Card #58) only ever flipped its own local
+  `isSelected`/`isMaybe`/`isSkipped` refs — it never wrote back to
+  `entry.Ranked.Candidate.Status` on the shared entry object, so a second
+  reactive consumer of the same `entries` array (this new preview) would
+  never see a Keep/Maybe/Skip/Clear change. `setDecision` now takes the
+  target `CandidateTrack['Status']` and writes
+  `props.entry.Ranked.Candidate.Status` on success (back to `'discovered'`
+  on Clear) — `Status` stays the single source of truth for selection
+  state, no second frontend selection state introduced.
+
+  Known architectural limitation (not fixed by this card, out of its
+  scope): the preview is derived entirely from one `GET
+  /api/candidates/review` response, which rebuilds the candidate pool from
+  scratch every call (the pool itself is never persisted — only the Keep/
+  Maybe/Skip decision is, per Card #56). If discovery is fully degraded for
+  a request (e.g. the long-documented Spotify Development Mode
+  `GET /artists/{id}/albums` rate limit, Cards #36/#37/#39/#53/#126) and
+  `Entries` comes back empty, a previously-Kept candidate's persisted
+  decision still exists in SQLite but won't appear in that request's
+  preview — fixing this would mean persisting enriched candidates
+  themselves, which this card's scope explicitly excludes (no new
+  persistence system).
+
+  `go build ./...`/`go vet ./...`/`go test ./...` (no backend file changed)
+  and `npm run build` both verified clean. Manual validation (mock mode,
+  via a one-off `npx playwright` run against the real dev servers, no new
+  project dependency): empty state confirmed with zero decisions; Keeping 3
+  candidates (at ranks 1/2/6, clicked out of rank order) showed all 3 in
+  rank order in the preview, not click order; Clear, Keep→Maybe, and
+  Keep→Skip each correctly removed their candidate from the preview and
+  decremented the count (3→2→1→0 across the sequence); Maybe→Keep correctly
+  added it back; zero `spotify.com` network requests observed throughout.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

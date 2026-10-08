@@ -2845,3 +2845,64 @@ gap in Cards #56/#57's two-way-only cross-clearing that only matters once a
 third mutually-exclusive state exists). No new package, no new table, no
 schema migration, no new dependency, no request body/JSON parsing added to
 any handler, no candidate physically removed from the pool.
+
+---
+
+**Decision:** Build the Weekly Playlist Preview (Card #59) as a pure
+frontend filter/view over the existing `GET /api/candidates/review`
+response, with no new backend endpoint, no new persistence, and no new
+ordering algorithm.
+
+**Context:** The card asks for an ordered preview of currently-Kept
+candidates. `review.Service.ReviewPool` (Card #53) already returns every
+eligible candidate with its persisted Keep/Maybe/Skip `Status` overlaid
+(Cards #56/#57/#58) and in a deterministic order (`scoring.Rank`, Card
+#49 — `FinalScore` descending, nil last, `ID` ascending tiebreak).
+
+**Reason:** A candidate is "Kept" exactly when `CandidateTrack.Status ==
+candidate.StatusSelected` — introducing any second "playlist selection"
+concept would duplicate state the project already has one authoritative
+source for (the card's own explicit instruction). The existing `Entries`
+order is already a real, deterministic ranking signal; filtering it
+in-place (keeping only `Status === 'selected'` entries, same relative
+order) is the smallest ordering choice available and needs no new sort.
+No concrete weekly-playlist/edition-preview concept existed anywhere in
+code before this card (confirmed by direct inspection — only in docs/card
+text), so none was reused; none needed inventing beyond this filter.
+
+**Consequences:** `frontend/src/components/WeeklyPlaylistPreview.vue` is
+new (props: the same `entries: CandidateReviewEntry[]` array
+`CandidateReviewView.vue` already holds); it reuses
+`CandidateTrackMetadata.vue` (Card #52) per row for
+artwork/title/artist/album, with no new metadata/artwork logic. A local,
+display-only `WEEKLY_TRACK_TARGET = 15` constant — no equivalent exists
+anywhere else in this codebase — drives a non-blocking note when the Kept
+count exceeds it; it is never used to truncate, hide, or reorder
+candidates, matching the card's explicit "report, never enforce"
+instruction. This introduces exactly one display-only assumption (the
+15-track figure as a constant, not a config system) rather than inventing
+a second source of truth for it.
+
+A real pre-existing gap was fixed as a prerequisite: `CandidateCard.vue`'s
+`setDecision` (Card #58) only mutated its own component-local
+`isSelected`/`isMaybe`/`isSkipped` refs, never writing back to
+`entry.Ranked.Candidate.Status` on the shared entry object passed in as a
+prop — so a second reactive consumer of the same `entries` array (this
+preview) would never observe a Keep/Maybe/Skip/Clear click. `setDecision`
+now takes the target `CandidateTrack['Status']` and sets
+`props.entry.Ranked.Candidate.Status` on success (`'discovered'` on
+Clear). `Status` remains the one and only selection-state field — this is
+a reactivity fix to keep that existing field in sync, not a new state
+mechanism.
+
+Known, documented, out-of-scope limitation: the preview reflects only
+what `ReviewPool` returns for the current request. Since the candidate
+pool itself is never persisted (only the Keep/Maybe/Skip decision is, per
+Card #56), a request where discovery is fully degraded (e.g. the
+long-standing Spotify Development Mode rate limit, Cards
+#36/#37/#39/#53/#126) returns an empty `Entries`, and the preview will
+show "No tracks kept yet" even though real Keep decisions remain
+persisted in SQLite. Fixing this would require persisting enriched
+candidates themselves — explicitly out of this card's scope (no new
+persistence system) — so it is left as a known limitation, not silently
+papered over.

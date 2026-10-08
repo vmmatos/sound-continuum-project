@@ -1266,6 +1266,47 @@
       no AI, no frontend test framework, no Candidate Review redesign, no
       candidate physically deleted
 
+## Done (Card #59 — Weekly Playlist Preview)
+
+- [x] `frontend/src/components/WeeklyPlaylistPreview.vue` — new component,
+      filters the existing `entries` array to `Status === 'selected'`
+      (Keep), preserving `Entries`' existing `scoring.Rank` order — no new
+      backend endpoint, no new ordering algorithm
+- [x] Reuses `CandidateTrackMetadata.vue` (Card #52) per row for
+      artwork/title/artist/album — no new metadata/artwork logic
+- [x] Local, display-only `WEEKLY_TRACK_TARGET = 15` constant — reports,
+      never truncates/discards, when exceeded
+- [x] Empty state ("No tracks kept yet...") follows the screen's existing
+      `text-sm text-muted-foreground` convention
+- [x] `frontend/src/views/CandidateReviewView.vue` — renders the preview
+      above the candidate list in the `'ok'` state only
+- [x] Fixed a reactivity gap in `CandidateCard.vue`'s `setDecision` (Card
+      #58): it now writes the resulting status back onto
+      `entry.Ranked.Candidate.Status` (the shared entry object), not just
+      its own local refs, so the preview sees Keep/Maybe/Skip/Clear
+      changes with no second frontend selection state
+- [x] No backend file changed; `go build ./...`/`go vet ./...`/
+      `go test ./...` verified clean (unaffected); `npm run build` verified
+      clean
+- [x] Manual validation (mock mode, one-off `npx playwright` run, no new
+      project dependency): empty state; 3 Keeps at ranks 1/2/6 (clicked out
+      of rank order) rendered in rank order in the preview; Clear,
+      Keep→Maybe, Keep→Skip each removed their candidate and updated the
+      count (3→2→1→0); Maybe→Keep added it back; zero `spotify.com`
+      network requests observed
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+- [x] No new backend endpoint, no new persistence, no Spotify playlist
+      creation/publishing, no scoring/ranking change, no drag-and-drop
+      reordering, no frontend test framework, no Redis/new database
+- [~] Known limitation (not fixed by this card): the preview only reflects
+      candidates `GET /api/candidates/review` actually returns for the
+      current request; if discovery is fully degraded (e.g. the
+      long-standing Spotify Development Mode rate limit), a previously-Kept
+      candidate's persisted decision can be invisible in the preview until
+      discovery succeeds again — fixing this needs persisting enriched
+      candidates, explicitly out of this card's scope
+
 ## In progress
 
 - Nothing currently in progress.
@@ -1287,7 +1328,8 @@
       #57 adds the Maybe action, makes Keep reversible, and makes Keep/
       Maybe mutually exclusive; Card #58 adds the Skip action, mutually
       exclusive with Keep/Maybe, reusing the same persisted-selection
-      mechanism);
+      mechanism; Card #59 adds the Weekly Playlist Preview over the same
+      Kept state);
       Fit/DiscoveryBonus/Diversity/PlaylistFit wiring (once their
       editorial inputs exist) and the rest of the selection/publishing
       workflow (publish to the official playlist) remain open

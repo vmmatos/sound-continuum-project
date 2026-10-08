@@ -84,7 +84,11 @@ of future implementation requirements.
   `GET /api/candidates/review`, for the two scoring factors with genuine
   production inputs today — Freshness and Repetition Penalty. Fit,
   DiscoveryBonus, Diversity, and PlaylistFit remain nil until their
-  editorial inputs exist; no bridge detection is wired in yet; no
-  selection/publish workflow yet)
+  editorial inputs exist; no bridge detection is wired in yet. Cards
+  #56/#57/#58 add Keep/Maybe/Skip with persisted selection state and a
+  `SPOTIFY_MOCK_MODE` dev flag. Card #59 adds a Weekly Playlist Preview
+  (ordered list of Kept candidates, reusing the existing Rank order and
+  `GET /api/candidates/review` response — no new endpoint); publish-to-
+  Spotify workflow remains open)
 - **M7 — Weekly Editorial Workflow** — Planned
 - **M8 — Feedback & Evolution** — Planned
