@@ -88,7 +88,9 @@ of future implementation requirements.
   #56/#57/#58 add Keep/Maybe/Skip with persisted selection state and a
   `SPOTIFY_MOCK_MODE` dev flag. Card #59 adds a Weekly Playlist Preview
   (ordered list of Kept candidates, reusing the existing Rank order and
-  `GET /api/candidates/review` response — no new endpoint); publish-to-
-  Spotify workflow remains open)
+  `GET /api/candidates/review` response — no new endpoint). Card #60 makes
+  that preview manually reorderable (drag + keyboard), a curator-set
+  editorial order kept deliberately independent of scoring/rank, in-session
+  only; publish-to-Spotify workflow remains open)
 - **M7 — Weekly Editorial Workflow** — Planned
 - **M8 — Feedback & Evolution** — Planned

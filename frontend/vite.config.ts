@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import path from 'node:path'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
@@ -11,5 +12,8 @@ export default defineConfig({
       '@': path.resolve(import.meta.dirname, './src'),
     },
     extensions: ['.ts', '.js', '.vue'],
+  },
+  test: {
+    environment: 'jsdom',
   },
 })
