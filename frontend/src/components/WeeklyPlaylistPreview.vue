@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import type { CandidateReviewEntry } from '../types/candidateReview'
 import CandidateTrackMetadata from './CandidateTrackMetadata.vue'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -26,6 +26,19 @@ const keptIds = computed(() =>
 // Keep/Maybe/Skip click made elsewhere on the same shared `entries` array.
 const order = ref<string[]>([])
 
+// Confirm/lock step (Card #61). `confirmed` distinguishes the "editable
+// playlist" (current Kept tracks + current `order`, above) from the
+// "confirmed playlist" a future publishing flow would read. There is no
+// second, frozen copy of `order`: nothing can change `order`'s membership
+// or sequence while `confirmed` is true — the reorder controls only render
+// when `!confirmed`, `moveTo` itself refuses to run while `confirmed`, and
+// the watcher below drops `confirmed` back to false the instant a Keep/
+// Maybe/Skip change elsewhere would change membership. Reading
+// `keptEntries` while `confirmed` is true therefore always *is* the
+// confirmed state. Confirming never reads or writes `CandidateTrack.Status`
+// — that stays Card #56/#57/#58's field alone.
+const confirmed = ref(false)
+
 // Reconciles `order` against Keep/Maybe/Skip changes without ever
 // resetting a manually-set position: newly-Kept IDs are appended at the
 // end; IDs that stopped being Kept are dropped, preserving the relative
@@ -36,6 +49,15 @@ watch(
     const idSet = new Set(ids)
     const next = order.value.filter((id) => idSet.has(id))
     next.push(...ids.filter((id) => !order.value.includes(id)))
+    // `keptIds` recomputes (a new array) on ANY candidate's Status write,
+    // not just one that changes the Kept set — `.filter` reads every
+    // entry's Status, so e.g. an unrelated Maybe→Skip flip elsewhere also
+    // triggers this watcher. A real diff against the current `order` is
+    // required here so a Keep/Maybe/Skip change that actually affects
+    // membership or sequence invalidates a prior confirmation, while an
+    // unrelated one doesn't un-confirm the playlist for no visible reason.
+    const membershipChanged = next.length !== order.value.length || next.some((id, i) => id !== order.value[i])
+    if (confirmed.value && membershipChanged) confirmed.value = false
     order.value = next
   },
   { immediate: true },
@@ -47,12 +69,44 @@ const keptEntries = computed(() => {
 })
 
 function moveTo(from: number, to: number) {
-  if (to < 0 || to >= order.value.length || from === to) return
+  if (confirmed.value || to < 0 || to >= order.value.length || from === to) return
   const next = order.value.slice()
   const [moved] = next.splice(from, 1)
   next.splice(to, 0, moved)
   order.value = next
 }
+
+const confirmButtonRef = ref<{ $el: HTMLElement } | null>(null)
+const editButtonRef = ref<{ $el: HTMLElement } | null>(null)
+
+function confirmPlaylist() {
+  if (keptEntries.value.length === 0 || confirmed.value) return
+  confirmed.value = true
+  nextTick(() => editButtonRef.value?.$el?.focus())
+}
+
+function editPlaylist() {
+  if (!confirmed.value) return
+  confirmed.value = false
+  nextTick(() => confirmButtonRef.value?.$el?.focus())
+}
+
+// The one integration point a future Spotify-publishing flow would read
+// (via a template ref on this component) — null whenever nothing is
+// confirmed, so a confirmed *empty* playlist can never exist. Extends
+// `order`/`keptEntries` rather than inventing a second order concept.
+// `SpotifyTrackID` (not `ID`) is the field actually meant for Spotify
+// publishing, even though the two are equal for every candidate today.
+const confirmedPlaylist = computed(() =>
+  confirmed.value
+    ? {
+        trackIds: keptEntries.value.map((e) => e.Ranked.Candidate.SpotifyTrackID),
+        entries: keptEntries.value,
+      }
+    : null,
+)
+
+defineExpose({ confirmedPlaylist })
 
 // Native HTML5 Drag and Drop state — no new dependency (no sortable
 // primitive exists in reka-ui, and @vueuse/core's useDraggable/useSorted
@@ -104,6 +158,30 @@ const WEEKLY_TRACK_TARGET = 15
       </p>
     </CardHeader>
     <CardContent>
+      <div class="mb-3 flex items-center justify-between gap-4 rounded-md border border-border bg-card/60 p-3">
+        <p role="status" class="text-xs" :class="confirmed ? 'text-emerald-300' : 'text-muted-foreground'">
+          {{
+            confirmed
+              ? `Final playlist confirmed · ${keptEntries.length} ${keptEntries.length === 1 ? 'track' : 'tracks'} · Ready to publish`
+              : "Lock in this week's playlist once you're happy with the Kept tracks and their order."
+          }}
+        </p>
+        <Button
+          v-if="!confirmed"
+          ref="confirmButtonRef"
+          type="button"
+          variant="default"
+          size="sm"
+          :disabled="keptEntries.length === 0"
+          @click="confirmPlaylist"
+        >
+          Confirm final playlist
+        </Button>
+        <Button v-else ref="editButtonRef" type="button" variant="outline" size="sm" @click="editPlaylist">
+          Edit playlist
+        </Button>
+      </div>
+
       <p v-if="keptEntries.length === 0" class="text-sm text-muted-foreground">
         No tracks kept yet. Keep a candidate below to add it to this week's playlist.
       </p>
@@ -123,6 +201,7 @@ const WEEKLY_TRACK_TARGET = 15
           @dragend="onDragEnd"
         >
           <span
+            v-if="!confirmed"
             class="cursor-grab select-none text-muted-foreground active:cursor-grabbing"
             aria-hidden="true"
             title="Drag to reorder"
@@ -138,7 +217,7 @@ const WEEKLY_TRACK_TARGET = 15
             :artist="e.Ranked.Candidate.TrackArtist"
             :album="e.Ranked.Candidate.Metadata?.Album ?? null"
           />
-          <div class="flex shrink-0 flex-col gap-0.5">
+          <div v-if="!confirmed" class="flex shrink-0 flex-col gap-0.5">
             <Button
               type="button"
               variant="ghost"

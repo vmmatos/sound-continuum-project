@@ -91,6 +91,11 @@ of future implementation requirements.
   `GET /api/candidates/review` response — no new endpoint). Card #60 makes
   that preview manually reorderable (drag + keyboard), a curator-set
   editorial order kept deliberately independent of scoring/rank, in-session
-  only; publish-to-Spotify workflow remains open)
+  only. Card #61 adds an explicit confirm/lock step on top of that preview —
+  confirming freezes the exact Kept tracks + order as the authoritative
+  edition playlist, locks out further reordering, and invalidates
+  automatically if the selection or order changes afterward; the confirmed
+  state is exposed for a future publishing flow to consume, but no such
+  flow exists yet; publish-to-Spotify workflow remains open)
 - **M7 — Weekly Editorial Workflow** — Planned
 - **M8 — Feedback & Evolution** — Planned

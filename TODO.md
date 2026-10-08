@@ -1349,6 +1349,61 @@
       the unit tests and the live keyboard path); real mouse drag in an
       actual human browser session should be spot-checked
 
+## Done (Card #61 — Confirm Final Playlist)
+
+- [x] `frontend/src/components/WeeklyPlaylistPreview.vue` — new `confirmed:
+      ref<boolean>` distinguishes the editable playlist (Card #60's
+      `order`/`keptEntries`, unchanged) from the confirmed/locked playlist;
+      no frozen snapshot of the confirmed order — nothing can change
+      `order` while `confirmed` is true
+- [x] "Confirm final playlist" (`variant="default"`, visually distinct from
+      every `ghost` button on this screen), disabled with zero Kept tracks;
+      "Edit playlist" (`variant="outline"`) returns to editable; a
+      `role="status"` paragraph toggles between an editable hint and
+      "Final playlist confirmed · N tracks · Ready to publish"
+- [x] Drag handle + Up/Down reorder controls hidden while confirmed;
+      `moveTo` itself also refuses to run while confirmed (defense in
+      depth beyond hiding the controls)
+- [x] The existing Card #60 `watch(keptIds, ...)` reconciliation gained a
+      diff check: if confirmed and the reconciled sequence actually differs
+      from the current `order`, `confirmed` is set back to `false` before
+      applying the reconciliation — so a Keep/Maybe/Skip change made
+      elsewhere on `CandidateCard` (which has no notion of this
+      component's lock state) can never leave a stale "confirmed" label
+      next to a changed playlist; an unrelated Status change (not
+      affecting Kept membership) does not un-confirm it
+- [x] `confirmedPlaylist` — a computed of `{ trackIds, entries }` (`null`
+      unless confirmed, `trackIds` from `SpotifyTrackID`), exposed via
+      `defineExpose` as the integration point a future M3 publishing flow
+      would read via a template ref — no such flow exists yet in this repo
+- [x] Confirming/editing never reads or writes `CandidateTrack.Status` —
+      selection decisions (Cards #56/#57/#58) and playlist confirmation
+      stay independent concepts
+- [x] `frontend/src/components/WeeklyPlaylistPreview.spec.ts` — 10 new
+      tests (16 total): capture, pre-confirm reorder affecting the
+      confirmed order, stability across unrelated re-renders, reorder
+      unavailable once locked, auto-invalidation from an elsewhere Keep/
+      Maybe/Skip change, Edit-playlist round-trips (reorder and
+      membership), the empty-state guard, the exposed `confirmedPlaylist`
+      — all passing; the existing 6 Card #59/#60 tests untouched
+- [x] `go build ./...`/`go vet ./...`/`go test ./...` (no backend file
+      changed) and `npm run build` verified clean
+- [x] Manual browser verification (real Chromium via a one-off
+      `playwright-core` script, `SPOTIFY_MOCK_MODE=true` backend): confirm
+      locks the exact reordered sequence; Skip on a `CandidateCard`
+      elsewhere while locked immediately reverts the preview to editable
+      with the updated membership; Edit → reorder → reconfirm and Edit →
+      Keep a new candidate → reconfirm both produce the correct new
+      confirmed state; Confirm renders `disabled` with zero Kept tracks;
+      keyboard activation (Tab + Enter) works for both actions with focus
+      moving to the other action's button each time; status paragraph
+      exposes `role="status"`; zero `spotify.com` network requests
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md`)
+- [x] No Spotify publishing/API logic, no playlist-creation changes, no
+      automatic ordering, no backend persistence, no edition history, no
+      undo/redo
+
 ## In progress
 
 - Nothing currently in progress.
@@ -1373,7 +1428,10 @@
       mechanism; Card #59 adds the Weekly Playlist Preview over the same
       Kept state; Card #60 makes the preview's Kept tracks manually
       reorderable (drag handle + keyboard Up/Down), an in-session editorial
-      order independent of scoring/rank);
+      order independent of scoring/rank; Card #61 adds an explicit confirm/
+      lock step on top of that preview, freezing the Kept tracks + order as
+      the authoritative edition playlist and exposing it for a future
+      publishing flow to consume);
       Fit/DiscoveryBonus/Diversity/PlaylistFit wiring (once their
       editorial inputs exist) and the rest of the selection/publishing
       workflow (publish to the official playlist) remain open
