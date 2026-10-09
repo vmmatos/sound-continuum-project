@@ -3059,3 +3059,38 @@ auto-invalidation on an elsewhere Keep/Maybe/Skip change, Edit-playlist
 round-trips (reorder and membership), the empty-state guard, and the
 exposed `confirmedPlaylist` being readable by an external consumer — the 6
 existing Card #59/#60 tests are untouched.
+
+---
+
+**Decision:** Document the end-to-end weekly curation workflow (Card #62,
+see [`docs/weekly-workflow.md`](../weekly-workflow.md)) before any of
+Compare/Plan Next/Publish/Archive are implemented, and state the
+implemented/partial/missing status of each stage explicitly in that
+document rather than only in `decisions.md`'s own changelog.
+
+**Context:** By Card #61, M3-M6 had built Generate Pool, Review, Build
+Journey, and Confirm Final Playlist across dozens of cards, but no single
+document described the 8-stage weekly lifecycle those cards compose into.
+Inspection for this card found no `Edition` entity anywhere in the
+codebase — Compare's two existing mechanisms (the Recent Track Filter and
+the Repetition Penalty factor) both operate on raw Spotify playlist
+history, not a discrete previous edition — and confirmed Publish/Archive
+have zero implementation: the only Spotify write endpoint is
+`InitializeOfficialPlaylist` (empty-playlist creation only), and SQLite
+holds no edition-level record at all.
+
+**Reason:** Without an explicit statement of this gap, a future card could
+easily design Publish or Archive assuming an Edition concept already
+exists, or design Compare assuming edition-to-edition comparison is already
+possible. Writing the workflow down now, with the implemented/intended/
+missing boundary stated per-stage rather than buried in changelog prose,
+gives M7+ cards a single place to check before building on top of a
+capability that isn't there.
+
+**Consequences:** `docs/weekly-workflow.md` is new; no application code,
+schema, endpoint, or UI changed. M7 (`roadmap.md`) moves from Planned to In
+progress on the strength of this definition alone. The next cards in this
+area should treat Compare (deciding whether an Edition entity is needed)
+and Publish (reusing the existing `spotify.Client`/`APIError` layering,
+deciding retry semantics) as the two open design questions, with Archive
+sequentially dependent on Publish existing first.

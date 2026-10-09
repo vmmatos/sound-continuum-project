@@ -97,5 +97,11 @@ of future implementation requirements.
   automatically if the selection or order changes afterward; the confirmed
   state is exposed for a future publishing flow to consume, but no such
   flow exists yet; publish-to-Spotify workflow remains open)
-- **M7 — Weekly Editorial Workflow** — Planned
+- **M7 — Weekly Editorial Workflow** — In progress (the full weekly
+  lifecycle is defined end to end — see
+  [`docs/weekly-workflow.md`](../weekly-workflow.md) — Card #62. Generate
+  Pool, Review, Build Journey, and Confirm Final Playlist are confirmed
+  implemented via M4/M6; Compare has a partial implementation, limited to
+  raw playlist-history signals with no `Edition` concept; Plan Next,
+  Publish, and Archive remain entirely unimplemented)
 - **M8 — Feedback & Evolution** — Planned
