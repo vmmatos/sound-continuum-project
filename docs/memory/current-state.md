@@ -1752,6 +1752,51 @@
   Workflow) moves from Planned to In progress on the strength of this
   definition alone — no implementation work was done.
 
+- An `Edition` domain model and persistence now exist (Card #139, see
+  [`decisions.md`](decisions.md)) — a new package,
+  `backend/internal/edition`, the first genuinely new persisted domain
+  entity since `candidate_selection` (Card #56). `Edition` carries a
+  `Status` lifecycle (`draft`/`confirmed`/`publishing`/`published`/
+  `archived`, explicit validated transitions via `Status.CanTransitionTo`
+  — Publishing can return to Confirmed on a recoverable failure, never a
+  dead end), an exact ordered `ConfirmedTracks` snapshot (reusing
+  `candidate.CandidateMetadata`, persisted as one JSON TEXT column —
+  array order is the order, no separate position column to drift out of
+  sync), and publication fields (`SpotifyPlaylistID`/`URL`,
+  `PublishedAt`, `LastPublishAttemptAt`/`LastPublishError`, `ArchivedAt`).
+  A new `editions` SQLite table (keyed rows, same
+  `CREATE TABLE IF NOT EXISTS`-in-`NewStore` convention as every other
+  store) holds it; a partial `UNIQUE INDEX ... WHERE status != 'archived'`
+  on a constant expression enforces at most one active (non-archived)
+  Edition at the database level, including under real concurrent
+  `CreateDraft` calls — no application lock, no new transaction (this
+  backend still has neither, repo-wide). `POST /api/editions/confirm`
+  (`edition.Service.ConfirmFromReview`/`ConfirmHandler`) is the one new
+  endpoint: it lazily creates a Draft if none is active, confirms it with
+  the curator's exact Kept tracks + order, allows re-confirming while
+  still Draft/Confirmed (Card #61's Edit → reorder → reconfirm flow), and
+  returns `ErrSnapshotLocked` once publishing has started.
+  `WeeklyPlaylistPreview.vue`'s `confirmPlaylist()` is now `async` —
+  it calls the new `frontend/src/services/edition.ts`'s `confirmEdition`
+  and only locks the UI once that persists successfully, surfacing a
+  failure instead of a false "confirmed" state; no Pinia store was
+  introduced (none exists in this codebase). `Store.StartPublishing`/
+  `RecordPublishSuccess`/`RecordPublishFailure`/`Archive` are real, tested
+  Go methods with no HTTP route and no caller yet — prepared for, not
+  implemented by, Cards #68 (Publish)/#69 (Archive). 31 new Go tests
+  (`backend/internal/edition/{store,service}_test.go`, including a real
+  multi-goroutine `-race`-clean test of the single-active-edition
+  invariant) and 3 new Vitest cases extending
+  `WeeklyPlaylistPreview.spec.ts` (19 total) — `go build ./...`/
+  `go vet ./...`/`go test ./...` and `npm run build`/`npm run test` all
+  pass. Manually verified against a live `SPOTIFY_MOCK_MODE=true` server:
+  confirm persists and returns the Edition, an empty snapshot is rejected
+  (400), re-confirming overwrites the same Edition's order, and the
+  `editions` table/index exist exactly as designed (inspected directly via
+  `sqlite3`). `docs/weekly-workflow.md` stages 6/7/8 and the "known gaps"
+  table are updated to reflect the model now existing without claiming
+  Publish/Archive/Compare are implemented.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

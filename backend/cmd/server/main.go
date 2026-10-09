@@ -11,6 +11,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/vmmatos/sound-continuum-project/internal/discovery"
+	"github.com/vmmatos/sound-continuum-project/internal/edition"
 	"github.com/vmmatos/sound-continuum-project/internal/health"
 	"github.com/vmmatos/sound-continuum-project/internal/lastfm"
 	"github.com/vmmatos/sound-continuum-project/internal/review"
@@ -80,6 +81,12 @@ func main() {
 
 	reviewService := review.NewService(discoveryService, selectionStore)
 
+	editionStore, err := edition.NewStore(db)
+	if err != nil {
+		log.Fatalf("failed to initialize edition store: %v", err)
+	}
+	editionService := edition.NewService(editionStore)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.Handler)
 	mux.HandleFunc("GET /api/spotify/auth", spotifyService.AuthHandler)
@@ -102,6 +109,7 @@ func main() {
 	mux.HandleFunc("POST /api/candidates/{id}/maybe", selectionService.MaybeHandler)
 	mux.HandleFunc("POST /api/candidates/{id}/skip", selectionService.RejectHandler)
 	mux.HandleFunc("POST /api/candidates/{id}/clear", selectionService.ClearHandler)
+	mux.HandleFunc("POST /api/editions/confirm", editionService.ConfirmHandler)
 
 	addr := ":" + port
 	log.Printf("sound-continuum server listening on %s", addr)
