@@ -1419,6 +1419,35 @@
       `roadmap.md` — M7 moved to In progress)
 - [x] No application code, schema, endpoint, or UI changed
 
+## Done (Card #139 — Define Edition lifecycle and data model)
+
+- [x] New package `backend/internal/edition`: `Edition` domain model
+      (`Status` lifecycle, confirmed track snapshot, publication/archival
+      fields), SQLite persistence (`editions` table), and a Service/
+      handler exposing `POST /api/editions/confirm`
+- [x] Explicit validated lifecycle: `draft → confirmed → publishing →
+      published → archived`, with `publishing → confirmed` on a
+      recoverable failure; every other transition rejected
+- [x] Single-active-edition invariant enforced at the database level (a
+      partial `UNIQUE INDEX ... WHERE status != 'archived'`), proven under
+      real concurrent `CreateDraft` calls, not only sequentially
+- [x] Confirmed track snapshot persisted as one ordered JSON column
+      (reusing `candidate.CandidateMetadata`) — exact order survives
+      persistence/retrieval, never reconstructed from Rank/discovery order
+- [x] Failed publishing attempts preserve Edition identity and the
+      confirmed snapshot (`RecordPublishFailure` returns to `Confirmed`,
+      never a dead end); publication metadata never changes track order
+- [x] Card #61 integration: `WeeklyPlaylistPreview.vue`'s
+      `confirmPlaylist()` now persists via the new endpoint before locking
+      the UI, with an inline error on failure — no Pinia store introduced
+- [x] 31 new Go tests (`backend/internal/edition/{store,service}_test.go`)
+      + 3 new Vitest cases (`WeeklyPlaylistPreview.spec.ts`, 19 total)
+- [x] `docs/weekly-workflow.md`, `decisions.md`, `current-state.md`,
+      `roadmap.md` updated
+- [x] No Spotify publish/archive endpoint, no archive UI, no historical
+      comparison, no next-edition planning — all explicitly deferred to
+      Cards #66/#68/#69
+
 ## In progress
 
 - Nothing currently in progress.
@@ -1444,15 +1473,18 @@
       Kept state; Card #60 makes the preview's Kept tracks manually
       reorderable (drag handle + keyboard Up/Down), an in-session editorial
       order independent of scoring/rank; Card #61 adds an explicit confirm/
-      lock step on top of that preview, freezing the Kept tracks + order as
-      the authoritative edition playlist and exposing it for a future
-      publishing flow to consume);
+      lock step on top of that preview, freezing the Kept tracks + order;
+      Card #139 persists that confirmed step as a real `Edition` row via
+      `POST /api/editions/confirm`);
       Fit/DiscoveryBonus/Diversity/PlaylistFit wiring (once their
-      editorial inputs exist) and the rest of the selection/publishing
-      workflow (publish to the official playlist) remain open
+      editorial inputs exist) and the rest of the publishing workflow
+      (publish to the official playlist) remain open
 - M7: Weekly editorial workflow — in progress (lifecycle defined end to
-      end, Card #62, see `docs/weekly-workflow.md`); Compare needs an
-      Edition-vs-no-Edition decision, Plan Next has no mechanism yet,
-      Publish has no Spotify track-write path, and Archive has no
-      persistence — all remain open
+      end, Card #62; the `Edition` domain model and persistence exist as of
+      Card #139, see `docs/weekly-workflow.md`/`decisions.md`); Compare
+      still needs to query past editions, Plan Next has no mechanism yet,
+      and Publish/Archive have a tested lifecycle foundation
+      (`StartPublishing`/`RecordPublishSuccess`/`RecordPublishFailure`/
+      `Archive`) but no Spotify call, HTTP route, or UI yet — open for
+      Cards #68/#69
 - M8: Feedback & evolution

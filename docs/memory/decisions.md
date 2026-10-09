@@ -3094,3 +3094,186 @@ area should treat Compare (deciding whether an Edition entity is needed)
 and Publish (reusing the existing `spotify.Client`/`APIError` layering,
 deciding retry semantics) as the two open design questions, with Archive
 sequentially dependent on Publish existing first.
+
+---
+
+**Decision:** Introduce `backend/internal/edition` as a new, flat,
+feature-named package (sibling to `candidate`/`selection`/`review`) for the
+Edition domain model and persistence (Card #139), answering the exact
+question Card #62's decision above left open — "whether an Edition needs
+to be modeled at all."
+
+**Context:** `docs/weekly-workflow.md` names the gap directly: Card #61's
+confirmed playlist lives only in frontend memory, and Publish/Archive/
+Compare are all blocked on an Edition entity existing. Inspection for this
+card found no competing concept to extend — the word "Edition" exists in
+two places already, both deliberately transient and non-persisted:
+`scoring.EditionTrack`/`CurrentEditionContext` (Card #44, a function-scoped
+input to Diversity/PlaylistFit, explicitly documented as "not persisted...
+a future persistence/Edition-assembly card can build real Edition state...
+without this package needing to change") and
+`musicaldna.WeeklyDirection.EditionID` (Card #41, a free-form string with
+no backing type). Neither is a real, identified, persisted entity.
+
+**Reason:** Same reasoning already recorded for `candidate`/`discovery`/
+`selection`/`review` — this repo has no `internal/domain` layer, only flat,
+feature-named packages, and a new persisted concept gets its own package
+rather than being folded into an unrelated one. `edition` depends on
+`candidate` (reusing `CandidateMetadata` for the confirmed snapshot, see
+below) the same way `discovery`/`review` already depend on `candidate`.
+Card #44's own reasoning is satisfied, not contradicted, by this card:
+`scoring.EditionTrack`/`CurrentEditionContext` and
+`musicaldna.WeeklyDirection` are untouched — they remain pure, non-persisted
+scoring/direction inputs with no dependency on `edition`, and `edition` has
+no dependency on either of them. The naming overlap is coincidental, not a
+merge: a future reader should not assume they're the same concept.
+
+**Consequences:** `backend/internal/edition/{edition,errors,store,
+service}.go` are new. `Status` (`draft`/`confirmed`/`publishing`/
+`published`/`archived`) follows the existing `type X string` + `const` +
+`Valid()` convention from `candidate`/`selection`. No change to `scoring` or
+`musicaldna`.
+
+---
+
+**Decision:** Enforce the single-active-edition invariant (Step 4) with a
+SQLite partial unique index on a constant expression —
+`CREATE UNIQUE INDEX idx_editions_single_active ON editions ((1)) WHERE
+status != 'archived'` — rather than an application-level lock or
+introducing this backend's first database transaction.
+
+**Context:** Card #139 requires at most one non-archived Edition to exist,
+enforced "at the persistence or transaction boundary, not only in the
+frontend," and explicitly accounting for concurrent creation attempts.
+Inspection confirmed this backend has no transactions anywhere
+(`BEGIN`/`.Tx`/`Begin(` all grep to zero hits outside this package) and
+exactly one mutex in the whole codebase (`spotify.state.go`'s single-OAuth-
+flow guard) — introducing either would be new infrastructure this MVP has
+avoided everywhere else.
+
+**Reason:** Every non-archived row evaluates the indexed expression `(1)`
+to the same value, so SQLite's own UNIQUE constraint rejects a second such
+row outright — the database enforces the invariant by construction, not by
+any Go code checking-then-inserting. This needs no `BEGIN IMMEDIATE`
+transaction and no mutex: two concurrent `INSERT`s are serialized by
+SQLite's own single-writer behavior regardless, and whichever one commits
+second simply violates the constraint, exactly as a sequential second
+attempt would. `Store.CreateDraft` maps that failure (a string match on
+"UNIQUE constraint failed," the same approach `spotify.Store`'s plain-
+INSERT-fails-on-duplicate-PK already relies on for `official_playlist`) to
+`ErrActiveEditionExists`. Archived rows are excluded by the index's own
+`WHERE` clause, so archiving an Edition unblocks the next `CreateDraft` with
+no special-case code.
+
+**Consequences:** `TestConcurrentCreateDraftOnlyOneSucceeds`
+(`backend/internal/edition/store_test.go`) proves this under real goroutine
+concurrency — several goroutines call `CreateDraft` against one shared
+`Store` at the same time, and exactly one succeeds regardless of
+interleaving, with no flakiness across repeated `-race` runs. If a future
+card needs genuinely concurrent *multi-row* Edition writes (this card has
+none — `Confirm`/`StartPublishing`/etc. each touch exactly one row via a
+single guarded `UPDATE`), that would be the first real justification for
+introducing a transaction in this backend, not this one.
+
+---
+
+**Decision:** Persist an Edition's confirmed track snapshot as one JSON
+TEXT column (`confirmed_tracks`, via stdlib `encoding/json`), reusing
+`candidate.CandidateMetadata` for each track's metadata — rather than a
+child `edition_tracks(edition_id, position, ...)` table.
+
+**Context:** Step 5 requires the exact confirmed order to survive
+persistence and retrieval without ever being reconstructed from `Rank`/
+`FinalScore`/discovery order/artist name, and requires deciding which
+metadata is "essential" to reconstruct the confirmed selection later.
+
+**Reason:** A JSON array's order is its order — persisting
+`[]ConfirmedTrack` as one column guarantees exact-order round-tripping by
+construction, with no separate `position` column that could drift out of
+sync with insertion order. A child table was considered and rejected: it
+would add a second table, a join on every read, and a `position` column to
+keep correct — real machinery for a capability nothing in this codebase
+needs yet (no query anywhere needs SQL-level filtering/joining over
+individual confirmed tracks; `Store.GetByID`/`GetActive` always want the
+whole ordered list at once). Reusing `candidate.CandidateMetadata` (Card
+#38's shape: title, structured artists, album, duration, explicit flag,
+artwork, Spotify URL/URI) instead of a third track-metadata type avoids
+duplicating a shape that already exists and already carries exactly what's
+needed to redisplay a confirmed track without Spotify. `ConfirmedTrack`
+also carries `SpotifyTrackID` directly (not only inside `Metadata`) because
+it's the stable identity a future publishing step needs regardless of
+whether metadata enrichment ever ran for that track.
+
+**Consequences:** `Store.save`'s shared `UPDATE` always re-marshals and
+rewrites the full `confirmed_tracks` column on every transition — including
+ones that don't touch it (`StartPublishing`, `RecordPublishSuccess`,
+`RecordPublishFailure`, `Archive`) — which is what makes "a failed
+publishing attempt must not modify the confirmed snapshot" (Step 7)
+directly provable by the persisted JSON being byte-for-byte identical
+before and after, not just asserted. An empty/nil snapshot persists as SQL
+`NULL`, not the literal strings `"null"` or `"[]"` — "no confirmed snapshot
+yet" and "a confirmed snapshot with zero tracks" are different claims, and
+the latter can't happen anyway (`Confirm` rejects an empty slice with
+`ErrEmptySnapshot`). If a future card genuinely needs SQL-level querying
+over individual confirmed tracks (e.g. "which editions included track X"),
+that would be the real justification for a child table then, not ahead of
+need.
+
+---
+
+**Decision:** Build the Card #61 integration boundary as a single new
+endpoint, `POST /api/editions/confirm`
+(`edition.Service.ConfirmFromReview`/`ConfirmHandler`), that lazily creates
+a Draft Edition if none is active and then confirms it — rather than
+requiring a separate "start a new Edition" action, and rather than
+modeling re-confirmation (Card #61's Edit → reorder → reconfirm flow) as a
+Status transition.
+
+**Context:** Step 6 requires establishing "a clean contract between the
+confirmed frontend state and the backend Edition service" without
+implementing a new publishing flow, and explicitly warns against claiming
+durable confirmation before it's actually persisted and verified. No UI
+anywhere in this app has ever created "a new Edition" as its own action —
+Draft has always been implicit in this workflow, immediately followed by
+Confirm.
+
+**Reason:** Requiring the frontend to call a separate "create Edition"
+step before confirming would be new UI/plumbing for a distinction (Draft
+vs. Confirmed) the curator never actually observes or acts on separately
+today — Draft→Confirmed happens as one gesture ("Confirm final playlist"),
+so the backend collapses it into one call rather than inventing a
+second-step UI this card doesn't need. Re-confirming an already-`Confirmed`
+Edition (overwriting its snapshot after Edit → reorder) is deliberately
+*not* routed through `Status.CanTransitionTo` — it isn't a Status change at
+all, just a data update within the Confirmed state — so `Store.Confirm`
+special-cases "current status is Draft or Confirmed" directly rather than
+adding a self-loop to the `transitions` map that would blur "transition"
+with "re-save." This is not the "silent mutation by candidate review
+state" Step 3 forbids: Keep/Maybe/Skip's own endpoints never call this
+path, so only a curator's own explicit re-confirm click can reach it.
+Once `Status` moves past Confirmed (`Publishing`/`Published`), the same
+method returns `ErrSnapshotLocked` instead — the confirmed boundary is
+final once publishing has started.
+
+**Consequences:** `WeeklyPlaylistPreview.vue`'s `confirmPlaylist()` is now
+`async`: it calls the new `frontend/src/services/edition.ts`'s
+`confirmEdition(keptEntries)` (sending each entry's existing
+`SpotifyTrackID`/`TrackTitle`/`TrackArtist`/`Metadata` directly — no
+re-derivation from a fresh pool/rank call) and only sets `confirmed = true`
+on success; a failure shows an inline error and leaves the playlist
+editable. No Pinia store was introduced — none exists in this codebase,
+and this needs no state beyond what the component already holds.
+`editPlaylist()` stays a pure local flip with no backend call: the last
+successful `Confirm` remains the durable record until the next confirm
+overwrites it. `ConfirmHandler`'s request body mirrors
+`candidate.CandidateTrack`/`CandidateMetadata`'s field names directly (no
+JSON tags, PascalCase) rather than a snake_case wire format, since the
+frontend already holds and sends exactly that shape; a `nil` `Metadata`
+(a candidate whose enrichment failed upstream, a pre-existing Card #38
+possibility) falls back to a `CandidateMetadata` built from the candidate's
+own always-present `TrackTitle`/`TrackArtist` — existing data, never
+fabricated. No publish or archive endpoint was added — `Store.
+StartPublishing`/`RecordPublishSuccess`/`RecordPublishFailure`/`Archive`
+are real, tested methods with no HTTP route and no caller yet, the same
+"implemented, not wired" state M5's scoring factors were in before their
+production inputs existed (Cards #68/#69 are expected to wire them).

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import type { CandidateReviewEntry } from '../types/candidateReview'
+import { confirmEdition } from '../services/edition'
 import CandidateTrackMetadata from './CandidateTrackMetadata.vue'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -79,8 +80,25 @@ function moveTo(from: number, to: number) {
 const confirmButtonRef = ref<{ $el: HTMLElement } | null>(null)
 const editButtonRef = ref<{ $el: HTMLElement } | null>(null)
 
-function confirmPlaylist() {
-  if (keptEntries.value.length === 0 || confirmed.value) return
+// Confirming (Card #139) is no longer a local-only flip: it must actually
+// persist as the backend Edition's confirmed snapshot before the UI claims
+// "confirmed" — otherwise reloading the page would silently lose a playlist
+// the curator believes is locked in. `confirming` disables the button for
+// the round trip; `confirmError` surfaces a failure instead of pretending
+// it succeeded.
+const confirming = ref(false)
+const confirmError = ref<string | null>(null)
+
+async function confirmPlaylist() {
+  if (keptEntries.value.length === 0 || confirmed.value || confirming.value) return
+  confirming.value = true
+  confirmError.value = null
+  const persisted = await confirmEdition(keptEntries.value)
+  confirming.value = false
+  if (!persisted) {
+    confirmError.value = 'Could not save the confirmed playlist. Please try again.'
+    return
+  }
   confirmed.value = true
   nextTick(() => editButtonRef.value?.$el?.focus())
 }
@@ -88,6 +106,7 @@ function confirmPlaylist() {
 function editPlaylist() {
   if (!confirmed.value) return
   confirmed.value = false
+  confirmError.value = null
   nextTick(() => confirmButtonRef.value?.$el?.focus())
 }
 
@@ -165,7 +184,7 @@ const WEEKLY_TRACK_TARGET = 15
           type="button"
           variant="default"
           size="sm"
-          :disabled="keptEntries.length === 0"
+          :disabled="keptEntries.length === 0 || confirming"
           @click="confirmPlaylist"
         >
           Confirm final playlist
@@ -174,6 +193,8 @@ const WEEKLY_TRACK_TARGET = 15
           Edit playlist
         </Button>
       </div>
+
+      <p v-if="confirmError" role="alert" class="mb-3 text-xs text-destructive">{{ confirmError }}</p>
 
       <p v-if="keptEntries.length === 0" class="text-sm text-muted-foreground">
         No tracks kept yet. Keep a candidate below to add it to this week's playlist.

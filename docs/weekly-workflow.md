@@ -170,12 +170,15 @@ there is no blanket "never repeat an artist" rule.
 **Output (intended):** An editorially reviewed sequence, with any
 repetition or continuity concerns consciously accepted or addressed.
 
-**Status: Partially implemented — and not at the "edition" level this
-stage describes.** There is no `Edition` concept anywhere in this codebase:
-no edition identifier, no edition boundary, no stored record of past
-editions to compare against. What exists instead are two mechanisms, both
-driven directly off the live Spotify playlist's own `added_at` history
-rather than any notion of discrete editions:
+**Status: Partially implemented — and not yet at the "edition" level this
+stage describes.** An `Edition` domain model and persistence now exist
+(`backend/internal/edition`, Card #139) — each confirmed weekly playlist is
+a discrete, identified, persisted record. But nothing queries *past*
+editions for comparison yet: there is no "previous edition" lookup, no
+archive listing, and no UI surfacing edition history. What exists instead
+are two older mechanisms, both driven directly off the live Spotify
+playlist's own `added_at` history rather than any notion of discrete
+editions:
 
 - The **Recent Track Filter** (Card #37) — a hard 28-day gate, already
   applied during Generate Pool, that keeps a recently-used track out of the
@@ -250,18 +253,29 @@ reordering until explicitly reopened.
 **Transition condition:** At least one Kept track exists. Confirming is
 only actionable with ≥1 Kept track.
 
-**Status: Implemented** (Card #61), frontend-only, in-session.
+**Status: Implemented** (Card #61, persisted by Card #139).
 `WeeklyPlaylistPreview.vue`'s `confirmed` ref locks the UI (hides reorder
 controls) and exposes `confirmedPlaylist` via `defineExpose` — a computed
 view of the locked Kept-tracks-in-order list, `null` unless confirmed. If a
 Keep/Maybe/Skip decision changes elsewhere while confirmed (membership or
 sequence would change), confirmation auto-invalidates back to editable
-rather than silently drifting out of sync. `confirmedPlaylist` is the
-integration point a future Publish flow would read via a template ref — **no
-such flow exists yet**; nothing in this repo consumes it.
+rather than silently drifting out of sync.
 
-**Connects to:** Publish — `confirmedPlaylist` is the authoritative input
-Publish must use.
+Confirming now also persists: `confirmPlaylist()` POSTs the confirmed
+entries to `POST /api/editions/confirm`
+(`backend/internal/edition.Service.ConfirmFromReview`) and only locks the UI
+once that call succeeds — a failure shows an inline error and leaves the
+playlist editable, never a false "confirmed" state. The backend persists
+the exact ordered snapshot as the active `Edition`'s confirmed track list in
+a new `editions` SQLite table (see
+[`docs/memory/decisions.md`](memory/decisions.md) for the full model,
+lifecycle, and single-active-edition invariant). `confirmedPlaylist`
+remains the frontend's own in-session view (lost on reload, as before); the
+durable record now lives in the backend `Edition` row, independently of the
+browser tab.
+
+**Connects to:** Publish — the confirmed `Edition` row (`ConfirmedTracks`,
+in exact order) is the authoritative input Publish must use.
 
 ---
 
@@ -293,14 +307,24 @@ is `POST /api/spotify/playlist` (`Service.InitializeOfficialPlaylist`,
 empty playlist once and is idempotent — it has no notion of tracks at all.
 There is no add-tracks-to-playlist call anywhere in the codebase (Spotify's
 own `POST /playlists/{id}/tracks` is unused), no publish button in the
-frontend, and no code path connecting `confirmedPlaylist` to Spotify.
+frontend, and no code path connecting the confirmed `Edition` to Spotify.
 
-Building this stage should reuse the existing M3 integration (the
+The model and persistence foundation this stage needs now exists (Card
+#139): `Edition.Status` transitions `Confirmed → Publishing → Published`
+(or back to `Confirmed` on a recoverable failure), and
+`Store.StartPublishing`/`RecordPublishSuccess`/`RecordPublishFailure`
+already implement and test those transitions — but none of them are wired
+to any HTTP route or actual Spotify call yet; they exist only as tested Go
+methods with no caller, the same "implemented, not wired" state M5's
+scoring factors were in before their production inputs existed. Whoever
+builds this should reuse the existing M3 integration (the
 `spotify.Client`/`spotify.Service` layering and its typed `APIError`
 taxonomy — see [`decisions.md`](memory/decisions.md)) rather than
-duplicating it, and should decide upfront whether a failed publish attempt
-is retried against the same confirmed state or requires the curator to
-re-confirm.
+duplicating it, call `StartPublishing`/`RecordPublishSuccess`/
+`RecordPublishFailure` around that call, and persist `SpotifyPlaylistID`/
+`SpotifyPlaylistURL` as soon as they're known so a retry can reconcile
+against the official playlist's actual remote state instead of blindly
+appending duplicate tracks (see Step 7's failure scenario in the card).
 
 Operational note for whoever builds this: the official playlist has been
 deleted outside the app multiple times in this project's history (Cards
@@ -330,16 +354,21 @@ publication date, final track selection, exact published order, Spotify
 playlist/URL reference, publication status, and editorial notes if
 available.
 
-**Status: Not implemented.** SQLite currently holds exactly three tables:
-`spotify_connection`, `official_playlist` (both singletons), and
-`candidate_selection` (per-candidate Keep/Maybe/Skip, not edition-scoped).
-Nothing records a published edition's track list, order, or outcome.
-`confirmedPlaylist` exists only in frontend memory for the browser
-session — it does not survive a page reload, let alone a publish.
+**Status: Not implemented** — but the model it will rest on now exists.
+SQLite holds a fourth table since Card #139, `editions`, recording each
+confirmed edition's track list, order, and (once Publish exists)
+publication outcome. `Edition.Status` already has an `Archived` value and
+`Store.Archive` already transitions `Published → Archived` recording
+`ArchivedAt`, rejecting every other source status — but nothing calls it:
+there is no archive endpoint, no automatic trigger on a successful publish,
+and no archive-listing UI. Archiving should become an automatic
+consequence of `RecordPublishSuccess` once Publish exists, not a curator
+action.
 
 A failed publication must never be recorded as if it succeeded — this
 follows directly from Archive only ever representing a successful Publish
-outcome, once Publish itself exists.
+outcome (`Store.Archive` only accepts `StatusPublished`), once Publish
+itself exists.
 
 **Connects to:** Compare and Plan Next for the *next* edition — this is the
 missing piece that would let stage 4 compare against a real previous
@@ -349,24 +378,26 @@ edition instead of raw playlist history.
 
 ## Current edition → next edition relationship
 
-Today, "continuity between editions" is carried entirely by the live
+An `Edition` entity now exists (Card #139) and enforces at most one active
+(non-archived) edition at a time, but nothing yet reads *past* editions —
+"continuity between editions" is still carried entirely by the live
 Spotify playlist's own history (via the Recent Track Filter and Repetition
-Penalty) and by the curator's own memory — there is no `Edition` entity
-connecting one week's confirmed playlist to the next week's Generate Pool
-run. Plan Next (stage 5), once built, is meant to be the lightweight bridge
-between editions: notes and directions a curator leaves for themselves,
-consumed manually at the start of the next Generate Pool / Review cycle. It
-must never mutate the current edition's confirmed selection or order,
-regardless of when it happens relative to Publish.
+Penalty) and by the curator's own memory, not by querying archived
+`Edition` rows. Generate Pool's next run does not consult the previous
+edition in any way. Plan Next (stage 5), once built, is meant to be the
+lightweight bridge between editions: notes and directions a curator leaves
+for themselves, consumed manually at the start of the next Generate Pool /
+Review cycle. It must never mutate the current edition's confirmed
+selection or order, regardless of when it happens relative to Publish.
 
 ## Known gaps
 
 | Stage | Gap | What a future card needs to decide first |
 |---|---|---|
-| Compare | No `Edition` entity; comparison is against raw playlist history, not a discrete previous edition | Whether an Edition needs to be modeled at all, or whether richer playlist-history queries are enough |
+| Compare | An `Edition` entity exists (Card #139), but nothing queries past editions; comparison is still against raw playlist history | How to look up "the previous edition" (needs Archive to produce history first) and what to show against it |
 | Plan next | Nothing built | Minimal UI/storage shape (free text vs. `WeeklyDirection`-style structured notes) |
-| Publish | No track-write path to Spotify | Reuse `spotify.Client`/`APIError` layering; retry semantics on partial failure |
-| Archive | No persistence of published editions | Depends on Publish existing first; storage shape listed in stage 8 above |
+| Publish | No track-write path to Spotify; `Edition` lifecycle/retry fields exist but are unwired | Reuse `spotify.Client`/`APIError` layering; call `StartPublishing`/`RecordPublishSuccess`/`RecordPublishFailure` around it |
+| Archive | `Store.Archive` exists and is tested, but has no caller/endpoint | Depends on Publish existing first; wire it as an automatic consequence of `RecordPublishSuccess` |
 
 Publish and Archive are sequentially dependent (Archive needs a real
 Publish to record). Compare's gap is independent and could be addressed

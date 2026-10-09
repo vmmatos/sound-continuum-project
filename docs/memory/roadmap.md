@@ -101,7 +101,13 @@ of future implementation requirements.
   lifecycle is defined end to end — see
   [`docs/weekly-workflow.md`](../weekly-workflow.md) — Card #62. Generate
   Pool, Review, Build Journey, and Confirm Final Playlist are confirmed
-  implemented via M4/M6; Compare has a partial implementation, limited to
-  raw playlist-history signals with no `Edition` concept; Plan Next,
-  Publish, and Archive remain entirely unimplemented)
+  implemented via M4/M6, and Confirm is now backend-persisted via the new
+  `Edition` domain model and `POST /api/editions/confirm` (Card #139, see
+  `decisions.md`). Compare has a partial implementation: an `Edition`
+  entity exists, but nothing yet queries past editions — comparison is
+  still limited to raw playlist-history signals. Plan Next remains
+  entirely unimplemented; Publish and Archive have a tested lifecycle/
+  persistence foundation (`Store.StartPublishing`/`RecordPublishSuccess`/
+  `RecordPublishFailure`/`Archive`) but no HTTP route, Spotify call, or UI
+  yet — open for Cards #68/#69)
 - **M8 — Feedback & Evolution** — Planned

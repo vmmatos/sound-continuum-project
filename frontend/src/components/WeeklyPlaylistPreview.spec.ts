@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import WeeklyPlaylistPreview from './WeeklyPlaylistPreview.vue'
 import type { CandidateReviewEntry } from '../types/candidateReview'
+import { confirmEdition } from '../services/edition'
+
+vi.mock('../services/edition', () => ({ confirmEdition: vi.fn() }))
 
 function makeEntry(id: string, status: CandidateReviewEntry['Ranked']['Candidate']['Status'], rank: number): CandidateReviewEntry {
   return {
@@ -49,6 +52,7 @@ function findButton(wrapper: ReturnType<typeof mount>, text: string) {
 }
 async function confirm(wrapper: ReturnType<typeof mount>) {
   await findButton(wrapper, 'Confirm final playlist')!.trigger('click')
+  await flushPromises()
 }
 async function edit(wrapper: ReturnType<typeof mount>) {
   await findButton(wrapper, 'Edit playlist')!.trigger('click')
@@ -60,6 +64,13 @@ function confirmedIds(wrapper: ReturnType<typeof mount>) {
 }
 
 describe('WeeklyPlaylistPreview', () => {
+  beforeEach(() => {
+    vi.mocked(confirmEdition).mockReset().mockResolvedValue(true)
+  })
+  afterEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('shows only Kept tracks, in rank order', () => {
     const entries = [makeEntry('a', 'selected', 1), makeEntry('b', 'rejected', 2), makeEntry('c', 'selected', 3)]
     const wrapper = mount(WeeklyPlaylistPreview, { props: { entries } })
@@ -247,5 +258,44 @@ describe('WeeklyPlaylistPreview', () => {
     await confirm(wrapper)
 
     expect(confirmedIds(wrapper)).toEqual(['a', 'b'])
+  })
+
+  it('confirming persists the edition via the backend before locking', async () => {
+    const entries = [makeEntry('a', 'selected', 1), makeEntry('b', 'selected', 2)]
+    const wrapper = mount(WeeklyPlaylistPreview, { props: { entries } })
+
+    await confirm(wrapper)
+
+    expect(confirmEdition).toHaveBeenCalledTimes(1)
+    const sentEntries = vi.mocked(confirmEdition).mock.calls[0][0]
+    expect(sentEntries.map((e) => e.Ranked.Candidate.ID)).toEqual(['a', 'b'])
+    expect(wrapper.text()).toContain('Final playlist confirmed')
+  })
+
+  it('a failed confirm keeps the playlist editable and shows an error', async () => {
+    vi.mocked(confirmEdition).mockResolvedValue(false)
+    const entries = [makeEntry('a', 'selected', 1), makeEntry('b', 'selected', 2)]
+    const wrapper = mount(WeeklyPlaylistPreview, { props: { entries } })
+
+    await confirm(wrapper)
+
+    expect(wrapper.text()).not.toContain('Final playlist confirmed')
+    expect((wrapper.vm as any).confirmedPlaylist).toBeNull()
+    expect(wrapper.text()).toContain('Could not save the confirmed playlist')
+    // reorder controls must still be available — the playlist never locked
+    expect(wrapper.find('[aria-label="Move Track a down"]').exists()).toBe(true)
+  })
+
+  it('retrying confirm after a failure succeeds once the backend call succeeds', async () => {
+    vi.mocked(confirmEdition).mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    const entries = [makeEntry('a', 'selected', 1), makeEntry('b', 'selected', 2)]
+    const wrapper = mount(WeeklyPlaylistPreview, { props: { entries } })
+
+    await confirm(wrapper)
+    expect(wrapper.text()).toContain('Could not save the confirmed playlist')
+
+    await confirm(wrapper)
+    expect(wrapper.text()).toContain('Final playlist confirmed')
+    expect(confirmEdition).toHaveBeenCalledTimes(2)
   })
 })
