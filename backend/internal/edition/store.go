@@ -137,26 +137,24 @@ func scanEdition(row *sql.Row) (*Edition, error) {
 			return nil, fmt.Errorf("edition: decode confirmed tracks: %w", err)
 		}
 	}
-	if confirmedAt.Valid {
-		t := time.Unix(confirmedAt.Int64, 0)
-		e.ConfirmedAt = &t
-	}
-	if publishedAt.Valid {
-		t := time.Unix(publishedAt.Int64, 0)
-		e.PublishedAt = &t
-	}
-	if lastPublishAttemptAt.Valid {
-		t := time.Unix(lastPublishAttemptAt.Int64, 0)
-		e.LastPublishAttemptAt = &t
-	}
+	e.ConfirmedAt = nullTime(confirmedAt)
+	e.PublishedAt = nullTime(publishedAt)
+	e.LastPublishAttemptAt = nullTime(lastPublishAttemptAt)
+	e.ArchivedAt = nullTime(archivedAt)
 	if lastPublishError.Valid {
 		e.LastPublishError = &lastPublishError.String
 	}
-	if archivedAt.Valid {
-		t := time.Unix(archivedAt.Int64, 0)
-		e.ArchivedAt = &t
-	}
 	return &e, nil
+}
+
+// nullTime converts a nullable Unix-seconds column to an optional
+// timestamp, the read-side mirror of unixOrNil below.
+func nullTime(n sql.NullInt64) *time.Time {
+	if !n.Valid {
+		return nil
+	}
+	t := time.Unix(n.Int64, 0)
+	return &t
 }
 
 // save overwrites every column of an Edition in one statement, guarded by

@@ -19,6 +19,7 @@ package edition
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/vmmatos/sound-continuum-project/internal/candidate"
@@ -63,12 +64,7 @@ var transitions = map[Status][]Status{
 // CanTransitionTo reports whether moving from s to target is a valid
 // lifecycle transition.
 func (s Status) CanTransitionTo(target Status) bool {
-	for _, allowed := range transitions[s] {
-		if allowed == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(transitions[s], target)
 }
 
 // ConfirmedTrack is one track in an Edition's confirmed, ordered snapshot.

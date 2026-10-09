@@ -161,22 +161,16 @@ func TestValidTransitionsSucceed(t *testing.T) {
 func TestInvalidTransitionsAreRejected(t *testing.T) {
 	ctx := context.Background()
 
-	cases := []struct {
-		name string
-		to   func(store *Store, id string) (Edition, error)
-	}{
-		{"draft to publishing", func(s *Store, id string) (Edition, error) { return s.StartPublishing(ctx, id) }},
-		{"draft to archived", func(s *Store, id string) (Edition, error) { return s.Archive(ctx, id) }},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			store := newTestStore(t)
-			draft, _ := store.CreateDraft(ctx)
-			if _, err := c.to(store, draft.ID); err != ErrInvalidTransition {
-				t.Fatalf("expected ErrInvalidTransition, got %v", err)
-			}
-		})
-	}
+	t.Run("draft to publishing", func(t *testing.T) {
+		store := newTestStore(t)
+		draft, _ := store.CreateDraft(ctx)
+		if _, err := store.StartPublishing(ctx, draft.ID); err != ErrInvalidTransition {
+			t.Fatalf("expected ErrInvalidTransition, got %v", err)
+		}
+	})
+
+	// draft/confirmed/publishing → archived are covered by
+	// TestArchiveOnlyFromPublished.
 
 	t.Run("published back to publishing", func(t *testing.T) {
 		store := newTestStore(t)
