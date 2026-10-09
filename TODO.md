@@ -1404,6 +1404,21 @@
       automatic ordering, no backend persistence, no edition history, no
       undo/redo
 
+## Done (Card #62 — Define weekly curation workflow)
+
+- [x] `docs/weekly-workflow.md` — full 8-stage lifecycle (Generate pool →
+      Review → Build journey → Compare → Plan next → Confirm final
+      playlist → Publish → Archive), each stage's purpose/input/curator
+      action/output/transition condition, and an honest
+      implemented/partial/missing status per stage
+- [x] Confirmed via inspection: Generate Pool, Review, Build Journey, and
+      Confirm Final Playlist are implemented; Compare is partial (raw
+      playlist-history signals only, no `Edition` entity); Plan Next,
+      Publish, and Archive are not implemented
+- [x] Project memory updated (`current-state.md`, `decisions.md`,
+      `roadmap.md` — M7 moved to In progress)
+- [x] No application code, schema, endpoint, or UI changed
+
 ## In progress
 
 - Nothing currently in progress.
@@ -1435,5 +1450,9 @@
       Fit/DiscoveryBonus/Diversity/PlaylistFit wiring (once their
       editorial inputs exist) and the rest of the selection/publishing
       workflow (publish to the official playlist) remain open
-- M7: Weekly editorial workflow
+- M7: Weekly editorial workflow — in progress (lifecycle defined end to
+      end, Card #62, see `docs/weekly-workflow.md`); Compare needs an
+      Edition-vs-no-Edition decision, Plan Next has no mechanism yet,
+      Publish has no Spotify track-write path, and Archive has no
+      persistence — all remain open
 - M8: Feedback & evolution

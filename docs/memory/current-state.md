@@ -1737,6 +1737,21 @@
   dev database and cleared before this session's verification, to get a
   clean baseline — not a defect, just local dev-session residue.)
 
+- The end-to-end weekly curation lifecycle is now documented (Card #62, see
+  [`docs/weekly-workflow.md`](../weekly-workflow.md) and
+  [`decisions.md`](decisions.md)) — documentation only, no code changed.
+  Generate Pool, Review, Build Journey, and Confirm Final Playlist are
+  confirmed implemented (M4/M6, Cards #37-#61). Compare is only partially
+  implemented: the Recent Track Filter (hard gate) and Repetition Penalty
+  (soft signal) both compare against raw official-playlist history, but no
+  `Edition` entity or edition-to-edition comparison exists anywhere in the
+  codebase. Plan Next, Publish, and Archive are not implemented at all —
+  the only Spotify write endpoint remains `InitializeOfficialPlaylist`
+  (empty-playlist creation), SQLite holds no edition-level record, and
+  Card #61's `confirmedPlaylist` has no consumer yet. M7 (Weekly Editorial
+  Workflow) moves from Planned to In progress on the strength of this
+  definition alone — no implementation work was done.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.
