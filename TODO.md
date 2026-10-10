@@ -1461,6 +1461,18 @@
       `src/test/makeEntry.ts` fixture
 - [x] `docs/weekly-workflow.md`, `decisions.md`, `current-state.md` updated
 
+## Done (Card #64 — Review candidates)
+
+- [x] Verified Card #63's in-view generation is the review wiring: the
+      generated pool is the same `entries` the cards and preview render;
+      no second pool mechanism, no production code change
+- [x] 1 Go test (unmatched persisted decisions never leak onto other
+      candidates) + 3 Vitest cases (restored Maybe/Skip, Keep/Skip through
+      the integrated view, decision-save failure)
+- [x] Browser-verified end to end in `SPOTIFY_MOCK_MODE`
+- [ ] Follow-up: after reload the UI doesn't show an already-confirmed
+      Edition (no read endpoint for the active Edition yet)
+
 ## In progress
 
 - Nothing currently in progress.

@@ -621,3 +621,32 @@ func TestReviewPoolPropagatesSelectionError(t *testing.T) {
 		t.Errorf("err = %v, want errUnexpected", err)
 	}
 }
+
+// 15. Persisted decisions for candidates this run didn't rediscover (Card
+// #64) are never applied to anything else in the pool: every rediscovered
+// candidate stays StatusDiscovered and no entry is added or dropped.
+func TestReviewPoolUnmatchedDecisionsDoNotLeak(t *testing.T) {
+	c1 := testCandidate(t, "c1", "track-1", "artist-1")
+	c2 := testCandidate(t, "c2", "track-2", "artist-2")
+	f := fakeWithEligible([]candidate.CandidateTrack{c1, c2})
+	svc := newTestServiceWithSelection(f, &fakeSelection{
+		selected:    map[string]struct{}{"gone-1": {}},
+		underReview: map[string]struct{}{"gone-2": {}},
+		rejected:    map[string]struct{}{"gone-3": {}},
+	})
+
+	pool, err := svc.ReviewPool(context.Background())
+	if err != nil {
+		t.Fatalf("ReviewPool: %v", err)
+	}
+	got := map[string]bool{}
+	for _, e := range pool.Entries {
+		got[string(e.Ranked.Candidate.ID)] = true
+		if e.Ranked.Candidate.Status != candidate.StatusDiscovered {
+			t.Errorf("%s Status = %q, want %q", e.Ranked.Candidate.ID, e.Ranked.Candidate.Status, candidate.StatusDiscovered)
+		}
+	}
+	if len(pool.Entries) != 2 || !got["c1"] || !got["c2"] {
+		t.Errorf("entry IDs = %v, want exactly c1 and c2", got)
+	}
+}

@@ -1811,6 +1811,11 @@
   a `src/test/makeEntry.ts` fixture with `WeeklyPlaylistPreview.spec.ts`);
   browser-verified in `SPOTIFY_MOCK_MODE`.
 
+- Candidate Review is wired to the generated weekly pool (Card #64): no
+  code change (Card #63 already feeds it); gap tests added, browser-verified
+  in mock mode. Known gap: after reload the UI can't tell an Edition is
+  already confirmed (no read endpoint).
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.
