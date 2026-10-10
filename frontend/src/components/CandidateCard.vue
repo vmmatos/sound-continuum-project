@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { Ref } from 'vue'
 import type { CandidateCategory, CandidateReviewEntry, CandidateTrack, DiscoveryMethod } from '../types/candidateReview'
 import { keepCandidate, maybeCandidate, skipCandidate, clearCandidateDecision } from '../services/candidateReview'
@@ -25,6 +25,17 @@ const props = defineProps<{
 const isSelected = ref(props.entry.Ranked.Candidate.Status === 'selected')
 const isMaybe = ref(props.entry.Ranked.Candidate.Status === 'under review')
 const isSkipped = ref(props.entry.Ranked.Candidate.Status === 'rejected')
+// Regeneration (Card #63) can hand this same card (same :key) a new entry
+// object whose persisted Status differs from the local refs — resync them,
+// or the next click would toggle from a stale state.
+watch(
+  () => props.entry.Ranked.Candidate.Status,
+  (status) => {
+    isSelected.value = status === 'selected'
+    isMaybe.value = status === 'under review'
+    isSkipped.value = status === 'rejected'
+  },
+)
 const keeping = ref(false)
 const keepFailed = ref(false)
 const maybeing = ref(false)

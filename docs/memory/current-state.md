@@ -1797,6 +1797,20 @@
   table are updated to reflect the model now existing without claiming
   Publish/Archive/Compare are implemented.
 
+- Candidate pool generation is an explicit curator action (Card #63, see
+  [`decisions.md`](decisions.md)): `CandidateReviewView.vue` no longer
+  runs discovery on mount — a "Generate candidate pool" / "Regenerate
+  pool" button calls the existing `GET /api/candidates/review` (no backend
+  change, no new endpoint), disabled with `aria-busy` while running, with
+  distinct ok/partial/empty/degraded/error messages (`role="status"`/
+  `role="alert"`, no raw errors). A failed run keeps the current pool on
+  screen; regeneration retains Kept candidates the fresh run didn't
+  rediscover, so manual order and local confirmation survive. Generation
+  never touches Editions. The pool is still not persisted — reload means
+  generate again. 10 new Vitest cases (`CandidateReviewView.spec.ts`, sharing
+  a `src/test/makeEntry.ts` fixture with `WeeklyPlaylistPreview.spec.ts`);
+  browser-verified in `SPOTIFY_MOCK_MODE`.
+
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for
 the reasoning behind changes.

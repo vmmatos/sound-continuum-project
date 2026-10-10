@@ -44,8 +44,9 @@ mechanism — this stage only surfaces candidates.
 **Input:** Sound Continuum's fixed reference-artist lists (Past, Present,
 Emerging) and the official Spotify playlist's own track history.
 
-**Curator action:** None yet — this stage runs automatically on request. The
-curator's first real action happens at Review.
+**Curator action:** Click **Generate candidate pool** on the Candidate
+Review page (Card #63). Discovery never runs on page load; the curator
+starts each run explicitly, and can regenerate at any time.
 
 **Output:** A pool of enriched, deduplicated candidates split into eligible
 and recently-used, each carrying discovery provenance.
@@ -67,6 +68,15 @@ Known limitation: Spotify Development Mode rate-limits `GET
 never silent — failures are recorded on `Result.Failures` /
 `CandidatePool.WorkflowErrors` and the frontend shows a distinct "degraded"
 state (Card #126) rather than an indistinguishable empty pool.
+
+Refresh semantics (Card #63): the pool is not persisted, so a page reload
+shows an empty Candidate Review until the curator generates again; Keep/
+Maybe/Skip decisions are persisted and re-attach by Spotify track ID on
+every run. Regenerating keeps on screen any Kept candidate the new run
+didn't rediscover (so Kept tracks, their manual order and a
+confirmation are never silently dropped); a failed run leaves the current
+pool untouched. Generation never creates or modifies an Edition.
+
 `SPOTIFY_MOCK_MODE` exists so this stage (and everything downstream) can be
 exercised offline during development.
 

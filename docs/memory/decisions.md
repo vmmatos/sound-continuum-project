@@ -3277,3 +3277,45 @@ StartPublishing`/`RecordPublishSuccess`/`RecordPublishFailure`/`Archive`
 are real, tested methods with no HTTP route and no caller yet, the same
 "implemented, not wired" state M5's scoring factors were in before their
 production inputs existed (Cards #68/#69 are expected to wire them).
+
+---
+
+**Decision:** Candidate pool generation is an explicit curator action
+(Card #63): `CandidateReviewView.vue` no longer runs discovery in
+`onMounted`; a "Generate candidate pool" / "Regenerate pool" button calls
+the existing `GET /api/candidates/review` (`review.Service.ReviewPool`).
+Regeneration keeps any previously displayed Kept candidate the fresh run
+didn't rediscover; fresh data wins for candidates present in both. Maybe/
+Skip stay persisted but aren't carried over (they don't affect the
+playlist, and carrying them would accumulate stale cards). The pool itself stays non-persisted.
+
+**Context:** Before this card every page load ran the full M4 pipeline
+against Spotify — implicit, automatic discovery the workflow doc says
+should be a deliberate curator step, and a waste of Development Mode's
+rate limit. Inspection showed the existing pipeline already does
+everything the card asks of the backend: dedup by Spotify track ID
+(= `candidate.ID`, so persisted decisions re-attach on every run), and a
+clean empty pool is already distinguishable from a failed one (hard
+failures → HTTP 502/503/401; workflow aborts/partial failures → 200 with
+`WorkflowErrors`/`Failures`). So no backend code changed and no new
+endpoint was added. The review pipeline has no `edition` dependency, so
+generation cannot create an Edition or touch a confirmed snapshot — only
+`POST /api/editions/confirm` does. The one real risk was frontend-side:
+a regeneration that lost a Kept candidate (e.g. a 429-degraded workflow)
+would make `WeeklyPlaylistPreview`'s `keptIds` watcher drop it from the
+manual order and un-confirm the playlist; retaining Kept candidates
+across regenerations (a few lines in the view, not a merge system)
+closes that. Regeneration also never toggles the view back to a loading
+state, so the preview (which holds manual order and the local confirmed
+flag) stays mounted. Candidate cards are `inert` while a run is in
+flight — a decision clicked mid-run would otherwise be overwritten by
+the run's pre-click snapshot — and `CandidateCard` resyncs its local
+Keep/Maybe/Skip refs when regeneration hands it a fresh entry.
+
+**Consequences:** After a reload the curator must click Generate again;
+the page says so. Keep/Maybe/Skip survive (SQLite); manual order and the
+preview's local confirmed flag remain session-only (pre-existing, Cards
+#60/#61) — the backend's confirmed Edition snapshot is unaffected either
+way. Pool persistence and hydrating the active Edition on load are
+deliberately not part of this card; each would be its own decision.
+

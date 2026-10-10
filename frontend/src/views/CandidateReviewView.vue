@@ -1,36 +1,82 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { getCandidateReviewPool } from '../services/candidateReview'
 import type { CandidateReviewEntry } from '../types/candidateReview'
 import CandidateCard from '../components/CandidateCard.vue'
 import WeeklyPlaylistPreview from '../components/WeeklyPlaylistPreview.vue'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
-const status = ref<'loading' | 'ok' | 'empty' | 'degraded' | 'error'>('loading')
+// Generation is an explicit curator action (Card #63): nothing here runs
+// discovery on mount, so loading or reloading the page never calls Spotify.
+// The pool itself is not persisted — only Keep/Maybe/Skip decisions are —
+// so after a reload the curator generates again and the decisions re-attach
+// by candidate ID (= Spotify track ID).
+const failed = ref(false)
+const message = ref(
+  "Candidates aren't saved between page loads — generate the pool to start reviewing. Your Keep, Maybe and Skip decisions are kept.",
+)
+const generating = ref(false)
 const entries = ref<CandidateReviewEntry[]>([])
 
-onMounted(async () => {
+async function generate() {
+  if (generating.value) return
+  generating.value = true
   const pool = await getCandidateReviewPool()
+  generating.value = false
   if (!pool) {
-    status.value = 'error'
+    // Keep whatever is already on screen — a failed refresh never discards
+    // the current pool or the curator's work on it.
+    failed.value = true
+    message.value = 'Could not generate the candidate pool. Check the Spotify connection and try again.'
     return
   }
-  entries.value = pool.Entries
-  if (pool.Entries.length > 0) {
-    status.value = 'ok'
-    return
-  }
+
+  // A Kept candidate stays on screen even if this run didn't rediscover it
+  // (e.g. a rate-limited workflow), so the playlist preview's membership,
+  // manual order and local confirmation are never silently dropped. Fresh
+  // data wins whenever the same candidate is present in both. Maybe/Skip
+  // decisions stay persisted but aren't carried over — they don't affect
+  // the playlist, and carrying them would accumulate stale cards.
+  const freshIds = new Set(pool.Entries.map((e) => e.Ranked.Candidate.ID))
+  const retained = entries.value.filter(
+    (e) => e.Ranked.Candidate.Status === 'selected' && !freshIds.has(e.Ranked.Candidate.ID),
+  )
+  entries.value = [...pool.Entries, ...retained]
+  failed.value = false
+
+  const n = pool.Entries.length
+  const generated = `${n} candidate${n === 1 ? '' : 's'} generated`
   const hasFailures = (pool.WorkflowErrors?.length ?? 0) > 0 || (pool.Failures?.length ?? 0) > 0
-  status.value = hasFailures ? 'degraded' : 'empty'
-})
+  if (n > 0) {
+    message.value = hasFailures ? `${generated}, but some discovery sources failed — results may be incomplete.` : `${generated}.`
+  } else {
+    message.value = hasFailures
+      ? 'Candidates could not be generated right now — discovery is degraded or temporarily failing. Try again later.'
+      : 'Discovery ran successfully but found no eligible candidates.'
+  }
+}
 </script>
 
 <template>
   <section class="mx-auto mt-8 max-w-3xl px-4 text-left">
-    <p class="text-xs font-medium uppercase tracking-widest text-muted-foreground">Candidate Review</p>
+    <div class="flex items-center justify-between gap-4">
+      <p class="text-xs font-medium uppercase tracking-widest text-muted-foreground">Candidate Review</p>
+      <Button type="button" size="sm" :disabled="generating" :aria-busy="generating" @click="generate">
+        {{ generating ? 'Generating…' : entries.length > 0 ? 'Regenerate pool' : 'Generate candidate pool' }}
+      </Button>
+    </div>
 
-    <div v-if="status === 'loading'" class="mt-6 flex flex-col gap-4">
+    <p
+      :role="failed ? 'alert' : 'status'"
+      class="mt-2 text-sm"
+      :class="failed ? 'text-destructive' : 'text-muted-foreground'"
+    >
+      {{ generating ? 'Generating candidate pool…' : message }}
+    </p>
+
+    <div v-if="generating && entries.length === 0" class="mt-6 flex flex-col gap-4">
       <div v-for="i in 3" :key="i" class="flex flex-col gap-3 rounded-lg border border-border p-4">
         <Skeleton class="h-5 w-48" />
         <Skeleton class="h-3 w-32" />
@@ -38,16 +84,13 @@ onMounted(async () => {
         <Skeleton class="h-2 w-full" />
       </div>
     </div>
-    <p v-else-if="status === 'error'" class="mt-6 text-sm text-muted-foreground">Could not load the candidate pool.</p>
-    <p v-else-if="status === 'empty'" class="mt-6 text-sm text-muted-foreground">No candidates available for review.</p>
-    <p v-else-if="status === 'degraded'" class="mt-6 text-sm text-muted-foreground">
-      Candidates could not be generated right now — discovery is degraded or temporarily failing. Try again later.
-    </p>
-    <template v-else>
+    <template v-else-if="entries.length > 0">
       <p class="mt-1 text-xs text-muted-foreground">{{ entries.length }} candidates</p>
       <WeeklyPlaylistPreview class="mt-4" :entries="entries" />
       <TooltipProvider>
-        <div class="mt-4 flex flex-col gap-4">
+        <!-- inert while generating: a decision clicked mid-run would be
+             overwritten by the run's pre-click snapshot of that candidate. -->
+        <div class="mt-4 flex flex-col gap-4" :inert="generating || undefined">
           <CandidateCard v-for="e in entries" :key="e.Ranked.Candidate.ID" :entry="e" />
         </div>
       </TooltipProvider>

@@ -21,10 +21,11 @@ const keptIds = computed(() =>
 
 // The curator's manual playlist sequence — editorial/narrative order
 // (transitions, bridges, journey), deliberately independent of Rank/
-// FinalScore. Lives here, not in CandidateReviewView, since this component
-// is never torn down/recreated during a session (CandidateReviewView's
-// `status` only ever moves forward out of 'loading'), so it survives every
-// Keep/Maybe/Skip click made elsewhere on the same shared `entries` array.
+// FinalScore. Lives here, not in CandidateReviewView: this component stays
+// mounted while CandidateReviewView has any entries, and regeneration
+// (Card #63) always carries Kept candidates over, so it only unmounts when
+// nothing is Kept — `order` survives every Keep/Maybe/Skip click and every
+// regeneration within a session.
 const order = ref<string[]>([])
 
 // Confirm/lock step (Card #61). `confirmed` distinguishes the "editable
