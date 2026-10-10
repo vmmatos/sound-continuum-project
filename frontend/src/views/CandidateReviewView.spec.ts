@@ -24,7 +24,7 @@ const generateButton = (w: ReturnType<typeof mount>) =>
 const previewTitles = (w: ReturnType<typeof mount>) => w.findAll('li').map((li) => li.find('h3').text())
 
 const card = (w: ReturnType<typeof mount>, title: string) =>
-  w.findAll('[data-slot="card"]').find((c) => !c.find('li').exists() && c.find('h3').exists() && c.find('h3').text() === title)!
+  w.findAll('[data-slot="card"]').find((c) => !c.find('li').exists() && c.findAll('h3')[0]?.text() === title)!
 const cardButton = (w: ReturnType<typeof mount>, title: string, label: string) =>
   card(w, title).findAll('button').find((b) => b.text() === label)!
 
@@ -170,7 +170,7 @@ describe('CandidateReviewView', () => {
 
     expect(w.text()).not.toContain('Track m')
     expect(previewTitles(w)).toEqual(['Track k'])
-    const aCard = w.findAll('[data-slot="card"]').find((c) => !c.find('li').exists() && c.find('h3').text() === 'Track a')!
+    const aCard = card(w, 'Track a')
     expect(aCard.text()).toContain('Keep')
     expect(aCard.text()).not.toContain('Kept ✓')
   })
