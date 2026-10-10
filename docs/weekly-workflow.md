@@ -122,7 +122,8 @@ signal" caption, never a fabricated full score).
 Keep/Maybe/Skip (Cards #56-#58) are mutually exclusive, idempotent, and
 persisted in SQLite (`candidate_selection` table) via `POST
 /api/candidates/{id}/{keep,maybe,skip,clear}` — a decision survives a page
-reload and a fresh pool-generation run, and is never applied to another candidate (Card #64).
+reload and a fresh pool-generation run, and is never applied to another
+candidate (Card #64).
 
 **Connects to:** Build Journey — only Kept candidates appear there.
 

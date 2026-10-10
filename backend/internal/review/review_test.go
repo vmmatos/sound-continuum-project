@@ -639,12 +639,14 @@ func TestReviewPoolUnmatchedDecisionsDoNotLeak(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReviewPool: %v", err)
 	}
-	if len(pool.Entries) != 2 {
-		t.Fatalf("len(Entries) = %d, want 2", len(pool.Entries))
-	}
+	got := map[string]bool{}
 	for _, e := range pool.Entries {
+		got[string(e.Ranked.Candidate.ID)] = true
 		if e.Ranked.Candidate.Status != candidate.StatusDiscovered {
 			t.Errorf("%s Status = %q, want %q", e.Ranked.Candidate.ID, e.Ranked.Candidate.Status, candidate.StatusDiscovered)
 		}
+	}
+	if len(pool.Entries) != 2 || !got["c1"] || !got["c2"] {
+		t.Errorf("entry IDs = %v, want exactly c1 and c2", got)
 	}
 }

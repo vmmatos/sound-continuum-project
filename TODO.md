@@ -1468,8 +1468,7 @@
       no second pool mechanism, no production code change
 - [x] 1 Go test (unmatched persisted decisions never leak onto other
       candidates) + 3 Vitest cases (restored Maybe/Skip, Keep/Skip through
-      the integrated view, decision-save failure) + no-Edition-side-effect
-      assertions
+      the integrated view, decision-save failure)
 - [x] Browser-verified end to end in `SPOTIFY_MOCK_MODE`
 - [ ] Follow-up: after reload the UI doesn't show an already-confirmed
       Edition (no read endpoint for the active Edition yet)

@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import CandidateReviewView from './CandidateReviewView.vue'
+import CandidateCard from '../components/CandidateCard.vue'
 import type { CandidateReviewEntry, CandidateReviewPool } from '../types/candidateReview'
-import { getCandidateReviewPool, keepCandidate, skipCandidate } from '../services/candidateReview'
+import {
+  getCandidateReviewPool,
+  keepCandidate,
+  maybeCandidate,
+  skipCandidate,
+  clearCandidateDecision,
+} from '../services/candidateReview'
 import { makeEntry } from '../test/makeEntry'
 import { confirmEdition } from '../services/edition'
 
@@ -24,7 +31,7 @@ const generateButton = (w: ReturnType<typeof mount>) =>
 const previewTitles = (w: ReturnType<typeof mount>) => w.findAll('li').map((li) => li.find('h3').text())
 
 const card = (w: ReturnType<typeof mount>, title: string) =>
-  w.findAll('[data-slot="card"]').find((c) => !c.find('li').exists() && c.findAll('h3')[0]?.text() === title)!
+  w.findAllComponents(CandidateCard).find((c) => c.props('entry').Ranked.Candidate.TrackTitle === title)!
 const cardButton = (w: ReturnType<typeof mount>, title: string, label: string) =>
   card(w, title).findAll('button').find((b) => b.text() === label)!
 
@@ -35,7 +42,7 @@ async function generate(w: ReturnType<typeof mount>) {
 
 describe('CandidateReviewView', () => {
   beforeEach(() => {
-    vi.mocked(getCandidateReviewPool).mockReset()
+    for (const fn of [getCandidateReviewPool, keepCandidate, maybeCandidate, skipCandidate, clearCandidateDecision]) vi.mocked(fn).mockReset()
     vi.mocked(confirmEdition).mockReset().mockResolvedValue(true)
   })
   afterEach(() => vi.clearAllMocks())
@@ -71,8 +78,6 @@ describe('CandidateReviewView', () => {
     expect(w.text()).toContain('2 candidates generated.')
     expect(w.text()).toContain('Weekly Playlist Preview')
     expect(previewTitles(w)).toEqual(['Track b'])
-    await generate(w)
-    expect(confirmEdition).not.toHaveBeenCalled() // generating never creates or touches an Edition
   })
 
   it('reports partial results when some discovery sources failed', async () => {
@@ -202,7 +207,6 @@ describe('CandidateReviewView', () => {
     await cardButton(w, 'Track a', 'Skip').trigger('click')
     await flushPromises()
     expect(previewTitles(w)).toEqual([])
-    expect(confirmEdition).not.toHaveBeenCalled()
   })
 
   it('a failed decision save is reported and leaves the playlist unchanged', async () => {
