@@ -122,7 +122,11 @@ signal" caption, never a fabricated full score).
 Keep/Maybe/Skip (Cards #56-#58) are mutually exclusive, idempotent, and
 persisted in SQLite (`candidate_selection` table) via `POST
 /api/candidates/{id}/{keep,maybe,skip,clear}` — a decision survives a page
-reload and a fresh pool-generation run.
+reload and a fresh pool-generation run. Review always operates on the
+pool generated in stage 1 (Card #64): restored decisions attach by exact
+candidate ID (= Spotify track ID); a persisted decision for a track the
+current run didn't rediscover stays in SQLite untouched and is never
+applied to another candidate.
 
 **Connects to:** Build Journey — only Kept candidates appear there.
 

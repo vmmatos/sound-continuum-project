@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import CandidateReviewView from './CandidateReviewView.vue'
 import type { CandidateReviewEntry, CandidateReviewPool } from '../types/candidateReview'
-import { getCandidateReviewPool } from '../services/candidateReview'
+import { getCandidateReviewPool, keepCandidate, skipCandidate } from '../services/candidateReview'
 import { makeEntry } from '../test/makeEntry'
 import { confirmEdition } from '../services/edition'
 
@@ -22,6 +22,11 @@ function pool(entries: CandidateReviewEntry[], extra: Partial<CandidateReviewPoo
 const generateButton = (w: ReturnType<typeof mount>) =>
   w.findAll('button').find((b) => /Generat|Regenerate/.test(b.text()))!
 const previewTitles = (w: ReturnType<typeof mount>) => w.findAll('li').map((li) => li.find('h3').text())
+
+const card = (w: ReturnType<typeof mount>, title: string) =>
+  w.findAll('[data-slot="card"]').find((c) => !c.find('li').exists() && c.find('h3').exists() && c.find('h3').text() === title)!
+const cardButton = (w: ReturnType<typeof mount>, title: string, label: string) =>
+  card(w, title).findAll('button').find((b) => b.text() === label)!
 
 async function generate(w: ReturnType<typeof mount>) {
   await generateButton(w).trigger('click')
@@ -66,6 +71,8 @@ describe('CandidateReviewView', () => {
     expect(w.text()).toContain('2 candidates generated.')
     expect(w.text()).toContain('Weekly Playlist Preview')
     expect(previewTitles(w)).toEqual(['Track b'])
+    await generate(w)
+    expect(confirmEdition).not.toHaveBeenCalled() // generating never creates or touches an Edition
   })
 
   it('reports partial results when some discovery sources failed', async () => {
@@ -166,5 +173,47 @@ describe('CandidateReviewView', () => {
     const aCard = w.findAll('[data-slot="card"]').find((c) => !c.find('li').exists() && c.find('h3').text() === 'Track a')!
     expect(aCard.text()).toContain('Keep')
     expect(aCard.text()).not.toContain('Kept ✓')
+  })
+
+  it('restores persisted Maybe/Skip on cards without adding them to the playlist', async () => {
+    vi.mocked(getCandidateReviewPool).mockResolvedValue(
+      pool([makeEntry('k', 'selected', 1), makeEntry('m', 'under review', 2), makeEntry('s', 'rejected', 3)]),
+    )
+    const w = mount(CandidateReviewView)
+    await generate(w)
+    expect(card(w, 'Track m').text()).toContain('Maybe ✓')
+    expect(card(w, 'Track s').text()).toContain('Skipped ✓')
+    expect(previewTitles(w)).toEqual(['Track k'])
+  })
+
+  it('Keep and Skip on a generated candidate update the playlist preview', async () => {
+    vi.mocked(getCandidateReviewPool).mockResolvedValue(pool([makeEntry('a', 'discovered', 1)]))
+    vi.mocked(keepCandidate).mockResolvedValue(true)
+    vi.mocked(skipCandidate).mockResolvedValue(true)
+    const w = mount(CandidateReviewView)
+    await generate(w)
+    expect(previewTitles(w)).toEqual([])
+
+    await cardButton(w, 'Track a', 'Keep').trigger('click')
+    await flushPromises()
+    expect(keepCandidate).toHaveBeenCalledWith('a')
+    expect(previewTitles(w)).toEqual(['Track a'])
+
+    await cardButton(w, 'Track a', 'Skip').trigger('click')
+    await flushPromises()
+    expect(previewTitles(w)).toEqual([])
+    expect(confirmEdition).not.toHaveBeenCalled()
+  })
+
+  it('a failed decision save is reported and leaves the playlist unchanged', async () => {
+    vi.mocked(getCandidateReviewPool).mockResolvedValue(pool([makeEntry('a', 'discovered', 1)]))
+    vi.mocked(keepCandidate).mockResolvedValue(false)
+    const w = mount(CandidateReviewView)
+    await generate(w)
+
+    await cardButton(w, 'Track a', 'Keep').trigger('click')
+    await flushPromises()
+    expect(w.text()).toContain('Failed to keep this candidate')
+    expect(previewTitles(w)).toEqual([])
   })
 })
