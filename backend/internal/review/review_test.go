@@ -3,6 +3,7 @@ package review
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -619,5 +620,40 @@ func TestReviewPoolPropagatesSelectionError(t *testing.T) {
 	_, err := svc.ReviewPool(context.Background())
 	if !errors.Is(err, errUnexpected) {
 		t.Errorf("err = %v, want errUnexpected", err)
+	}
+}
+
+// Card #63: generating the pool twice is predictable — the same candidate
+// IDs come back in the same order with no duplicates, and a persisted Keep
+// is re-attached on every run rather than reset by regeneration.
+func TestReviewPoolRepeatedGenerationIsStable(t *testing.T) {
+	c1 := testCandidate(t, "c1", "track-1", "artist-1")
+	c2 := testCandidate(t, "c2", "track-2", "artist-2")
+	f := fakeWithEligible([]candidate.CandidateTrack{c1, c2})
+	svc := newTestServiceWithSelection(f, &fakeSelection{selected: map[string]struct{}{"c1": {}}})
+
+	ids := func() []string {
+		pool, err := svc.ReviewPool(context.Background())
+		if err != nil {
+			t.Fatalf("ReviewPool: %v", err)
+		}
+		var out []string
+		for _, e := range pool.Entries {
+			out = append(out, string(e.Ranked.Candidate.ID)+":"+string(e.Ranked.Candidate.Status))
+		}
+		return out
+	}
+
+	first, second := ids(), ids()
+	if len(first) != 2 || len(second) != 2 {
+		t.Fatalf("entries = %v / %v, want 2 each", first, second)
+	}
+	for i := range first {
+		if first[i] != second[i] {
+			t.Errorf("run 2 entry %d = %q, want %q", i, second[i], first[i])
+		}
+	}
+	if !slices.Contains(second, "c1:"+string(candidate.StatusSelected)) {
+		t.Errorf("persisted Keep not re-applied on regeneration: %v", second)
 	}
 }

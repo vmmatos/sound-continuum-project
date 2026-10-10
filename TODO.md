@@ -1448,6 +1448,18 @@
       comparison, no next-edition planning — all explicitly deferred to
       Cards #66/#68/#69
 
+## Done (Card #63 — Generate weekly candidate pool)
+
+- [x] `CandidateReviewView.vue`: discovery no longer runs on mount;
+      explicit Generate/Regenerate button over the existing
+      `GET /api/candidates/review`, duplicate-submit guard, loading/ok/
+      partial/empty/degraded/error states, retry after failure
+- [x] Regeneration keeps decided candidates missing from the fresh run;
+      failed regeneration keeps the current pool; preview never unmounted
+- [x] No backend change; generation never creates or mutates Editions
+- [x] 8 Vitest cases (`CandidateReviewView.spec.ts`) + 1 Go test
+- [x] `docs/weekly-workflow.md`, `decisions.md`, `current-state.md` updated
+
 ## In progress
 
 - Nothing currently in progress.
