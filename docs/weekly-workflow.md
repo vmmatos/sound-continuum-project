@@ -72,8 +72,8 @@ state (Card #126) rather than an indistinguishable empty pool.
 Refresh semantics (Card #63): the pool is not persisted, so a page reload
 shows an empty Candidate Review until the curator generates again; Keep/
 Maybe/Skip decisions are persisted and re-attach by Spotify track ID on
-every run. Regenerating keeps on screen any already-decided candidate the
-new run didn't rediscover (so Kept tracks, their manual order and a
+every run. Regenerating keeps on screen any Kept candidate the new run
+didn't rediscover (so Kept tracks, their manual order and a
 confirmation are never silently dropped); a failed run leaves the current
 pool untouched. Generation never creates or modifies an Edition.
 

@@ -1804,10 +1804,10 @@
   change, no new endpoint), disabled with `aria-busy` while running, with
   distinct ok/partial/empty/degraded/error messages (`role="status"`/
   `role="alert"`, no raw errors). A failed run keeps the current pool on
-  screen; regeneration retains decided candidates the fresh run didn't
+  screen; regeneration retains Kept candidates the fresh run didn't
   rediscover, so manual order and local confirmation survive. Generation
   never touches Editions. The pool is still not persisted — reload means
-  generate again. 7 new Vitest cases (`CandidateReviewView.spec.ts`, sharing
+  generate again. 10 new Vitest cases (`CandidateReviewView.spec.ts`, sharing
   a `src/test/makeEntry.ts` fixture with `WeeklyPlaylistPreview.spec.ts`);
   browser-verified in `SPOTIFY_MOCK_MODE`.
 

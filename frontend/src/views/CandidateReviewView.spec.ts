@@ -126,4 +126,45 @@ describe('CandidateReviewView', () => {
     expect(w.text()).toContain('3 candidates') // a, d fresh + b retained; undecided c dropped, no duplicates
     expect(confirmEdition).toHaveBeenCalledTimes(1)
   })
+
+  it('a failed first run keeps offering Generate, not Regenerate', async () => {
+    vi.mocked(getCandidateReviewPool).mockResolvedValue(null)
+    const w = mount(CandidateReviewView)
+    await generate(w)
+    expect(generateButton(w).text()).toBe('Generate candidate pool')
+  })
+
+  it('makes candidate decisions unavailable while a regeneration is running', async () => {
+    vi.mocked(getCandidateReviewPool).mockResolvedValueOnce(pool([makeEntry('a', 'discovered', 1)]))
+    const w = mount(CandidateReviewView)
+    await generate(w)
+
+    let resolve!: (p: CandidateReviewPool) => void
+    vi.mocked(getCandidateReviewPool).mockReturnValueOnce(new Promise((r) => (resolve = r)))
+    await generateButton(w).trigger('click')
+    expect(w.find('[inert]').exists()).toBe(true)
+
+    resolve(pool([makeEntry('a', 'discovered', 1)]))
+    await flushPromises()
+    expect(w.find('[inert]').exists()).toBe(false)
+  })
+
+  it('carries over only Kept candidates, and cards resync to the fresh status', async () => {
+    vi.mocked(getCandidateReviewPool).mockResolvedValueOnce(
+      pool([makeEntry('a', 'selected', 1), makeEntry('m', 'under review', 2), makeEntry('k', 'selected', 3)]),
+    )
+    const w = mount(CandidateReviewView)
+    await generate(w)
+    expect(w.text()).toContain('Kept ✓')
+
+    // fresh run: a's Keep was cleared elsewhere; m and k not rediscovered
+    vi.mocked(getCandidateReviewPool).mockResolvedValueOnce(pool([makeEntry('a', 'discovered', 1)]))
+    await generate(w)
+
+    expect(w.text()).not.toContain('Track m')
+    expect(previewTitles(w)).toEqual(['Track k'])
+    const aCard = w.findAll('[data-slot="card"]').find((c) => !c.find('li').exists() && c.find('h3').text() === 'Track a')!
+    expect(aCard.text()).toContain('Keep')
+    expect(aCard.text()).not.toContain('Kept ✓')
+  })
 })

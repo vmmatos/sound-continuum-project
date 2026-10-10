@@ -1454,10 +1454,10 @@
       explicit Generate/Regenerate button over the existing
       `GET /api/candidates/review`, duplicate-submit guard, loading/ok/
       partial/empty/degraded/error states, retry after failure
-- [x] Regeneration keeps decided candidates missing from the fresh run;
+- [x] Regeneration keeps Kept candidates missing from the fresh run;
       failed regeneration keeps the current pool; preview never unmounted
 - [x] No backend change; generation never creates or mutates Editions
-- [x] 7 Vitest cases (`CandidateReviewView.spec.ts`); shared
+- [x] 10 Vitest cases (`CandidateReviewView.spec.ts`); shared
       `src/test/makeEntry.ts` fixture
 - [x] `docs/weekly-workflow.md`, `decisions.md`, `current-state.md` updated
 

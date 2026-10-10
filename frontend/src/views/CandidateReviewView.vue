@@ -13,7 +13,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 // The pool itself is not persisted — only Keep/Maybe/Skip decisions are —
 // so after a reload the curator generates again and the decisions re-attach
 // by candidate ID (= Spotify track ID).
-const outcome = ref<'idle' | 'done' | 'error'>('idle')
+const failed = ref(false)
 const message = ref(
   "Candidates aren't saved between page loads — generate the pool to start reviewing. Your Keep, Maybe and Skip decisions are kept.",
 )
@@ -28,21 +28,23 @@ async function generate() {
   if (!pool) {
     // Keep whatever is already on screen — a failed refresh never discards
     // the current pool or the curator's work on it.
-    outcome.value = 'error'
+    failed.value = true
     message.value = 'Could not generate the candidate pool. Check the Spotify connection and try again.'
     return
   }
 
-  // A candidate the curator already decided on stays on screen even if this
-  // run didn't rediscover it (e.g. a rate-limited workflow), so Kept tracks,
-  // their manual order and a local confirmation are never silently dropped.
-  // Fresh data wins whenever the same candidate is present in both.
+  // A Kept candidate stays on screen even if this run didn't rediscover it
+  // (e.g. a rate-limited workflow), so the playlist preview's membership,
+  // manual order and local confirmation are never silently dropped. Fresh
+  // data wins whenever the same candidate is present in both. Maybe/Skip
+  // decisions stay persisted but aren't carried over — they don't affect
+  // the playlist, and carrying them would accumulate stale cards.
   const freshIds = new Set(pool.Entries.map((e) => e.Ranked.Candidate.ID))
   const retained = entries.value.filter(
-    (e) => e.Ranked.Candidate.Status !== 'discovered' && !freshIds.has(e.Ranked.Candidate.ID),
+    (e) => e.Ranked.Candidate.Status === 'selected' && !freshIds.has(e.Ranked.Candidate.ID),
   )
   entries.value = [...pool.Entries, ...retained]
-  outcome.value = 'done'
+  failed.value = false
 
   const n = pool.Entries.length
   const generated = `${n} candidate${n === 1 ? '' : 's'} generated`
@@ -62,14 +64,14 @@ async function generate() {
     <div class="flex items-center justify-between gap-4">
       <p class="text-xs font-medium uppercase tracking-widest text-muted-foreground">Candidate Review</p>
       <Button type="button" size="sm" :disabled="generating" :aria-busy="generating" @click="generate">
-        {{ generating ? 'Generating…' : outcome === 'idle' ? 'Generate candidate pool' : 'Regenerate pool' }}
+        {{ generating ? 'Generating…' : entries.length > 0 ? 'Regenerate pool' : 'Generate candidate pool' }}
       </Button>
     </div>
 
     <p
-      :role="outcome === 'error' ? 'alert' : 'status'"
+      :role="failed ? 'alert' : 'status'"
       class="mt-2 text-sm"
-      :class="outcome === 'error' ? 'text-destructive' : 'text-muted-foreground'"
+      :class="failed ? 'text-destructive' : 'text-muted-foreground'"
     >
       {{ generating ? 'Generating candidate pool…' : message }}
     </p>
@@ -86,7 +88,9 @@ async function generate() {
       <p class="mt-1 text-xs text-muted-foreground">{{ entries.length }} candidates</p>
       <WeeklyPlaylistPreview class="mt-4" :entries="entries" />
       <TooltipProvider>
-        <div class="mt-4 flex flex-col gap-4">
+        <!-- inert while generating: a decision clicked mid-run would be
+             overwritten by the run's pre-click snapshot of that candidate. -->
+        <div class="mt-4 flex flex-col gap-4" :inert="generating || undefined">
           <CandidateCard v-for="e in entries" :key="e.Ranked.Candidate.ID" :entry="e" />
         </div>
       </TooltipProvider>

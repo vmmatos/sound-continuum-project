@@ -3284,9 +3284,10 @@ production inputs existed (Cards #68/#69 are expected to wire them).
 (Card #63): `CandidateReviewView.vue` no longer runs discovery in
 `onMounted`; a "Generate candidate pool" / "Regenerate pool" button calls
 the existing `GET /api/candidates/review` (`review.Service.ReviewPool`).
-Regeneration keeps any previously displayed candidate with a Keep/Maybe/
-Skip decision that the fresh run didn't rediscover; fresh data wins for
-candidates present in both. The pool itself stays non-persisted.
+Regeneration keeps any previously displayed Kept candidate the fresh run
+didn't rediscover; fresh data wins for candidates present in both. Maybe/
+Skip stay persisted but aren't carried over (they don't affect the
+playlist, and carrying them would accumulate stale cards). The pool itself stays non-persisted.
 
 **Context:** Before this card every page load ran the full M4 pipeline
 against Spotify — implicit, automatic discovery the workflow doc says
@@ -3302,11 +3303,14 @@ generation cannot create an Edition or touch a confirmed snapshot — only
 `POST /api/editions/confirm` does. The one real risk was frontend-side:
 a regeneration that lost a Kept candidate (e.g. a 429-degraded workflow)
 would make `WeeklyPlaylistPreview`'s `keptIds` watcher drop it from the
-manual order and un-confirm the playlist; retaining decided candidates
+manual order and un-confirm the playlist; retaining Kept candidates
 across regenerations (a few lines in the view, not a merge system)
 closes that. Regeneration also never toggles the view back to a loading
 state, so the preview (which holds manual order and the local confirmed
-flag) is never unmounted.
+flag) stays mounted. Candidate cards are `inert` while a run is in
+flight — a decision clicked mid-run would otherwise be overwritten by
+the run's pre-click snapshot — and `CandidateCard` resyncs its local
+Keep/Maybe/Skip refs when regeneration hands it a fresh entry.
 
 **Consequences:** After a reload the curator must click Generate again;
 the page says so. Keep/Maybe/Skip survive (SQLite); manual order and the
