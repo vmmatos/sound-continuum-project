@@ -1,15 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import CandidateReviewView from './CandidateReviewView.vue'
 import CandidateCard from '../components/CandidateCard.vue'
 import type { CandidateReviewEntry, CandidateReviewPool } from '../types/candidateReview'
-import {
-  getCandidateReviewPool,
-  keepCandidate,
-  maybeCandidate,
-  skipCandidate,
-  clearCandidateDecision,
-} from '../services/candidateReview'
+import { getCandidateReviewPool, keepCandidate, skipCandidate } from '../services/candidateReview'
 import { makeEntry } from '../test/makeEntry'
 import { confirmEdition } from '../services/edition'
 
@@ -42,10 +36,9 @@ async function generate(w: ReturnType<typeof mount>) {
 
 describe('CandidateReviewView', () => {
   beforeEach(() => {
-    for (const fn of [getCandidateReviewPool, keepCandidate, maybeCandidate, skipCandidate, clearCandidateDecision]) vi.mocked(fn).mockReset()
-    vi.mocked(confirmEdition).mockReset().mockResolvedValue(true)
+    vi.resetAllMocks()
+    vi.mocked(confirmEdition).mockResolvedValue(true)
   })
-  afterEach(() => vi.clearAllMocks())
 
   it('does not run discovery on mount and offers an explicit generate action', async () => {
     const w = mount(CandidateReviewView)
