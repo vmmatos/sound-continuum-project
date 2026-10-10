@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { getCandidateReviewPool } from '../services/candidateReview'
 import type { CandidateReviewEntry } from '../types/candidateReview'
 import CandidateCard from '../components/CandidateCard.vue'
@@ -13,10 +13,12 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 // The pool itself is not persisted — only Keep/Maybe/Skip decisions are —
 // so after a reload the curator generates again and the decisions re-attach
 // by candidate ID (= Spotify track ID).
-const outcome = ref<'idle' | 'ok' | 'partial' | 'empty' | 'degraded' | 'error'>('idle')
+const outcome = ref<'idle' | 'done' | 'error'>('idle')
+const message = ref(
+  "Candidates aren't saved between page loads — generate the pool to start reviewing. Your Keep, Maybe and Skip decisions are kept.",
+)
 const generating = ref(false)
 const entries = ref<CandidateReviewEntry[]>([])
-const freshCount = ref(0)
 
 async function generate() {
   if (generating.value) return
@@ -27,6 +29,7 @@ async function generate() {
     // Keep whatever is already on screen — a failed refresh never discards
     // the current pool or the curator's work on it.
     outcome.value = 'error'
+    message.value = 'Could not generate the candidate pool. Check the Spotify connection and try again.'
     return
   }
 
@@ -39,29 +42,19 @@ async function generate() {
     (e) => e.Ranked.Candidate.Status !== 'discovered' && !freshIds.has(e.Ranked.Candidate.ID),
   )
   entries.value = [...pool.Entries, ...retained]
-  freshCount.value = pool.Entries.length
+  outcome.value = 'done'
 
+  const n = pool.Entries.length
+  const generated = `${n} candidate${n === 1 ? '' : 's'} generated`
   const hasFailures = (pool.WorkflowErrors?.length ?? 0) > 0 || (pool.Failures?.length ?? 0) > 0
-  if (pool.Entries.length > 0) outcome.value = hasFailures ? 'partial' : 'ok'
-  else outcome.value = hasFailures ? 'degraded' : 'empty'
-}
-
-const message = computed(() => {
-  switch (outcome.value) {
-    case 'idle':
-      return "Candidates aren't saved between page loads — generate the pool to start reviewing. Your Keep, Maybe and Skip decisions are kept."
-    case 'ok':
-      return `${freshCount.value} ${freshCount.value === 1 ? 'candidate' : 'candidates'} generated.`
-    case 'partial':
-      return `${freshCount.value} ${freshCount.value === 1 ? 'candidate' : 'candidates'} generated, but some discovery sources failed — results may be incomplete.`
-    case 'empty':
-      return 'Discovery ran successfully but found no eligible candidates.'
-    case 'degraded':
-      return 'Candidates could not be generated right now — discovery is degraded or temporarily failing. Try again later.'
-    case 'error':
-      return 'Could not generate the candidate pool. Check the Spotify connection and try again.'
+  if (n > 0) {
+    message.value = hasFailures ? `${generated}, but some discovery sources failed — results may be incomplete.` : `${generated}.`
+  } else {
+    message.value = hasFailures
+      ? 'Candidates could not be generated right now — discovery is degraded or temporarily failing. Try again later.'
+      : 'Discovery ran successfully but found no eligible candidates.'
   }
-})
+}
 </script>
 
 <template>

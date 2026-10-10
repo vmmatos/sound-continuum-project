@@ -1807,8 +1807,9 @@
   screen; regeneration retains decided candidates the fresh run didn't
   rediscover, so manual order and local confirmation survive. Generation
   never touches Editions. The pool is still not persisted — reload means
-  generate again. 8 new Vitest cases (`CandidateReviewView.spec.ts`) + 1
-  Go test (`review_test.go`); browser-verified in `SPOTIFY_MOCK_MODE`.
+  generate again. 7 new Vitest cases (`CandidateReviewView.spec.ts`, sharing
+  a `src/test/makeEntry.ts` fixture with `WeeklyPlaylistPreview.spec.ts`);
+  browser-verified in `SPOTIFY_MOCK_MODE`.
 
 Update this file after meaningful implementation progress. Keep it a
 snapshot, not a detailed changelog — see [`decisions.md`](decisions.md) for

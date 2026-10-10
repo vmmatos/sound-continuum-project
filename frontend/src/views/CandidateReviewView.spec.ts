@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import CandidateReviewView from './CandidateReviewView.vue'
 import type { CandidateReviewEntry, CandidateReviewPool } from '../types/candidateReview'
 import { getCandidateReviewPool } from '../services/candidateReview'
+import { makeEntry } from '../test/makeEntry'
 import { confirmEdition } from '../services/edition'
 
 vi.mock('../services/candidateReview', () => ({
@@ -13,39 +14,6 @@ vi.mock('../services/candidateReview', () => ({
   clearCandidateDecision: vi.fn(),
 }))
 vi.mock('../services/edition', () => ({ confirmEdition: vi.fn() }))
-
-function makeEntry(id: string, status: CandidateReviewEntry['Ranked']['Candidate']['Status'], rank: number): CandidateReviewEntry {
-  return {
-    Ranked: {
-      Rank: rank,
-      Candidate: {
-        ID: id,
-        SpotifyTrackID: id,
-        Source: 'Spotify',
-        Category: 'Past',
-        Type: 'Classic',
-        Status: status,
-        TrackTitle: `Track ${id}`,
-        TrackArtist: `Artist ${id}`,
-        CreatedAt: '',
-        UpdatedAt: '',
-        Metadata: null,
-        Provenance: [],
-      },
-      Score: {
-        CandidateID: id,
-        ModelVersion: 'v1',
-        Weights: { Fit: 0, Freshness: 0, DiscoveryBonus: 0, Diversity: 0, PlaylistFit: 0, RepetitionWeight: 0 },
-        Factors: { Fit: null, Freshness: null, DiscoveryBonus: null, Diversity: null, PlaylistFit: null, RepetitionPenalty: null },
-        FinalScore: null,
-        AvailableWeight: 0,
-      },
-    },
-    Explanation: { Text: '', Reasons: [] },
-    Bridge: null,
-    BridgeTrack: null,
-  }
-}
 
 function pool(entries: CandidateReviewEntry[], extra: Partial<CandidateReviewPool> = {}): CandidateReviewPool {
   return { Entries: entries, ...extra } as CandidateReviewPool
@@ -120,23 +88,20 @@ describe('CandidateReviewView', () => {
     expect(w.text()).toContain('discovery is degraded or temporarily failing')
   })
 
-  it('shows an error and allows retry', async () => {
-    vi.mocked(getCandidateReviewPool).mockResolvedValueOnce(null).mockResolvedValueOnce(pool([makeEntry('a', 'discovered', 1)]))
+  it('a failed run keeps the current pool, shows an error and allows retry', async () => {
+    vi.mocked(getCandidateReviewPool)
+      .mockResolvedValueOnce(pool([makeEntry('a', 'selected', 1)]))
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(pool([makeEntry('a', 'selected', 1)]))
     const w = mount(CandidateReviewView)
     await generate(w)
+    await generate(w)
     expect(w.find('[role="alert"]').text()).toContain('Could not generate the candidate pool')
+    expect(previewTitles(w)).toEqual(['Track a'])
 
     await generate(w)
     expect(w.find('[role="alert"]').exists()).toBe(false)
     expect(w.text()).toContain('1 candidate generated.')
-  })
-
-  it('a failed regeneration keeps the current pool on screen', async () => {
-    vi.mocked(getCandidateReviewPool).mockResolvedValueOnce(pool([makeEntry('a', 'selected', 1)])).mockResolvedValueOnce(null)
-    const w = mount(CandidateReviewView)
-    await generate(w)
-    await generate(w)
-    expect(previewTitles(w)).toEqual(['Track a'])
   })
 
   it('regeneration keeps decided candidates, manual order and confirmation', async () => {

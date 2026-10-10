@@ -1457,7 +1457,8 @@
 - [x] Regeneration keeps decided candidates missing from the fresh run;
       failed regeneration keeps the current pool; preview never unmounted
 - [x] No backend change; generation never creates or mutates Editions
-- [x] 8 Vitest cases (`CandidateReviewView.spec.ts`) + 1 Go test
+- [x] 7 Vitest cases (`CandidateReviewView.spec.ts`); shared
+      `src/test/makeEntry.ts` fixture
 - [x] `docs/weekly-workflow.md`, `decisions.md`, `current-state.md` updated
 
 ## In progress
